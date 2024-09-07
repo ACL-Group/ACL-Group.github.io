@@ -1,0 +1,159 @@
+\subsection{Data Model}\label{sec:datamodel}
+
+Speculative nondeterminism is a programming framework that assumes a centralized
+data store that acts as the primary programming environment. The implementation of this store is
+not part of the language and therefore independent from the operational semantics of the language.
+Here we present the abstract data model of the store that can be instantiated into different
+concrete models.
+%Typical examples of a data model are tuple space, record space, key-value store, relational model (relations), and logic programs (predicates).
+%New data models can also be customized for domain-specific applications and be built on top of existing data models.
+%The data model is separated from the speculative choices, which means the data
+%model can be changed without affecting the behavior of speculations as long
+%as the data model provides the features needed by speculation.
+
+A data model is a 8-tuple
+$$\dm=\langle\mkstore,\alltype,\allop,\allstore,\dstype,\vdash,\sqcup,\dtrans\rangle$$
+where
+\begin{description}
+  \item[$\mkstore$] defines an empty data store.
+  \item[$\alltype$] is the set of all types available in the data model.
+  \item[$\allop$] is the set of all data operations available in the data model.
+  \item[$\allstore$] is the set of all possible data stores.
+  \item[$\dptype:\allop\to\alltype$] returns the type of an operation.
+  \item[$\dstype:\allstore\to 2^\alltype$] returns the set of types of a data store; $\dstype(\mkstore)=\emptyset$.
+  \item[$\vdash\subseteq\allstore\times\allop$] is a binary relation
+denoted by $d\vdash p$.
+It defines when operation $p$ can be executed on the data store $d$.
+For example, if the operation $p$ has a precondition, $d\vdash p$ is
+true if and only if the condition is true when evaluated on the data store $d$.
+  \item[$\sqcup:\allstore\times\allstore\to\allstore$] is a disjoint union function
+such that for $d_1\sqcup d_2$, $\dstype(d_1)\cap\dstype(d_2)=\emptyset$.
+The disjoint requirement is needed to guarantee safe merge of two stores.
+As an example, two key-value stores with overlapped types,
+$[a\mapsto 1]$ and $[a\mapsto 2]$, cannot be merged together.
+  \item[$\dtrans:\allop\times\allstore\to\allstore$] is the transition function that
+defines the effect of data operations on the store. 
+It should be guaranteed that $\dstype(\dtrans(p,d))\subseteq\{\dptype(p)\}\cup\dstype(d)$. 
+\end{description}
+
+Next we give some examples of concrete data models under the above framework.
+
+\subsubsection*{Data Model for Dining Philosophers Problem}
+
+It's easier to represent the 3 Dining Philosophers Problem with
+a customized data model defined below.
+A data store is essentially a set of forks on the table. 
+This data model assumes just one dining table for brevity.
+\begin{align*}
+  \mkstore &= \emptyset
+\\
+  \alltype &= \{ x,y,z \}
+\\
+  \allop &= \{ -x, -y, -z, +x, +y, +z \}
+\\
+  \allstore &= 2^\alltype
+\\
+  \dptype(-w) & =\dptype(+w)=w \text{ where } w\in\alltype
+\\
+  \dstype(d) &= \alltype
+\\
+  % \frac{w\in d}{d\vdash -w}, &
+  % \hspace*{1ex} \frac{}{d\vdash +w}
+  % \text{ where } w\in\alltype
+  \vdash &= \{(d,-w):w\in d\}\cup\{(d,+w):w\in\alltype\}
+\\
+%  d_1\sqcup d_2 & = d_1\cap d_2
+%  \\&\text{\em $\sqcup$ merges two data stores by taking the intersection of}
+%  \\&\text{\em the two sets, because for example $A$ grabs $x$ and $d_1=$}
+%  \\&\text{\em $\{y,z\}$, and $B$ in another galaxy has $d_2=\{x,y,z\}$ and}
+%  \\&\text{\em wants to merge with $d_1$, only intersection can correctly}
+%  \\&\text{\em merge them.}
+  d_1\sqcup d_2 & = d_1\cup d_2
+\\
+  \dtrans(-w,d) &= d\setminus\{w\},
+  \dtrans(+w,d) = d\cup\{w\}
+  \text{ where } w\in\alltype
+\end{align*}
+It is possible to execute $-w$ (to grab the fork $w$) only if $w\in d$ (the fork $w$ is on the table).
+To grab a fork $w$ ($-w$) is to remove $w$ from the set $d$, and to put down a fork $w$ ($+w$) is to add $w$ to the set $d$.
+
+\subsubsection*{Tuple Space}
+
+The idea of tuple space comes from Linda \cite{Gelernter85:Linda}, where
+a tuple space is a multi-set of tuples that can be accessed concurrently.
+Agents can post their data to the tuple space in the form of tuples, and retrieve tuples as data from the tuple space that match a certain pattern.
+There are three major operations in the tuple space data model:
+\begin{description}
+\item[$in$] reads and removes a tuple from a tuple space
+\item[$out$] produces a tuple, writing it into a tuple space
+\item[$rd$] non-destructively reads a tuple space and gets a copy of a tuple
+\end{description}
+Formal definitions and operational semantics for
+the $in/out/rd$ operations are provided in \cite{Ciancarini95}
+which can be easily adapted to this framework.
+
+%\begin{example}[Tuple Space for Trading]
+%Data models can not only be customized for domain-specific purposes, as shown in Section \ref{sec:custom3dp},
+%but also be built on top of existing data models.
+%In this example, two primitive operations for trading, $buy$ and $sell$, are implemented on top of the tuple space data model.
+%Only the availability and the type of products being traded are considered, while the prices are ignored for simplicity.
+%\setcounter{equation}{0}
+%\begin{eqnarray}
+%sell(t:\textbf{Product}) :=
+%& \mathbf{let} & id=new\_trans\_id() \label{eg:trade:sell:1}\\
+%& \mathbf{in}  & out(t,\textbf{sell},id) \label{eg:trade:sell:2} \\
+%&     & in(t,\textbf{buy},id) \label{eg:trade:sell:3} \\
+%&     & out(t,\textbf{ack},id) \label{eg:trade:sell:4} \\
+%buy(t:\textbf{Product}) :=
+%& \mathbf{let} & id:\mathbf{integer} \label{eg:trade:buy:1} \\
+%& \mathbf{in}  & in(t,\textbf{sell},\mathbf{ref}~id) \label{eg:trade:buy:2} \\
+%&     & out(t,\textbf{buy},id) \label{eg:trade:buy:3} \\
+%&     & rd(t,\textbf{ack},id) \label{eg:trade:buy:4}
+%\end{eqnarray}
+%
+%As shown above, both $sell$ and $buy$ are presented in pseudo-code form and make use of primitive operations in the tuple space data model such as $in$, $out$ and $rd$.
+%
+%First we explain the $sell$ operation.
+%The function $new\_trans\_id$ allocates a unique transaction number in the form of an integer (line \ref{eg:trade:sell:1}).
+%Then a tuple of the product type $t$, the trade type $\textbf{sell}$ and the transaction number $id$ is posted to the tuple space (line \ref{eg:trade:sell:2}).
+%Later it waits for a tuple of trade type $\textbf{buy}$ to appear and consumes it by using the $in$ operation (line \ref{eg:trade:sell:3}).
+%Finally, it produces an acknowledgement of the transaction being completed (line \ref{eg:trade:sell:4}).
+%
+%The $buy$ operation is similar to $sell$.
+%First the variable $id$ is declared to be an integer (line \ref{eg:trade:buy:1}).
+%Next it waits for a tuple of trade type $\textbf{sell}$, which is produced elsewhere in line \ref{eg:trade:sell:2}, and consumes it, filling $id$ with the value of the third element in the tuple (line \ref{eg:trade:buy:2}).
+%Then it produces a tuple of trade type $\textbf{buy}$ (line \ref{eg:trade:buy:3}), which will be consumed later in line \ref{eg:trade:sell:3}.
+%Finally the acknowledgement is read for confirmation of the completion (line \ref{eg:trade:buy:4}).
+%\end{example}
+
+\subsubsection*{Key-value Store}
+
+{\em Key-value store} is a mapping from arbitrary names
+(i.e. keys) to arbitrary values.
+For example, $[a\mapsto 3, b\mapsto 5]$ is a key-value store
+where the key $a$ gets value $3$ and $b$ gets $5$.
+The set of types of a key-value store is the set of names in
+the store ($\{a,b\}$ in the example). The scope of data operations normally
+includes (i) creating a new key-value pair,
+(ii) updating an existing key with a new value,
+(iii) getting a value according to a key, and
+(iv) removing a key and its corresponding value.
+Conditional guards can also be combined with these data operations,
+e.g., $a>4\Rightarrow b\gets 2$ waits (blocks) until
+the condition $a>4$ is true in the store,
+and then updates the value of $b$ to $2$.
+
+\subsubsection*{Other Models}
+Other more structured data models include relational data and logic programs.
+Data operations are insertion and deletion of tuples/predicates. Applications
+using these models are also typical.
+
+%{\em Relational model} is a classic and powerful data model. Data is represented by tuples and grouped into relations according to their domain-specific meanings.
+%    Conventionally, relations and tuples can be manipulated by using relational algebra or SQL,
+%    which is also viable in our framework being the data operation.
+%    The types in this relational data model are the relation names,
+%    or relation names together with specific ranges of values on a field in condition of data fragmentation.
+%
+%{\em Logical predicates} can also be used as a data model which can support a knowledge base for inferences.
+%The scope of data operations in a logical predicates data model includes monotonically adding rules/facts to the knowledge base, and asking for an evaluation of a predicate.
+%

@@ -1,0 +1,196 @@
+\subsection{Model Training}
+\label{sec:model}
+We adopt a supervised training approach here where the training data are feature
+vectors extracted for road segments and the labels are the traffic conditions
+(green, yellow, etc.). One obvious challenge for our problem is that
+the classes are extremely imbalanced. That is, there's probably an 
+order of magnitude more instances of green labels than the yellow labels, and 
+similarly between yellow and red labels, because over a long period of time,
+normal traffic should dominate the the road network.
+
+%Our first model is a multi-class linear SVM model with weights. Weights
+%on the classes are a simple answer to data imbalance problem, 
+%which is equivalent to random over sampling. 
+%Our second and more sophisticated model is a binary decision tree
+%model where each node is a binary SVM trained from data rebalanced with 
+%SMOTE~\cite{chawla2002smote}. We present these two models next.
+
+%After doing experiments with the famous ensemble method AdaBoost and linear classifier SVM. AdaBoost \cite{freund1997decision}, a popular boosting algorithm, core principle of which is to fit a sequence of weak learners (i.e., models that are only slightly better than random guessing, such as small decision trees) on repeatedly modified versions of the data. The predictions from all of them are then combined through a weighted majority vote (or sum) to produce the final prediction. The data modifications at each so-called boosting iteration consist of applying weights $w_1, w_2, ..., w_N$ to each of the training samples. Initially, those weights are all set to $w_i = 1/N$, so that the first step simply trains a weak learner on the original data. For each successive iteration, the sample weights are individually modified and the learning algorithm is reapplied to the reweighted data. At a given step, those training examples that were incorrectly predicted by the boosted model induced at the previous step have their weights increased, whereas the weights are decreased for those that were predicted correctly. As iterations proceed, examples that are difficult to predict receive ever-increasing influence. Each subsequent weak learner is thereby forced to concentrate on the examples that are missed by the previous ones in the sequence \cite{hastie2005elements}.
+
+%The results from the comparison experiment show that AdaBoost does not outperform SVM in this problem. So we choose to use the family of SVM classifiers because of its fast speed and relatively good accuracy in the context of linear as well as its extensive resources and popularity.
+
+
+%\subsubsection{Multi-class Linear SVM}
+%Until now, we already have all the data collected and processed into features using the feature extraction program that we introduced in the previous chapter. We followed certain schema of data and types and finally we should prepare all the extracted features into a data format that could be required and recognized by LIBSVM and LIBLINEAR programs. They are open source software and very robust in real world performance. These implementations of support vector machine algorithm is widely used and tested, so we choose to use them in our own project.
+
+%LIBSVM \cite{chang2011libsvm} is an integrated software for support vector classification, (C-SVC, nu-SVC), regression (epsilon-SVR, nu-SVR) and distribution estimation (one-class SVM). It supports multi-class classification. Since version 2.8, it implements an SMO-type algorithm \cite{fan2005working}. LIBSVM provides a simple interface where users can easily link it with their own programs. Main features of LIBSVM include: different SVM formulations, efficient multi-class classification, cross validation for model selection, probability estimates, various kernels (including precomputed kernel matrix), weighted SVM for unbalanced data, etc.
+
+We train our classifier on LIBLINEAR \cite{fan2008liblinear}. 
+Our multi-class SVM is actually an ensemble of 4 one-versus-rest binary SVMs.
+%SVM requires that each data instance is represented as a vector of real numbers. Hence, if there are 
+We convert categorical attributes such as weather into numerical values. 
+We use a 1-hot $m$-dimensional binary vector to represent an
+$m$-category attribute. 
+Further, we linearly scale each attribute in both training and test data 
+to the range [0, 1]. 
+%Only one of the m numbers is one, and others are zero. For example, in our case, we have a feature representing weather conditions. Since all the weather conditions are described as words and no real-numbered value is meaningful, or can be compared with each other in terms of values while representing such categorical feature. So it is a typical problem that could be seen as a 15-category attribute, with all the possible weather conditions in our weather data. It is therefore represented as (0,0,...,0,1), (0,0,...,1,0), (0,...,1,0,0) and so on. This is the so-called one-in-N representation of features, with each field having a binary value. Our experience indicates that if the number of values in an attribute is not too large, this coding might be more stable than using a single number.
+%\paragraph{Scaling}
+%Scaling before applying SVM is very important. Part 2 of \cite{sarle1997neural} explains the importance of this and most of the considerations also apply to SVM. The main advantage of scaling is to avoid attributes in greater numeric ranges dominating those in smaller numeric ranges. Another advantage is to avoid numerical difficulties during the calculation. Because kernel values usually depend on the inner products of feature vectors, e.g. the linear kernel and the polynomial kernel, large attribute values might cause numerical problems. 
+%Of course we have to use the same method to scale both training and testing data. For example, suppose that we scaled the first attribute of training data from [−10, +10] to [−1, +1]. If the first attribute of testing data lies in the range [−11, +8], we must scale the testing data to [−1.1, +0.8]. The LIBSVM provides a helpful utility to help scale and normalize the input feature data ranges, with the scaling parameter outputs saved to a file which should be later read by the prediction program. This could be done by the following command, calculate and applying the same scaling parameters in both generating scaled data in range [0, 1] for training and testing and it is important for accuracy:\\
+%\texttt{\$ ../svm-scale -l 0 -s scaling\_parameter train > train.scale}\\
+%\texttt{\$ ../svm-scale -r scaling\_parameter test > test.scale}
+
+To counter the data imbalance issue, we add a penalty for mis-classification
+to each class \cite{osuna1997support}, which minimizes the following:
+\begin{align}
+\min \left(\frac{1}{2} w \cdot w + C^+ \sum^l_{i | y_i=+1}\xi_i 
+	+ C^- \sum^l_{i | y_i=-1}\right) & \nonumber\\
+s.t.~ y_i(w \cdot \Phi(x_i) + b) \ge 1-\xi_i &\\
+\xi_i \ge 0,~~  i=1\ldots l \nonumber&
+\end{align}
+where $C^{+}$ and $C^{-}$ are the weights for the positive and
+the negative classes, respectively. 
+In this method, the SVM soft margin objective function
+is modified to assign two misclassification costs, such that $C^+$ is the misclassification
+cost for postive class example, while $C^-$ is the misclassification cost for negative class examples,
+as given in the following formula. here we also assume positive class to be the minority class and
+negtive class to be the majority class.
+
+%In standard SVM we only have a single $ \mathcal{P} $ value, whereas now we 
+%have 2.  
+The misclassification penalty for the minority class is chosen to be larger than that of the majority class.
+Essentially this is equivalent to oversampling the minority class. 
+%for instance if $ C_{pos} = 2 C_{neg} $ this is entirely equivalent to training a standard SVM with $ C=C_{neg} $ after including every positive twice in the training set. See Table~\ref{tbl:imbalance} for the weight put on each class based on occurrences of small classes.
+
+%is a linear classifier for data with millions of instances and features. It supports the following classifiers:
+%\begin{itemize}
+%	\item L2-regularized classifiers 
+%	\item L2-regularized classifiers 
+%	\item L2-loss linear SVM, L1-loss linear SVM, and logistic regression (LR)
+%	\item L1-regularized classifiers
+%	\item L2-loss linear SVM and logistic regression (LR)
+%	\item L2-regularized support vector regression
+%	\item L2-loss linear SVR and L1-loss linear SVR.
+%\end{itemize}
+%A good advantage of LIBLINEAR is that it uses the same data format as LIBSVM, the general-purpose SVM solver introduced above, and also similar usage. Multi-class classification is done by either 1) one-vs-the rest or 2) Crammer \& Singer. In our problem, we use the one-vs-the-rest for multi-class classification.
+%
+%The difference between the two libraries are quite obvious too. The main idea is that LIBLINEAR is optimized to deal with linear classification (i.e. no kernels necessary), whereas linear classification is only one of the many capabilities of LIBSVM, so logically it may not match up to LIBLINEAR in terms of classification accuracy. Also, when there are some large data for which with/without nonlinear mappings gives similar performances. Without using kernels, one can quickly train a much larger set via a linear classifier. In such suitable cases, the cross-validation time is significantly reduced by using LIBLINEAR. Our traffic prediction problem also uses the LIBLINEAR as a model training tool and a prediction tool because we have large amount of data and the high performance, especially the real-time data prediction ability is crucial in our online application.
+%
+%\subsubsection{Processing Extracted Features}
+%\label{sec:modelextractfeature}
+%\paragraph{Categorical Feature}
+%\subsubsection{Imbalanced Dataset}
+%\label{imbalancedata}
+%In our problem, one of the biggest caveats that emerges is the class imbalance issue. Imbalanced data typically refers to a problem with classification problems where the classes are not represented equally. In our case, there would be always more data representing the class of clear traffic (green) than other classes, often to a large ratio, because traffic jam happens only from time to time. As a result, the model trained will prefer to predict every instance of test data into the major representing class, because that would achieve a high accuracy, which is not right if the model simply predict all the traffic situation into ``good", which is a big part of the occurrences. They would cause many problems, like we cannot use accuracy anymore to perform the optimal parameter search of the model with accuracy as goal, because the imbalanced distribution would greatly shift the result to one-class sided. The accuracy paradox is the case where your accuracy measures tell the story that you have excellent accuracy (such as 90\% in our case), but the accuracy is only reflecting the underlying class distribution. It is very common, because classification accuracy is often the first measure we use when evaluating models on our classification problems. To compare solutions, we will use alternative metrics (True Positive, True Negative, False Positive, False Negative) instead of general accuracy of counting number of mistakes. In order to solve this, there are several ways to achieve the goal. We can roughly classify the approaches into two major categories: sampling based approaches and cost function based approaches:
+%
+%\paragraph{Sampling based approaches}
+%This can be roughly classified into three categories:
+%\begin{itemize}	
+%	\item Oversampling, by adding more of the minority class so it has more effect on the machine learning algorithm
+%	\item Undersampling, by removing some of the majority class so it has less effect on the machine learning algorithm
+%	\item Hybrid, a mix of oversampling and undersampling
+%\end{itemize}
+%However, these approaches have clear drawbacks. By undersampling, we could risk removing some of the majority class instances which is more representative, thus discarding useful information. By oversampling, just duplicating the minority classes could lead the classifier to overfitting to a few examples.
+%
+%\begin{table}[]
+%	\centering
+%	\caption{Imbalanced distribution of training set, caused by the intrinsic anomaly nature of traffic situations, resolved by assigning a weight to each class based on number of representations}
+%	\label{tbl:imbalance}
+%	\begin{tabular}{ c || c | c | c }
+%		\hline
+%		Class                          & \#Occurrence & Percentage & Weight \\ \hline
+%		Green (Good)                   & 2197252      & 0.90953    & 1      \\ \hline
+%		Yellow (Slow)                  & 176517       & 0.07306    & 14     \\ \hline
+%		Red (Congested)                & 40629        & 0.01681    & 59     \\ \hline
+%		Deep Red (Extremely Congested) & 1105         & 0.00046    & 2186   \\ \hline
+%	\end{tabular}
+%\end{table}
+
+%\subsubsection{Binary Decision Tree Model}
+%We train a fixed size three-level binary decision tree of binary SVM classifiers. This tree can be illustrated by the following pseudo-code:
+%\begin{algorithmic}
+%\Function{decision\_tree}{x}
+%\If{is\_green(x)} \textbf{return} GREEN
+%\ElsIf{is\_yellow(x)} \textbf{return} YELLOW
+%\ElsIf{is\_red(x)} \textbf{return} RED
+%\Else ~\textbf{return} DEEP-RED
+%\EndIf
+%\EndFunction
+%\end{algorithmic}
+% 
+%The three classifiers are is\_green, is\_yellow and is\_red. Each of these three classifiers
+%can be trained individually using data partitioned by the same decision tree.
+%The motivation for partitioning the data this way is because i) deciding if a road
+%segment is green or not is presumably an easier job than decision the exact color;
+%ii) combining the data for all non-green classes creates a bigger classes, 
+%partially alleviating the imbalance problem.
+%
+%Each of these three binary classifiers can be trained by original datasets (with weighted SVM) or
+%SMOTE-ed datasets. Also, these classifiers can be based on different types of model: SVM, logistic regression, Random Forest or xgBoost model so that we can always find a perfect one for the certain classification problem.
+%SMOTE is an oversampling method.
+%Here, the oversampling does not replicate minority class but 
+%construct new minority class data. The core idea is for each 
+%minority class A, randomly get a sample from the nearest neighbor B, 
+%then choose a radom point
+%along the line segment betwwen A and B.
+%The intuition behind the construction algorithm is that 
+%oversampling causes overfit because of repeated instances 
+%causes the decision boundary to tighten. 
+%Instead, we will create ``similar'' examples. 
+%To the learning algorithm, these newly constructed instances are not exact 
+%copies and the decision boundary is soften. As a result, the classifier learned
+%is more general and does not overfit.
+
+%\subsubsection{Training Process}
+%Our prepared training set consists of data collected from 19 May to 25 May, a time period of 7 days with weekdays and weekends. So as a test purpose training data, it is well covered the situations and our extracted features, even though the data number is still relatively small, not being able to make the model robust enough. Also the data set is too imbalanced due to the very nature of the problem, we could only begin to solve this after collecting much more data so that the minor classes could have their amount and representatives without being overwhelmed. Each line of the data file for LIBLINEAR is a line representing a data instance. A data instance of a classification problem is often represented in the following form.
+%\begin{center}
+%	\texttt{label feature 1, feature 2, . . ., feature n}
+%\end{center}
+%After scaling is done, we split and sampled the dataset into training set and test set for later validation. The split is done by selecting the data lines that are previous in the time as training data, and use those with a more recent time as test data. By construction data set this way, we could test out how good the training data from the historical time points would perform in predicting traffic situation at a future time. Alternatively, we could split the data so that the data in one district of Shanghai are used as training set and those in another district are used as test set. By splitting data this way, we could evaluate how good it will perform to predict traffic situation with new geospatial information using the old ones from another place. Or we could just randomly sample the dataset to create a training set and a test set. Considering the data imbalance issues, that is, the labels' distribution is not balanced, because there would always be more roads in green state than in deep red state, causing the score computations and accuracy invalid. So we have to sample a balanced number of data instances that is equivalent to the data lines with the least number of label occurrence. 
+%
+%After training data and testing data are created, it is the time to feed the organized and scaled training data into the \texttt{train} program to train a model. There are a few parameters that we could tune for the LIBLINEAR, the most important of which is the type of solver to use, switched by the parameter \texttt{-s}. The following are all the available solvers for multi-class classification, which includes both Logistic Regression and SVM:\\
+%\texttt{0 -- L2-regularized logistic regression (primal)\\
+%	1 -- L2-regularized L2-loss support vector classification (dual)\\
+%	2 -- L2-regularized L2-loss support vector classification (primal)\\
+%	3 -- L2-regularized L1-loss support vector classification (dual)\\
+%	4 -- support vector classification by Crammer and Singer\\
+%	5 -- L1-regularized L2-loss support vector classification\\
+%	6 -- L1-regularized logistic regression\\
+
+%Formulations for the above available classification solvers:\\
+%For L2-regularized logistic regression (-s 0), we solve
+%\begin{align}
+%min_w w^Tw/2 + C \sum log(1 + exp(-y_i w^Tx_i))
+%\end{align}
+%For L2-regularized L2-loss SVC dual (-s 1), we solve
+%\begin{align}
+%& min_\alpha  0.5(\alpha^T (Q + I/2/C) \alpha) - e^T \alpha \\
+%& s.t. \quad 0 <= \alpha_i, 
+%\end{align}
+%For L2-regularized L2-loss SVC (-s 2), we solve
+%\begin{align}
+%min_w w^Tw/2 + C \sum max(0, 1- y_i w^Tx_i)^2
+%\end{align}
+%For L2-regularized L1-loss SVC dual (-s 3), we solve
+%\begin{align}
+%& min_\alpha  0.5(\alpha^T Q \alpha) - e^T \alpha \\
+%& s.t. \quad  0 <= \alpha_i <= C,
+%\end{align}
+%For L1-regularized L2-loss SVC (-s 5), we solve
+%\begin{align}
+%min_w \sum |w_j| + C \sum max(0, 1- y_i w^Tx_i)^2
+%\end{align}
+%For L1-regularized logistic regression (-s 6), we solve
+%\begin{align}
+%min_w \sum |w_j| + C \sum log(1 + \exp(-y_i w^Tx_i))
+%\end{align}
+%For L2-regularized logistic regression (-s 7), we solve
+%\begin{align}
+%&min_\alpha  0.5(\alpha^T Q \alpha) + \sum \alpha_i*log(\alpha_i) + \sum (C-\alpha_i)*log(C-\alpha_i) - constant \\
+%&s.t. \quad  0 <= \alpha_i <= C,\\
+%&\textrm{where $ Q $ is a matrix with  } Q_ij = y_i y_j x_i^T x_j.
+%\end{align}
+%The LIBLINEAR implements 1-vs-the rest multi-class strategy for classification, which our problem used. In training $ i $ vs. $ non\_i $, their $ C $ parameters are weight from $ -wi*C $ and $ C $, respectively.
+%
+%After several experiments with different solvers, we selected the L2-regularized L2-loss support vector classification (primal) as the solver. Primal-based solvers (Newton-type methods) are moderately fast in most situations compared to the dual-based solvers (coordinate descent methods). In contrast, it is sometimes suggested to use the dual-based solvers when dealing with large sparse data (e.g., documents) under suitable scaling and $ C $ is not too large, or data with number of instances much less than the number of features. In our traffic prediction problem, it is clear that it does not belong to these two situations.
+%

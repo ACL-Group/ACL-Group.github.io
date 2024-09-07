@@ -1,0 +1,97 @@
+\section{InferSpark Language and API}
+\label{sec:pplang}
+
+\begin{figure}[!h]
+\footnotesize
+\centering
+\begin{verbatim}
+model TSM(alpha: Double, lambda: Double, 
+          phi_B: Array[Double], beta: Double, 
+          beta_P: Double, beta_N: Double,
+          V: Long, K: Long, D: Long, N: Long) {
+  val phi = (0 until K).map(_ => 
+    Dirichlet(beta, V))
+  val phi_P = Dirichlet(beta_P, V)
+  val phi_N = Dirichlet(beta_N, V)
+  val theta =  (0 until D).map(_ =>
+      Dirichlet(alpha, K))
+  val delta = (0 until D).map(_ =>
+      (0 until K).map(Dirichlet(1, 3)))
+  val b = (0 until D).map(_ =>
+      (0 until N).map(_ => Bernoulli(lambda)))
+  val z = theta.map{ theta =>
+    (0 until N).map(_ => Categorical(theta))}
+  val s = delta.map{ delta =>
+    (0 until N).map(_ => Categorical(delta))}
+  val w = b.zip(z).zip(s).map{case ((b,z),s) =>
+    (0 until N).map(j => Categorical(
+      if (b(j)) phi_B
+      else if (s(j) == 0) phi_P
+      else if (s(j) == 1) phi_N
+      else phi(z(j))))}
+}
+\end{verbatim}
+\caption{Topic Sentiment Mixture in InferSpark}
+\label{fig:TSM_pp}
+\end{figure}
+
+LDA is a well-studied with wide application. Hence, a lot of machine learning
+libraries including MLLib implement collapsed Gibbs Sampler, an efficient
+inference algorithm, for the LDA model. When it comes to the customized models
+like the Topic Sentiment Mixture model (see \figref{fig:tsm_pgm}) for
+sentiment analysis, there is no off-the-shelf libraries to use. The user has
+to derive the formula and implement the algorithm by themselves. But with
+InferSpark, the user simply has to write a simple model definition and call
+the APIs using a dozens of lines.
+
+An InferSpark model definition has similar syntax with normal Scala
+class/object definition. The model definition starts with the ``model''
+keyword, which is followed by an identifier and a model parameter list. The
+parameters are constants in the model. Definition of random variables prefixed
+with ``val'' and pure functions prefixed with ``def'' are allowed. The random
+variables are either primitive random variables or collections of random
+variables. For example, phi\_P in the TSM model is a primitive random variable
+of Dirichlet distribution with type Vector[Double]; phi is a collection of
+primitive random variables of Dirichlet distribution with type
+Vector[Vector[Double]]; w is a collection of a collection of random variables
+of Categorical distribution with type Vector[Vector[Int]]. For primitive
+types, the pure functions (e.g. log, exp) can be applied to them if the type
+matches the parameter type. For collection types, the common collection
+methods like map/reduce can be used but functions that accept a concrete
+collection type cannot be applied since the types of collection could become
+RDD during inference.
+
+\begin{figure}[!h]
+\begin{verbatim}
+object Main extends Apps {
+  /* load parameters */
+  val w = sc.textFile("hdfs://localhost/corpus.txt")
+  val m = TSM(...)
+  m.w.observe(w)
+  m.infer(qualityEvaluator=f, initialIter=10, iter=100)
+  val posterior_phi_P = m.phi_P.posterior
+  /* ... */
+}
+\end{verbatim}
+\caption{Calling InferSpark API on the TSM model}
+\label{fig:TSM_API}
+\end{figure}
+
+In the scala program, the user can create an instance of a model in the
+same way as creating an instance of a class. Each random variable defined in
+the model is a field of the model object. The user can specify the observed data by
+invoking the obesrve method of the corresponding random variable. In the infer
+method of the model object, the ruse can specify parameters to the inference
+engine or rely on the default behaviour. If the user provides a
+quality evaluator and there is more than one available algorithm, both
+algorithm will be run for some initial iterations. Then the quality evaluator
+will be called to evaluate the qualilty of inference and the inference engine
+will heuristically choose the better one to run to the end.
+
+After the inference is finished, the user could launch 3 types of
+queries about the results: expectation query $E[g(\theta)|X]$, posterior
+parameter query and MAP query. The compiler will inspect the queries in user's
+scala program to determine what algorithms are applicable to the inference
+tasks.
+
+

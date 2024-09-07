@@ -1,0 +1,118 @@
+\section{Experiment}
+\subsection{Datasets}
+We use Conceptual Caption~\cite{cc} for stage-1 compression. 
+It consists of 3M noisy image alt-text pairs. 
+However, we do not use the image-text alignment information 
+but only treat it as a reservoir of general-domain images and texts.
+
+In stage-2, we use MSCOCO~\cite{coco} and Flickr30K~\cite{flickr} as the benchmarks. For MSCOCO, there are 113,287 images for training, 5,000 images for validation, and both 5K and 1K for testing. For Flickr30K, there are 28,783 images for training, 1,000 images for validation, and 1k for testing.
+
+\subsection{Evaluation Metrics}
+
+\begin{table*}[t!]
+	
+	\centering
+	\small
+	
+	\begin{tabular}{cc|ccccccccc}
+		
+		\toprule
+		
+		\multirow{2}{*}{Image}&\multirow{2}{*}{Text} & \multicolumn{3}{c}{MSCOCO~(1K)} &\multicolumn{3}{c}{MSCOCO~(5K)}  &\multicolumn{3}{c}{Flickr 30K}  \\
+		
+		&  &R@1 &R@5  &R@10  &R@1  &R@5  &R@10 &R@1  &R@5  &R@10 \\
+		
+		\cline{1-11}
+		
+		
+		$f_v^{T}$ & $f_t^{T}$ &46.9  &77.3  &87.3   &28.0  &52.9  &64.5  & 55.2 &80.3  &87.8 \\
+		
+		$f_v^{T^\prime}$ & $f_t^{T\prime}$ &61.0 &87.9 &94.7 &40.9 &67.6  &77.9 &58.0  &82.3 &89.1  \\
+		
+		\cline{1-11}
+%		$f_v^{S}$ & $f_t^{S_6}$ &\textbf{57.7} &\textbf{85.7} &\textbf{93.1} &36.4 &\textbf{64.3} &\textbf{74.9} &57.0  &82.1  &\textbf{88.8}\\
+				$f_v^{S}$ & $f_t^{S_6}$ &\textbf{62.7} &\textbf{88.2} &\textbf{94.5} &\textbf{42.6} &\textbf{69.6} &\textbf{79.4} &\textbf{57.0} &\textbf{82.1}  &\textbf{88.8}\\
+%		$f_v^{S}$ & $f_t^{S_4}$ &57.3 &85.5 &93.0 &\textbf{36.6} &64.2 &\textbf{74.9}  &54.9  &81.3  &88.4\\
+				$f_v^{S}$ & $f_t^{S_4}$ &62.0&88.0 &94.4 &42.0 &69.2 &79.0  &55.0  &81.3  &88.4\\
+		\bottomrule
+	\end{tabular}
+	\caption{Comparisons of text-image retrieval results on MSCOCO~(1K and 5K) and Flickr 30K.}
+	\label{table:main}
+\end{table*}
+
+We use recall R@K~(K=1,5,10) as the main metric. We also report the disk space and how many image/text queries can be encoded per second~(QPS$_v$ for image and QPS$_t$ for text) to evaluate model's memory footprints and inference speed.
+
+\subsection{Setup}
+
+\textbf{Target Model.} We use the open-sourced ViT-B/32 CLIP as the target dual-encoder model to compress. The image encoder $f_v^{T}$ is a 12-layer Vision Transformer~\cite{vit} with 768 hidden dimension and 12 attention heads. The text encoder $f_t^{T}$ is a 12-layer Transformer with 512 hidden dimention and 8 attention heads.
+
+
+\textbf{Compression Configuration.} For image encoder $f_v^{S}$, we use a ViT-S/16, which is the \textit{small} version of $f_v^{T}$. We initialize it with weights pretrained on ImageNet-21K~\cite{imagenet21k} for faster convergence. For text encoder $f_t^{S}$, we experiment with both 6-layer and 4-layer Transformer~(marked as $f_t^{S_6}$ and $f_t^{S_4}$), of which the weights are initialized from corresponding layers in $f_t^{T}$.
+
+\textbf{Implementation Detail.} In stage-1, we train 1 epoch using AdamW~\cite{adamw} with a batch size of 84 for both images and texts, learning rate of 3e-4, and weight decay of 0.1. In stage-2, we use the same optimization setting except that we train with batch size 96 for 5 epochs. We employ a cosine learning rate scheduler with 10,000 warm-up steps for both stages. All reported results are calculated on the test set using checkpoints with the highest validation performance.
+
+\subsection{Results}
+
+
+
+\textbf{Main Results.} In \tabref{table:main}, we report the text-image retrieval results of the compressed model trained with full-fledged compression pipeline proposed in \secref{sec2}. As shown in \tabref{table:main}, the pre-trained CLIP model can already deliver moderately good retrieval performance. The performance is further improved after fine-tuning. On most evaluation metrics, our compressed models perform on par with or better than the fine-tuned target model.
+
+
+
+
+\textbf{Ablation Study.} We perform extensive ablations to study the importance of each proposed technique. Due to the computational budget, we only conduct ablation on the image encoder and fix the text encoder as $f_t^{T^\prime}$. We evaluate  \textit{w/o stage-1}, \textit{stage-1$_{MSE}$}~(mean-square-error between $f_v^{S}$ and $f_v^{T}$), and \textit{stage-1$_{InfoNCE}$}~(identical to the loss in \secref{pre}) for stage-1 ablation. We also study the effectiveness of KD/SF/HN by removing them separately or together. We made several observations based on \tabref{table:main3}: 1) SF makes fine-tuning stable and is essential for convergence. 2) both KD and HN improve retrieval accuracy and are complementary to each other. 3) intra-modal contrastive distillation helps when image-text pairs are noisy and outperforms inter-modal infoNCE loss.
+
+\begin{table}[t!]
+	\centering
+	\small
+	\begin{tabular}{c|ccc|c}
+		\toprule
+		\multirow{2}{*}{Image} &\multicolumn{3}{c|}{MSCOCO~(5K)} & $\Delta$\\
+		&R@1 &R@5  &R@10  & R@1\\
+		\cline{1-5}
+		%		$f_v^{S}$  &\textbf{33.9} &\textbf{61.0} &\textbf{72.4} & -\\
+		$f_v^{S}$  &\textbf{36.7} &\textbf{64.6} &\textbf{75.3} & -\\
+		\cline{1-5}
+		w/o stage-1 &32.6 &59.6 &70.7 &4.1~$\downarrow$ \\
+		stage-1$_{MSE}$ &22.6  &46.7 &58.5 &14.1~$\downarrow$ \\
+		stage-1$_{InfoNCE}$ &31.7 &58.5 &69.6 &5.0~$\downarrow$ \\
+		\cline{1-5}
+		w/o SF &30.9 &57.6 &70.8  &5.8~$\downarrow$\\
+		w/o KD &35.8 &63.1 &74.2 &0.9~$\downarrow$\\
+		w/o HN &34.4 &62.0 &73.7 &2.3~$\downarrow$\\
+		w/o KD+HN &32.6 &60.3 &71.9 &4.1~$\downarrow$ \\
+		\bottomrule
+	\end{tabular}
+	\caption{Ablation on design choices in both stages.}
+	\label{table:main3}
+\end{table}
+
+\begin{table}[t!]
+	\centering
+	\small
+	\begin{tabular}{cc|ccc}
+		\toprule
+		\multirow{2}{*}{Image}&\multirow{2}{*}{Text} & Disk Space &QPS$_v$ &QPS$_t$  \\
+		&  &MB &\#  &\#  \\
+		\cline{1-5}
+		$f_v^{T^\prime}$ & $f_t^{T\prime}$ &578  &1.00x &1.00x \\
+		\cline{1-5}
+		$f_v^{S}$ & $f_t^{S_6}$ &255 &\textbf{1.51}x &1.98x \\
+		$f_v^{S}$ & $f_t^{S_4}$ &\textbf{230} &\textbf{1.51}x &\textbf{2.77}x \\
+		\bottomrule
+	\end{tabular}
+	\caption{Comparisons of disk space and QPS.}
+	\label{table:main2}
+\end{table}
+
+\textbf{Efficiency.} In \tabref{table:main2}, we compare the disk space and QSP used by models on a RTX 2080Ti. The compressed image encoder $f_v^{S}$ takes 85MB disk space~(39\% of $f_v^{T}$) meanwhile being 1.51 times faster. Our compressed text encoder can achieve up to x2.77 inference speed-up and 40\% size reduction~(from 243MB to 146MB). We further benchmark models'  memory and run-time performance on a real iPhone X with 1,000 images in the gallery for testing. It takes 870MB and 295MB for loading CLIP and our compressed model into main memory respectively. After indexing, the response time for a single text query is 0.4s for CLIP while it is only 0.1s for our compressed model.
+
+
+
+%\KZ{I think since the time and space improvement is the key of this paper (as per
+%our title) you should give more results on this, e.g., even in the ablation, and
+%not just show the recall numbers in the ablation. Also, you can probably give a case
+%study of using the original model vs this model on a typical smart phone (since you claim
+%you have a mobile app), what is the
+%actually memory footprint and the runtime benchmarked. I think it makes this work more
+%real and more convincing.}

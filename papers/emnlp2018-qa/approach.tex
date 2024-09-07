@@ -1,0 +1,237 @@
+\section{Approach}
+
+% draw two pics, one is overview, describing a detail example. from candidate generation, focus entity identification, and a basic siamese structure. The other one is detailed network structure of our schema encoding.
+In this section, we present our approach for solving complex KBQA.
+First, we generate candidate query graphs by staged generation method (\secref{sec:candgen}).
+Second, we measure the semantic similarities between the question and each query graph using deep neural networks (\secref{sec:rm}).
+%Next we encode question and candidate query graph respectively. 
+%More specifically, we use a bi-directianl RNN structure to represent question (\secref{sec:q-encoding}) and a complex embedding strategy is employed to encode a complex query graph (\secref{sec:schema-encoding}). Then we propose a cross attention mechanism to measure the similarity between a question and a query graph (\secref{sec:attention}).
+Then we introduce an ensemble approach for entity linking enrichment (\secref{sec:ensemble}),
+Finally, we discuss the prediction and parameter learning step of this task (\secref{sec:train}).
+%Meanwhile, for finding improvements out of the neural network model, 
+%we ultilize an ensemble approach to enrich the recall of entity linking method.
+
+
+ 
+\input{candgen}
+
+\begin{figure*}[ht]
+	\centering
+	\epsfig{file=figures/overview.eps, angle=0, width=2.0\columnwidth}
+	%\scalebox{0.3}{\includegraphics{overview.eps}}
+	\caption{Overview of proposed semantic matching model.}
+	\label{fig:nn}
+\end{figure*}
+
+
+\subsection{NN-based Semantic Matching Model}
+\label{sec:rm}
+%TODO: talk about the overview: cosine score, compact mode (merge then cos), two repr of questions and schema paths. Express them in the figure.
+%TODO: 6 sents
+%0. present the model in figure xxx: relation matching and entity linking
+%1. the main part is RM: model as similarity task
+%2. question side: sentential, syntactic
+%3. path side: decomposition into parallel parts.
+%4. each repr: relation sequence and name sequence.
+%5. final score: combination of RM, EL and others.
+%6. talk in detail.
+
+The architecture of the proposed model is shown in \figref{fig:nn}.
+%As a preprocessing step, we remove non-semantic information from both the question and the guery graph.
+We first replace all entity (or time) mentions used in the query graph
+by dummy tokens $\langle E \rangle$ (or $\langle Tm \rangle$).
+%as changing ``United States'' to ``China'' doesn't affect the semantic meaning of
+%our running example.
+To encode the complex query structure,
+we split it into predicate sequences starting from answer to focus nodes,
+which we call \textit{semantic components}.
+The predicate sequence doesn't include the information of focus nodes,
+except for type constraints, where we append the focus type to the \textit{IsA} predicate,
+resulting in the predicate sequence like \{\textit{IsA}, \textit{river}\}.
+We introduce in detail the encoding methods for questions and predicate sequences,
+and how to calculate the semantic similarity score.
+
+%The propose neural network encodes both semantic components and questions
+%into vector representation using sentential, syntactical and KB structural information.
+%Finally the model merges vector representations of different components into 
+%a the vector the entire graph,
+%and calculate the semantic similarity of the query graph, given the question.
+
+
+
+\input{schema_repr}
+
+\input{question_repr}
+
+
+\subsubsection{Semantic Similarity Calculation}
+
+%Now we define the similarity function between the question $q$ 
+Given the query graph with multiple semantic components, $G = \{p^{(1)}, \dots, p^{(N)}\}$,
+now all its semantic components have been projected into a common vector space,
+representing hidden features in different aspects.
+%Inspired by the architecture of CNN,
+%common vector for sub.
+%where features of a whole image is determined by the      in some region
+%Each component represents partial semantic information of the query graph.
+%map to a common vector space
+%part of semantics
+%inspired by CNN, the repr of determined by whether a subregion has such feature
+We apply max pooling over the hidden vectors of semantic components,
+and get the compositional semantic representation of the entire query graph.
+Similarly, we perform max pooling for the question vectors 
+with respect to each semantic component.
+Finally, we compute the semantic similarity score between the graph and question:
+\begin{equation}
+S_{sem}(q, G) = cos(\max_{i}{\bi{p}^{(i)}}, \max_{i}{\bi{q}_p^{(i)}}).
+\end{equation}
+
+Based on this framework, our proposed method ensures
+the vector spaces of the question and the entire query graph are comparable,
+and captures complementary semantic features from different parts of the query graph.
+It's worth mentioning that the semantic matching model 
+is agnostic to the candidate generation method of the query graphs,
+hence it can be applied to the other existing semantic parsing frameworks.
+
+
+\subsection{Entity Linking Enrichment}
+\label{sec:ensemble}
+
+The S-MART linker is a black box for our system,
+which is not extendable and tend to produce high precision but low recall linking results.
+To seek a better balance at entity linking,
+we propose an ensemble approach to enrich linking results.
+We first build a large lexicon by collecting all (mention, entity) pairs from
+article titles, anchor texts, redirects and disambiguation pages of Wikipedia.
+Each pair is associated with statistical features, such as linking probability,
+letter-tri-gram jaccard similarity and popularity of the entity in Wikipedia.
+For the pairs found in S-MART results, we take the above features as the input
+to a 2-layer linear regression model fitting their linking scores.
+Thus we learn a pseudo linking score for every pair in the lexicon,
+and for each question, we pick top-$K$ highest pairs to enrich S-MART linking results,
+where $K$ is a hyperparameter.
+%In addition, we add two more linking features,
+%each indicating whether a (mention, entity) pair comes from S-MART or our lexicon.
+
+
+\subsection{Training and Prediction}
+\label{sec:train}
+
+
+To predict the best query graph from candidates,
+we calculate the overall association score $S(q, G)$ between the question $q$ and each candidate $G$,
+which is the weighted sum of features over entity linking, semantic matching and structural level.
+\tabref{tab:feature} lists the detail features.
+
+
+
+%\begin{itemize}
+%\item Semantic similarity score $S_{sem}(q, G)$;
+%\item Sum of S-MART (or pseudo) linking scores of all entities in $G$;
+%\item Sum of binary features over all entities,
+%      each indicating whether the entity comes from S-MART or enriched lexicon.
+%\item Number of each kind of constraints (entity, type, time, ordinal) applied in $G$;
+%\item Binary features, each indicating whether a kind of constraints is applied in $G$ or not;
+%\item Binary feature indicating whether the main path is 1-hop;
+%\item One-hot vector indicating the number of answers queried by $G$.
+%\end{itemize}
+%TODO: change to table style (Berant or other 17/18 papers)
+
+%3. optimization
+%
+%loss pick
+%separately measure: entity linking and relation matching
+%max function: F1\_r = ...
+%generate candidates by particular F1 sequence
+%joint style, 
+%
+%final schema: feature cominbation
+%entity linking score: enhancement
+%
+%optm: random sample 20 negatives (set threshold = 0.1)
+%lower them.
+%
+%max margin
+%
+%rm f1, el f1, full f1
+During training step, we adopt hinge loss to maximize the margin
+between positive graphs $G^+$ and negative graphs $G^-$:
+\begin{equation}
+\label{eqn:maxpool}
+loss = max\{0, \lambda - S(q, G^+) + S(q, G^-)\}.
+\end{equation}
+For each question, we pick a candidate graph as positive data,
+if the $F_1$ score of its answer is larger than a threshold (set to 0.1 in our work).
+We randomly sample 20 negative graphs $G^-$ from the candidate set
+whose $F_1$ is lower than the corresponding $G^+$.
+%TODO: Tricks
+
+\begin{table}[ht]
+    \small
+    \centering
+    \begin{tabular}{|c|l|}
+        \hline
+        \textbf{Category}    & \textbf{Description}   \\
+        \hline
+        Entity  & Sum of S-MART scores of all entities; \\
+                & Number of entities from S-MART; \\
+                & Number of entities from enriched lexicon; \\
+        \hline
+        Semantics & Semantic similarity score $S_{sem}(q, G)$; \\
+        \hline
+        Structural  &  Number of each kind of constraints in $G$; \\
+                    &  Whether a kind of constraints is used in $G$; \\
+                    &  Whether the main path is one-hop; \\
+                    &  Number of output answers. \\
+        \hline
+    \end{tabular}
+    \caption{Full set of features.}
+    \label{tab:feature}
+\end{table}
+
+%TODO: bao, yih: we don't need pre-train
+
+
+
+%\subsection{Attention Mechanism}
+%\label{sec:attention}
+%
+%Attention mechanisms \cite{bahdanau2014neural,luong2015effective} have become an integral part of sequence modeling and transduction models in various nlp tasks, allowing better understanding sequential data. In this paper, we introduce a cross-attention mechanism between question and query graph, aiming to better justify thier compatibility.
+%
+%Our cross-attention mechanism consists of two parts: query graph towards question part and question towards query graph part. Our goal is to find the best query graph from the candidate set. When we look at a question $\bi{q} = (\bi{q}_1, \bi{q}_2, \dots, \bi{q}_n)$ and a candidate query graph $\bi{g} = (\bi{sk}_1, \bi{sk}_2, \dots, \bi{sk}_m)$, we have to judge which parts of the query graph are more related to the question, since each skeleton of a graph describes one semantic aspect of the question. Besides, when we look at the query graph, we will reread the question to find out which words are more focused. Hao et al., \cite{hao2017end} also propose a cross-attention mechanism, aiming to select the best answer towards a question. However, their method does not calculate the attention values on both sides simultaneously, instead they do it in two steps and use an average of word representations in question to guide the attention of answer aspects. 
+%
+%\begin{figure*}
+%	\centering
+%	\epsfig{file=figures/attention.eps, angle=0, width=1.2\columnwidth}
+%	%\scalebox{0.5}{\includegraphics{figures/attention.eps}}
+%	\caption{Cross-attention architecture between question and query graph.}
+%	\label{fig:attention}
+%\end{figure*}
+%
+%Inspired by ABCNN \cite{yin2015abcnn}, we propose a attention matrix $\bi{E}_{att}$  (\figref{fig:attention}), where the attention values of row $i$ denote the attention distribution of the $i$-th word in the question with respect to the query graph, and the attention values of column $j$ denote the attention distribution of the $j$-th skeleton in the query graph with respect to the question. Then we represents the whole question $\bi{q}$ and query graph $\bi{g}$ as follows. 
+%
+%
+%
+%
+%\begin{equation}
+%\label{eqn:att-q}
+%\begin{aligned}
+%& \bi{q} & = & \sum_{i}(\sum_{j}{\bi{E}_{att}}_{ij}) \times \bi{q}_i\\
+%\end{aligned}
+%\end{equation}
+%\noindent
+%
+%\begin{equation}
+%\label{eqn:att-g}
+%\begin{aligned}
+%& \bi{g} & = & \sum_{j}(\sum_{i}{\bi{E}_{att}}_{ij}) \times \bi{sk}_j\\
+%\end{aligned}
+%\end{equation}
+%\noindent
+%
+%In the end, we use a fully connected layer to get a similarity score between $\bi{q}$ and $\bi{g}$.
+%
+%
+%
+%\subsection{Training and Prediction}
+%\label{sec:training}

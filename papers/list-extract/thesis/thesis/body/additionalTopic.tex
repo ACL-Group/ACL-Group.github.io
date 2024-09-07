@@ -1,0 +1,84 @@
+\section{Additional topics}
+\label{sec:additionalTopic}
+
+In this section, we will discuss some topics that we fail to mention in previous sections, including Probase connector, the integration of tools in different programming languages and the deployment on a large distributed computing system.
+
+\subsection{Probase Connector}
+\label{probaseConnector}
+Although it is not shown in our system overview graph (Figure \ref{fig:sys}), Probase connector is an important component for our system. It offers an interface to Probase data.
+The Probase data is stored in form of concept-instance pairs, as is shown in Table \ref{tab:probaseData}.
+
+\begin{table}
+\centering
+\caption{A fragment of Probase data}
+\begin{tabular}{|l|l|l|l|l|} \hline
+Concept ID&Instance ID&Concept&Instance&Frequency\\ \hline
+11994&1&window operating system&XP&4\\
+11994&2&window operating system&promotion&1\\
+11994&3&window operating system&Win98&1\\
+11994&4&window operating system&Win7 x32&1\\
+11994&5&window operating system&XP Professional&1\\
+11994&6&window operating system&Windows XP&19\\
+11994&7&window operating system&Win 95&1\\
+11994&8&window operating system&new windows 7&1\\
+11994&9&window operating system&Apple Mac&1\\
+11994&10&window operating system&Windows Vista&7\\
+11994&11&window operating system&WIN NT&1\\
+11994&12&window operating system&Windows 98&3\\
+11994&13&window operating system&Win7 x64&1\\
+\hline
+\end{tabular}
+
+\label{tab:probaseData}
+\end{table}
+
+The Probase connector mainly handle three kinds of queries:
+
+\begin{itemize}
+\item \textbf{ $GetConcepts(i)$}:
+return all concepts that contain the instance $i$.
+
+\item \textbf{ $GetInstances(c)$}:
+return all instances that the concept $c$ contains.
+
+\item \textbf{ $GetFrequency(c,i)$}:
+return the frequency of the concept-instance pair $(c,i)$.
+
+\end{itemize}
+
+These methods can cover all the need of Probase in our system.
+
+There are several ways to implement the interface. At first, we import the Probase data into a MySQL database\cite{mysqlWebsite} using the same schema as Table \ref{tab:probaseData},
+and simply implement the interface using MySQL queries such as ``SELECT Instance FROM Probase WHERE Concept=`window operating system' ''. This approach is easy to realize and will not take up too much memory. But its drawbacks are also obvious: the MySQL query is too slow (about 20 ms per query, and the system need about 100 queries per page), and we cannot use MySQL database on a distributed system.
+
+Therefore, we have to load the Probase data into the memory. We keep two hash tables (concept to instance and instance to concept) so that all the three queries can be processed in $O(1)$. However the Probase data is so huge that it needs at least 3GB memory without optimization.
+In order to save memory space, we combine the concepts that are of the same lemma (e.g., ``countries'' and ``country'') and so is to instances. \footnote{This is also the reason we choose lemma as one of the feature in the title classifier.}
+Furthermore, we use the hashcode to represent a concept or instance instead of string. At last, we shrink the memory to 1.2GB, which is affordable for normal computers.
+
+\subsection{Integrate Tools in Different Programming Languages}
+Our system is written in C\# language. But some of the tools we use do not have a C\# version, thus it is a problem for our system to invoke these tools written in other languages.
+
+Stanford Parser is written in Java.
+We can convert the jar files into dynamic link libraries(DLL) through IKVM\cite{ikvmWebsite} which is an implementation of Java for the Microsoft .NET Framework.
+In order to make the converted DLLs work properly, we also need to add the IKVM implementation of Java Virtual Machine into the project.
+
+CRF++ is written in C++. Although it is compiled into a DLL, the .NET framework cannot recognize it because it is unmanaged code. As a solution, we write a wrapper in C++/CLR, which is the managed version of C++. To use CRF++, we link the wrapper as well as the CRF++ library into our system and invoke the interface that the wrapper provides.
+
+\subsection{Deploy on a Distributed Computing System}
+As we always claim in this paper, the system is designed for processing the whole web. But no matter how fast it is to process a single page, it is not possible to handle all the pages in any single machine. A practical approach is to deploy the program on a large distributed system, which consists of thousand of computing nodes.
+
+Since the input of our system is one single page, the distributed system can assign different pages to its nodes, so that all the nodes can work concurrently.
+But there is still some restrictions for running on Cosmos, which is listed as follows.
+\begin{enumerate}
+  \item The max memory size is 2GB.
+  \item The max size of data file is 500MB.
+  \item No local file I/O is allowed.
+  \item The running environment is 64bit with .NET Framework 3.5.
+\end{enumerate}
+
+We modify our system to meet the requirement. First we use the methods mentioned in Subsection \ref{probaseConnector} to cut down memory usage. Then we compress the Probase data file (which is originally over 900MB) into a zip file and unzip it in the progress of the system initialization.And other approaches are also applied.
+
+So far we have deployed our system on Cosmos, a large distributed system maintained by MSRA. We have completed experiments on 1/1000 and 1/10 web data successively. And we are going to try a full run in the future.
+
+
+

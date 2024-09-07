@@ -1,0 +1,620 @@
+\section{Experiments}
+\label{sec:experiments}
+In this section, we conduct
+extensive experiments on slogan generation 
+to evaluate the performance
+of the proposed model SALE.
+We introduce the dataset, 
+the competing models and parameter settings,
+as well as the evaluation metrics.
+We also demonstrate the experimental results in a series of evaluations
+and perform further analyses on the effectiveness of our approach
+in generating accurate, fluent, informative and attractive slogans.
+
+\subsection{Dataset}
+\label{sec:dataset}
+We first introduce the text corpora we create
+for slogan generation task in e-commerce.
+Then we describe the evaluation dataset we used in
+our following experiments.
+The datasets are released at \url{https://202.120.38.146/slogan/}.
+
+\subsubsection{Dataset for Slogan Generation}
+\label{sec:corpora}
+%In this section, we describe the experimental setup,
+%especially the hyper-parameter configurations of 
+%the Seq2Seq framework we used in following experiments. 
+%We also detail dataset used in our experiments.
+Slogan generation in E-commerce is a relative new problem.
+Thus, there is a lack of dataset for this task.
+We created a new dataset, containing 
+the basic information of the topics attending to potential focuses or selling-points,
+including the topic and its item preference, as well as the slogan.
+The data are collected from Taobao, a large-scale website for e-commerce in China.
+
+We use the pattern of ``\emph{PV} + \emph{CG}" 
+to construct topics from frequent phrases mining from largely amount
+of query logs and product titles.
+The product titles are composed by the sellers and content producers on the
+website.
+We construct multiple item preferences for each topic by sampling items from 
+secondary categories as well as human intervention to 
+make the items with an item preference concentrate more on a specific focus 
+or selling-point.
+Thus, in each instance, a topic is annotated with an item preference semi-automatically
+by leveraging the category ontology introduced in \secref{sec:introduction}.
+Then, we recruit experts to write a slogan for each data instance.
+Overall, the dataset contains 857 topics and 
+in total 3,555 $(x, p, y)$ instances after preprocessing.
+
+We use four splits named (train/dev/LMdev/test) in our experiments.
+Note that, the LMdev split is for 
+hyper-parameter $\beta$ tuning (see \secref{sec:shallow_fusion} in details).
+The splits are randomly divided based on topics 
+proportionally by 90\%, 5\%, 1.5\% and 3.5\%.
+Thus each split of (train/dev/LMdev/test) includes 771, 43, 13, 30 topics separately,
+and correspond to 3132 training instances, 231 development instances, 
+50 LM development instances, as well as 142 test instances.
+
+%For the evaluation dataset, 
+\subsubsection{Evaluation Dataset}
+\label{sec:eval_dataset}
+We perform algorithm evaluation and human evaluation
+in our experiments (see \secref{sec:metrics} in details).
+Thus we provide two evaluation datasets separately for each.
+We directly use all the 142 instances of test split in \secref{sec:corpora},
+referred as FULLtest,
+for the algorithm evaluation which are based on automatic scoring systems,
+such as BLEU.
+Besides, we randomly sample 50 instances from the test split
+to form a small evaluation dataset for human evaluation,
+referred as HUMtest.
+
+
+\subsection{Compared Methods}
+\label{sec:compared}
+In this section, we introduce the baseline and choices for 
+our model components, as well as the parameter settings
+used in those models.
+
+\subsubsection{Baselines and SALE}
+\label{sec:baselines}
+According to the problem statement (in \secref{sec:problem})
+and the proposed item preference fusion methods (in \secref{sec:preference}),
+the models for comparison backed by Seq2Seq framework are mainly one-way input models and two-way input models.
+
+One-way input models (prefixed by \emph{One}) takes in one-way input as the source sequence,
+and the slogan as its target sequence, without considering 
+semantics enhancement or incorporating pretrained language model.
+There are three one-way input baselines with different inputs.
+\textbf{One-T} (\textbf{t}opic) model
+takes the topic itself as its source sequence,
+while \textbf{One-P} (item \textbf{p}reference) model takes
+the titles of items as its source sequence.
+Then, 
+%while 
+\textbf{One-CAT} (con\textbf{cat}nating) model 
+concatenates the topic and its item preference with special token \emph{SEP}
+as a separator, and takes the sequence of concatenation as its source sequence.
+
+The two-way input models (prefixed by \emph{Two})
+are designed to treat topics and item preferences heterogeneously.
+We propose two kinds of two-way input models
+based on different heterogeneous inputs fusion methods 
+(see details in~\secref{sec:preference}).
+%we propose two fusion methods in \secref{sec:preference}
+%to combine the heterogeneous inputs.
+\textbf{Two-BiAttn} (\textbf{bi}directional \textbf{att}ending) model use the two-way bidirectional attending
+to combine the representations of topics and that of item preferences.
+\textbf{Two-CAT} (con\textbf{cat}nating) model use two-way concatenating strategy 
+to fuse the heterogeneous outputs of encoders.
+
+For \textbf{SALE}, 
+we incorporate the semantics enhancement module
+(in \secref{sec:semantics}) to enrich
+the deep contextualized representations
+backed by Two-CAT baseline.
+\textbf{SALE+PLM} integrates
+%On the basis of SALE, 
+%we integrate
+pre-trained language model (PLM) 
+into SALE at inference time in order to improve
+the generalization and robustness of the model.
+%Specially, SALE identifies the \emph{is-a} relations
+%among heterogeneous inputs and
+%increase the semantic capacity of the model for better contextualized representations
+%knowledge-aware module
+
+\subsubsection{Parameter Settings}
+We use an architecture of 8 stacked convolutional layers 
+for both the topic encoder and the item preference encoder
+as well as the decoder parts with kernel width as 3.
+To enable deep convolutional networks, 
+we add residual connections~\cite{he2016deep} from the input of each convolution
+to the output of the layer as well.
+For each convolutional layer, we set the hidden vector size as 512
+and the embedding size as 256.
+To alleviate the overfitting problem, we add the dropout ($p=0.2$)
+layer~\cite{srivastava2014dropout} for all convolutional layers and fully connected layers.
+
+To optimize the proposed models,
+we use Nesterov's accelerated gradient method
+~\cite{sutskever2013importance} with gradient clipping 0.1
+~\cite{pascanu2013difficulty},
+momentum 0.99, and 
+learning rate 0.2.
+We terminate the training process when the learning rate drops 
+below 10e-5.
+We set beam size as 5 for the beam search algorithm
+in the testing step.
+The hyper-parameter $\beta$ of SALE-PLM (in ~\eqnref{eq:shallow_fusion})
+was selected to maximize the generation performance
+on the LMdev split by grid search, from the range 1e-4 and 0.1.
+
+
+\subsection{Evaluation Metrics}
+\label{sec:metrics}
+We perform both algorithm evaluation and human evaluation
+in our experiments.
+Specially, we evaluate our model on generation quality which includes
+the automatic scoring metrics such as
+BLEU and lexical diversity,
+as well as a number of human-evaluation metrics.
+
+\paragraph{BLEU}
+The BLEU algorithm~\cite{papineni2002bleu} compares consecutive phrases of the 
+generated slogan with the consecutive phrases it finds
+in the reference slogan, and counts the number of matches, in a weighted fashion.
+A higher BLEU score indicates a higher degree of similarity with the reference
+slogan.
+We compare all competing models on test split in terms of the BLEU score as a sanity check.
+We also use BLEU score as the standard metric to finetune
+hyper-parameter $\beta$ in SALE+PLM model.
+
+\paragraph{Lexical Diversity}
+A common problem in automatic text generation is that the system tends to generate safe
+answers with enough diversity~\cite{li2016deep}.
+A low diversity score often means generated contents are general and vague, 
+while higher diversity means the generated contents are more informative and 
+interesting.
+Following~\cite{ChenLZYZ019}, we calculate the number of distinct n-grams produced on the test split
+as the measurement of the diversity of generated descriptions.
+
+\paragraph{Human-evaluation Metrics}
+Automatic scoring metrics including BLEU score and lexical diversity are competitive and inexpensive to operate.
+However, they do not consider
+other important aspects such as intelligibility and grammatical correctness (or fluency) of slogan.
+We use several human-evaluation metrics
+to evaluate competing models on various perspectives.
+\begin{itemize}
+	\item \textbf{Overall quality} is designed to measure the
+	overall generation quality of model.
+	\item \textbf{Relevancy} is used to measure the content relevancy of generated slogan to the given topic and items.
+	\item \textbf{Fluency} focus on the intelligibility and grammatical correctness of generated slogan.
+	\item \textbf{Interestingness} takes personification and attractiveness into account.
+\end{itemize}
+
+
+\subsection{Performance Comparisons and Analysis}
+\label{sec:results}
+
+
+In this section, we conduct an analysis of our proposed model
+to evaluate the contribution of item preference fusion module and
+semantics enhancement module as well as the integration of 
+pre-trained language model.
+
+We evaluate competing models on FULLtest and HUMtest 
+as we described in \secref{sec:eval_dataset}.
+The comparison results of slogan generation are shown in 
+\tabref{tab:auto_eval} and \tabref{tab:human_eval}.
+For human evaluation, we recruit three experts as annotators 
+and ask them to give scores on each aspect of generated slogan, 
+range from 1 to 5,
+then average the scores of each aspect on HUMtest as 
+human evaluation results.
+
+
+\begin{table*}[th]
+	%	\small
+	\centering
+	\caption{Slogan generation results comparison with baseline methods using FULLtest.}
+	\label{tab:auto_eval}
+	\begin{tabular}{lcccc}
+		\hline
+		Model %& Overall quality 
+		& BLEU &  Diversity (n=2) ($\times 10^2$ )& Diversity (n=3) ($\times 10^2$ ) & Diversity (n=4) ($\times 10^2$ ) \\
+		\hline
+		One-T %&  3.30  
+		&  28.34 &  2.25   &  2.45  &  2.37 \\
+		One-P %&  3.86  
+		&  41.11 &   4.74 &    5.99 & 6.33 \\
+		One-CAT  % & 3.82  
+		& 38.86  &  3.86 &  4.77  & 4.94 \\
+		Two-BiAttn  % & 3.86  
+		& 36.99  &  4.82 &  5.87  &  6.03   \\
+		Two-CAT % & 3.95
+		& 40.59  &  4.89 &  5.99  &  6.22 \\
+		\hline\hline
+		SALE % & \textbf{4.16}  
+		& 42.31  & 4.87  &  6.20 &  6.55  \\
+		SALE+PLM % & -  
+		& \textbf{42.36}   &  \textbf{4.89} & \textbf{6.23}  &  \textbf{6.57}  \\
+		%		SingleSG$_{\mathrm{concept}}$ & 28.34 &  3.30 & 3.32 & 4.31 & 4.38 \\
+		%		SingleSG$_{\mathrm{items}}$& 41.11 & 3.84 & 4.0 & 4.30 & 4.22  \\
+		%		MultiSG-{biattn} & 36.99 & 3.86 & 4.05 & 4.17 & 4.11 \\
+		%		MultiSG-{cat} & 40.59 & 3.95 & 4.13 & 4.34 & 4.23  \\
+		\hline 
+	\end{tabular}
+\end{table*}
+
+
+
+\begin{table}[th]
+	\small
+	\centering
+	\caption{Human evaluation for slogan generation task using HUMtest.}
+	\label{tab:human_eval}
+	\begin{tabular}{lcccc}
+		\hline
+		Model & Overall quality & Relevancy &  Fluency & Interestingness \\
+		\hline
+		One-T &  3.30  &  3.32 &  4.31   &  4.38 \\
+		One-P &  3.84 &  4.0 &   4.30 &    4.22  \\
+		One-CAT  &  3.62  & 3.94  & 4.24  & 4.18  \\
+		Two-BiAttn  & 3.86  & 4.05  &  4.16  &  4.11     \\
+		Two-CAT & 3.95  & 4.13  &  4.34 &  4.23   \\
+		\hline\hline
+		SALE & \textbf{4.16}  & \textbf{4.32}  & \textbf{4.53}  &  \textbf{4.43}  \\
+		SALE+PLM & -  & -   &  - &   -  \\
+		%		SingleSG$_{\mathrm{concept}}$ & 28.34 &  3.30 & 3.32 & 4.31 & 4.38 \\
+		%		SingleSG$_{\mathrm{items}}$& 41.11 & 3.84 & 4.0 & 4.30 & 4.22  \\
+		%		MultiSG-{biattn} & 36.99 & 3.86 & 4.05 & 4.17 & 4.11 \\
+		%		MultiSG-{cat} & 40.59 & 3.95 & 4.13 & 4.34 & 4.23  \\
+		\hline 
+	\end{tabular}
+\end{table}
+
+
+
+Firstly, we show the importance of item preference for  slogan generation.
+We introduce item preference features for specific topic
+using category ontology as discussed in \secref{sec:preference}.
+Topic and its item reference are simply concatenate into one input sequence
+in One-CAT model. 
+As we can see that One-CAT substantially outperforms One-T which only use topic as input
+with an advantage of +0.32 overall quality (relatively 9.7\%), +10.5 BLEU, +110.7\% diversity ($n=2$), +144\% diversity ($n=3$) and +81\% diversity ($n=4$),
+Thus, item preference plays an important role in slogan generation task.
+
+However, the results show that
+One-P model which only takes in item preference as input outperforms
+One-CAT on various metrics.
+This imposes that topic and item preference are two heterogeneous inputs,
+thus we should treat them differently in the model using item preference fusion method.
+Next, we analyze the contribution of item preference fusion methods proposed
+in \secref{sec:preference}
+by comparing One-CAT, Two-BiAttn and Two-CAT.
+We can see that show that two-way concatenating method for Two-CAT
+substantially outperforms two-way directional attending for Two-BiAttn.
+Though Two-CAT model slightly decreases on BLEU compared to One-P,
+Two-CAT outperforms One-P according to human evaluation shown in \tabref{tab:human_eval}.
+This suggests that two-way bidirectional attending fusion 
+makes the semantics corruption between two heterogeneously deep contextualized representations.
+Therefore, two-way concatenating fusion method is more effective for 
+heterogeneous inputs combination.
+
+Our proposed \emph{is-a} knowledge-aware model SALE 
+is backed by Two-CAT, equipping with the semantics enhancement module.
+Results show the effectiveness of semantics enhancement module
+proposed in \secref{sec:semantics}.
+As shown in \tabref{tab:human_eval} and \tabref{tab:auto_eval}, 
+SALE outperforms Two-CAT by a substantial margin.
+Specially, semantics enhancement improves the
+diversity scores ($n=3, 4$) 3.5\%, 5.3\% separately .
+SALE also achieves an improvement of 1.72 (relatively 4.24\%) in terms of BLEU, 
+as well as an improvement of 0.57 in terms of overall quality.
+We can see that SALE outperforms all previous baselines on every aspect.
+Thus SALE is able to generate accurate, fluency, informative and attractive slogans.
+We further illustrate this in \secref{sec:cases}. 
+
+
+
+Lastly, we analyze the contribution of pre-trained language model integration
+comparing results of SALE and SALE+PLM.
+As shown in \tabref{tab:auto_eval}, 
+incorporating PLM at inference stably improves the diversity 
+that performs best at every n-gram diversity scores ($n=2,3,4$).
+Note that, we finetuned hyper-parameter $\beta$ for SALE+PLM 
+in terms of BLEU score on LMdev split,
+and SALE+PLM with $\beta = 2e\mathrm{-}4$ achieves best BLEU score as 42.94.
+Thus, we use $\beta=2e\mathrm{-}4$ for SALE+PLM model in test.
+As shown in \tabref{tab:auto_eval}, SALE+PLM 
+outperforms all competing models in terms of BLEU score as 42.36 
+on FULLtest dataset.
+Since the results generated by SALE and SALE+PLM are nearly the same on HUMtest,
+their human evaluation results are same, 
+we do not show result of SALE+PLM in \tabref{tab:human_eval}.
+We can see that in this case the improvement of PLM integration is minor but stable, 
+on both BLEU score and diversity scores.
+We argue that such PLM integration makes our model more robust.
+
+% the contribution of item preferences in one-way input models: OneT, OneP, OneCAT
+% item preference fusion methods for two-way input models: OneCAT, Two-BiAttn, Two-CAT
+% is-a knowledge-aware model SALE: Two-CAT, SALE, SALE+PLM
+
+
+
+
+\subsection{Case Studies}
+\label{sec:cases}
+In this section, we perform case studies to observe 
+how our propose methods influence the generation so that
+the model can generate different slogans for a specific topic
+according to different item preferences.
+Besides, our proposed \emph{is-a} knowledge-aware model SALE generate higher quality slogans
+benefiting from semantics enhancement.
+
+%The running example in \tabref{sec:introduction} illustrates 
+
+In \tabref{tab:vary_preference}, % \tabref{tab:vary_preference}
+two item preferences are provided for topic ``早教玩具" (early education toys).
+The first preference consists of musical toys such as ``音乐拍拍鼓" (musical patting drum),
+which focuses on music education for children,
+while the second preference is mainly about ``手摇铃" (rattle) which focuses on improving concentration ability 
+as well as soothe emotions for babies.
+The second example of 
+\tabref{tab:vary_preference} is the running example we discussed in \secref{sec:introduction}.
+The proposed model SALE successfully captures those focuses 
+and generate attractive slogans accordingly.
+For example, SALE generates \emph{music enlightenment}
+for the focus of musical patting drum
+and generates \emph{soothe baby's emotion } for the focus of 
+rattle.
+As shown in \tabref{tab:vary_preference}, 
+we use red color to mark the preferences and its effects for slogan generation.
+
+We also demonstrate the effectiveness of semantics enhancement
+by comparing slogans generated by SALE and Two-CAT in \tabref{tab:semantics}.
+%as shown in \tabref{tab:semantics}.
+\tabref{tab:semantics_a} shows two example topics associated with an item preference each.
+The entities involved in \emph{is-a} relations
+have been marked as blue. 
+The third column of \tabref{tab:semantics_a} demonstrates the 
+identified relations.
+\tabref{tab:semantics_b} compares slogans generated by SALE and Two-CAT
+for the topics in \tabref{tab:semantics_a}.
+Results show that SALE enhanced by \emph{is-a} knowledge 
+tends to integrate the inferred user needs into slogan,
+for example \emph{the first choice when preparing a gift for mom} for ``large size mother-dress"
+and \emph{always protect you} for ``outdoor sports protective gear",
+which further promotes user interests.
+
+
+%\KZ{You need to translate these into English.}
+% Please add the following required packages to your document preamble:
+% \usepackage{multirow}
+\begin{table*}[th!]
+\begin{center}
+\caption{Two examples of generated slogans by the proposed model SALE, varying
+	the item preference while fixing the topic as input.}
+\label{tab:vary_preference}
+\small
+%\subfloat[Example of slogans generated by SALE.]{
+%	\label{tab:vary_preference_a}
+		\begin{tabular}{c|c|c}
+		\hline
+%		\multicolumn{1}{c}{topic}  
+		topic                                                                    
+		& item preference                   
+%		& semantic relations                                                                                                                    
+		& slogan                                                                         
+		\\ \hline
+		\multirow{2}{*}{\begin{tabular}[l]{@{}l@{}} \\ 早 教 玩 具 \\ early education toys\end{tabular}} 
+		& \begin{tabular}[l]{p{65mm}l@{}}
+%			澳 贝 青 蛙 小 鼓 音 乐 手 拍 鼓\\ (ao bei frog)\\ 
+			儿 童 益 智 早 教 玩 具 宝 宝 \color{red}{音 乐 拍 拍 鼓} \\ 
+			intelligence early childhood education toys \quad 
+			\color{red}{musical patting drum for baby}
+%			\\ 宝 宝 音 乐 拍 拍 鼓 儿 童 益 智 电 动 玩 具 \\ (译文)
+		\end{tabular} 
+		& \begin{tabular}[l]{p{65mm}l@{}}
+		    \textcolor{red}{音 乐} \color{black}{早 教} \color{red}{启 蒙} , 
+			\color{black}{宝 宝 智 能 } \color{red}{手 拍 鼓} \\ 
+			early childhood education \quad \color{red}{music} \quad \color{red}{enlightenment}
+			\textcolor{black}{, intelligent} \quad \color{red}{patting drum} \quad
+			\color{black}{for baby} 
+		\end{tabular} \\ \cline{2-3} 
+		& \begin{tabular}[l]{p{65mm}l@{}} 宝 宝 益 智 早 教 婴 幼 儿 \color{red}{手 摇 铃} \\
+			\textcolor{red}{rattle} \color{black}{for baby intelligence early education}
+%			\\ 澳 贝 新 生 婴 儿 牙 胶 手 摇 铃\\ (译文) 
+		\end{tabular}            
+%		& \begin{tabular}[c]{@{}l@{}}
+%			手 拍 鼓, \emph{hypo}, 玩 具
+%		\end{tabular}                                                    
+		& \begin{tabular}[l]{p{65mm}l@{}}婴 儿 益 智 \color{red}{摇 铃}, \color{red}{安 抚} \color{black}{宝 宝} \color{red}{情 绪} 
+			\color{black}{神 器}\\ intelligence development \color{red}{rattle} 
+			\color{black}{for baby, the best tool to} \color{red}{soothe} \color{black}{the baby}
+		\end{tabular}    \\ \hline
+%	\end{tabular}
+%}
+%\cut{%%%%%%%%%%%%
+%\qquad
+%\subfloat[]{
+%	\label{tab:vary_preference_b}
+%	\begin{tabular}{c|c|c}
+%		\hline
+		%		\multicolumn{1}{c}{topic}  
+%		topic                                                                    
+%		& item preference                   
+%		%		& semantic relations                                                                                                                    
+%		& slogan                                                                         
+%		\\ \hline
+		\multirow{2}{*}{\begin{tabular}[l]{@{}l@{}} \\ 玻 璃 灯 具\\ glass light fixture \end{tabular}} 
+		& \begin{tabular}[l]{p{65mm}l@{}}客 厅 \color{red}{ 现 代 简 约 吸 顶 灯} \color{black}{两 室 一 厅 套 装 灯} \\ 
+			\textcolor{red}{morden style living room ceiling light} \quad light set for two-bedroom apartment
+%			\\ 创 意 led 客 厅 吸 顶 灯 水 晶 灯 \\ (译文)
+		\end{tabular} 
+		& \begin{tabular}[l]{p{65mm}l@{}}\textcolor{red}{现 代} \color{black}{元 素} \color{red}{吸 顶 灯} , 彰 显 \color{red}{极 简} 魅 力 \\ 
+		\textcolor{red}{ceiling lights} \color{black}{in} \textcolor{red}{modern} \color{black}{style, shining} \textcolor{red}{minimalist} \color{black}{charm} 
+		\end{tabular} \\ \cline{2-3}
+		& \begin{tabular}[l]{p{65mm}l@{}}
+%			台 灯 卧 室 床 头 灯 温 馨 浪 漫 ins 少 女 个 性 创 意 \\(译文) \\ 
+			钟 爱 一 生 台 灯 卧 室 \color{red}{暖 光} \color{black}{床 头 灯} \color{red}{温 馨} \color{black}{布 艺} \\ 
+			the favorite table lamp \quad table lamp with \color{red}{warm ligth} \color{black}{for living room} \quad \color{red}{warm} \color{black}{cloth art}
+		\end{tabular}            
+		& \begin{tabular}[l]{p{65mm}l@{}} 一 灯 一 世 界, 一 亮 一 \color{red}{温 馨} \\ 
+		lights in your world, bright and \textcolor{red}{warm}  
+		\end{tabular} \\ \hline
+	\end{tabular}
+%    }%%%%%%%%%%
+%}
+\end{center}
+\end{table*}
+
+
+\begin{table*}[th!]
+	\begin{center}
+		\caption{The influence of semantics enhancement for slogan generation.}
+		\label{tab:semantics}
+		\small
+		\subfloat[Examples of relation identification in SALE.]{
+			\label{tab:semantics_a}
+			\begin{tabular}{c|c|c}
+				\hline
+				%		\multicolumn{1}{c}{topic}  
+				topic                                                                    
+				& item preference       
+				%		& semantic relations                                                                                                                    
+				& semantic relations                                                                         
+				\\ \hline
+				\begin{tabular}{p{10em}}
+				大 码 \color{blue}{妈 妈 装 }\\ large size \color{blue}{mother-dress}
+				\end{tabular}
+				& \begin{tabular}{p{20em}}
+				中 老 年 \color{blue}{女 装} \color{black}{秋 装 长 袖 连 衣 裙 夏 中 年 妈 妈 装 打 底 衫 秋 春 季 大 码 连 衣 裙 子} \\ middle-aged and old \color{blue}{women's clothing} \quad \color{black}{autumn long sleeves \quad summer dress  \quad blouses for middled-aged women  \quad large size dresses for spring and autumn
+				}   \end{tabular} 
+				& \begin{tabular}{p{12em}<{\centering}} (女 装, \emph{hyper}, 妈 妈 装)  \\ (women's clothing, \emph{hyper}, mother-dress ) \end{tabular} \\ 
+				\hline
+				
+				\begin{tabular}{p{10em}}
+					户 外 运 动 \color{blue}{ 护 具 }\\ outdoor sports \color{blue}{protective gear}
+				\end{tabular}
+				& \begin{tabular}{p{20em}}
+					裤 袜 加 长 \color{blue}{护 小 腿 } \color{black}{超 薄 跑 步 健 身 } \color{blue}{护 膝} \color{black}{护 具 男 女 运 动 装 备}   \\
+					lengthen legging pantyhose \quad \color{blue}{leg protector} \quad \color{black}{ultra thin sports} \color{blue}{knee pads} \quad \color{black}{sports protective gear for men and women} 
+				\end{tabular} 
+				& \begin{tabular}{p{12em}<{\centering}} (护 小 腿, \emph{hypo}, 护 具)  \\ (leg protector, \emph{hypo}, protective gear) \\
+				 (护 膝, \emph{hypo}, 护 具) \\ (knee pad, \emph{hypo} protective gear) \end{tabular} \\ 
+			    \hline
+				
+			\end{tabular}
+		}
+	\qquad
+		\subfloat[Comparision of capturing potential user needs.]{
+		\label{tab:semantics_b}
+		\begin{tabular}{c|c}
+			\hline  
+			model                                     & slogans                           \\ \hline
+			\begin{tabular}{p{7em}<{\centering}}Two-CAT\end{tabular}
+			& \begin{tabular}{p{32em}} 中 老 年 连 衣 裙 , 时 尚 \\ 
+			middle-aged and old women's dress, fashion\end{tabular} \\ 
+			\begin{tabular}{p{12em}<{\centering}}SALE\end{tabular}	
+			& \begin{tabular}{p{32em}} 中 老 年 连 衣 裙 , \color{blue}{送 妈 妈}  \color{black}{的 首 选}\\
+			middle-aged and old women's dress, the best choice \color{blue}{for mommy}
+		 \end{tabular} \\ 
+			\hline
+			\begin{tabular}{p{7em}<{\centering}}Two-CAT\end{tabular}
+			& \begin{tabular}{p{32em}} 运 动 套 装 , 穿 出 潮 流 感 \\ 
+			sports sweatsuit, fashion \end{tabular} \\ 
+			\begin{tabular}{p{12em}<{\centering}}SALE\end{tabular}	
+			& \begin{tabular}{p{32em}} 运 动 不 能 少 , 时 刻 \color{blue}{保 护} 你 \\ 
+			exercise is indispensable, \color{blue}{protecting} \color{black}{you at all time}
+			\end{tabular} \\ 
+			\hline
+			
+		\end{tabular}
+	}
+
+	\end{center}
+\end{table*}
+%大 码 妈 妈 装
+%中 老 年 女 装 秋 装 长 袖 连 衣 裙 夏 中 年 妈 妈 装 打 底 衫 秋 春 季 大 码 连 衣 裙 子
+%中 老 年 连 衣 裙 , 送 妈 妈 的 首 选
+%中 老 年 连 衣 裙 , 时 尚 时 尚
+%
+%户 外 运 动 护 具
+%篮 球 骑 行 登 山 健 身 护 腿
+%裤 袜 加 长 护 小 腿 超 薄 跑 步 健 身 护 膝 护 具 男 女 运 动 装 备
+%运 动 套 装 , 穿 出 潮 流 感
+%运 动 不 能 少 , 时 刻 保 护 你
+
+%玻 璃 灯 具
+%
+%(glass light fixture)
+%
+%欧 式 吸 顶 灯 圆 形 LED 吸 顶 灯 具
+%创 意 led 客 厅 吸 顶 灯 水 晶 灯
+
+
+%音 乐 早 教 启 蒙 , 宝 宝 智 能 手 拍 鼓
+%
+%(译文)
+%
+%儿 童 安 抚 摇 铃 , 哄 娃 益 智 两 手 齐 抓
+%
+%(译文)
+
+
+%儿 童 早 教
+%
+%(early childhood education)
+%
+%
+%澳 贝 青 蛙 小 鼓 音 乐 手 拍 鼓,
+%(译文)
+%儿 童 益 智 早 教 玩 具 澳 贝 宝 宝 音 乐 拍 拍 鼓
+%(译文)
+%宝 宝 音 乐 拍 拍 鼓 儿 童 益 智 电 动 玩 具 
+%(译文)
+%
+%
+%音 乐 早 教 启 蒙 , 宝 宝 智 能 手 拍 鼓 
+%(译文)
+
+
+
+% Please add the following required packages to your document preamble:
+% \usepackage{multirow}
+
+%\begin{table*}[th!]
+%\begin{center}
+%\caption{Study cases for generated slogans.}
+%\label{tab:vary_preference}
+%\subfloat[Each pair of slogans is generated by varying the item preference while fixing the topic as input. ]{
+%        \label{tab:case_a}
+%\begin{tabular}{p{1.5em}<{\centering}|p{27em}|p{5em}}
+%	\hline
+%	\multicolumn{1}{c}{\multirow{2}{*}{topic: 儿 童 早 教 \\ (early childrenhood education)} }
+%
+%	\hline
+%	\end{tabular}
+%}
+%\end{center}
+%\end{table*}
+
+%\caption{Each pair of slogans is generated by varying the item preference while fixing the topic as input. }
+
+%长 袖 大 码 妈 妈 装
+%
+%儿 童 玩 具
+%宝 宝 巴 士 正 品 奇 奇 妙 妙 形 象 熊 猫 公 仔 宝 宝 的 好 伙 伴 礼 物 娃 娃 毛 绒 玩 具
+%
+%儿 童 玩 具 , 玩 出 百 变 造 型
+%创 意 玩 具 , 捏 出 百 变 造 型
+%
+% 1 2 个 月 儿 童 早 教
+% 宝 宝 手 拍 鼓 , 早 教 益 智 好 伙 伴
+% 音 乐 早 教 启 蒙 , 宝 宝 智 能 手 拍 鼓
+% 儿 童 早 教 益 智 玩 具 清 单
+% 益 智 音 乐 玩 具 , 开 发 宝 宝 无 限 智 力
+

@@ -1,0 +1,33 @@
+\section{Background and Related Work}
+In this section, we review the necessary background on Transformer-based pre-trained language models and popular importance criteria for iterative pruning.
+\subsection{Transformer-based Pre-trained Language Models}
+Most existing pre-trained neural language models~\cite{gpt2,bert,minilm,electra} are based on the Transformer~\cite{transformer} architecture, which consists of several identical blocks of self-attention and feedforward network. After pre-training on a massive amount of unlabeled general-domain corpus in a self-supervised learning manner, these models exhibit superior performance on various downstream tasks via fine-tuning. However, good generalization performance comes at the cost of a vast amount of parameters. For example, the base version of BERT has 110M parameters and leads to more than 400MB of disk storage. Therefore, how to effectively reduce model size while preserving as much task accuracy as possible remains a challenging research problem.
+\subsection{Iterative Pruning}
+Pruning methods can be divided into two categories: one-shot pruning~\cite{oneshot1,oneshot2} and iterative pruning~\cite{l0,movement,platon}. One-shot pruning removes parameters of low importance after training. It is efficient but ignores the complicated training dynamics when applied to modern large neural language models. On the contrary, iterative pruning performs training and pruning simultaneously. Therefore, the resulting sparsity pattern is aware of the complex dynamics of parameters through the course of training and delivers considerable improvement compared to one-shot pruning.
+
+Let $\bm{\theta}^{(t)}=\{\theta_1^{(t)}\,\theta_2^{(t)},...,\theta_d^{(t)}\}$ denote the $d$-dimensional model parameters at $t$-th training iteration, the typical updating rule of iterative pruning can be formulated as:
+\begin{align}
+	\hat{\bm{\theta}}^{(t+1)}&=\bm{\theta}^{(t)}-\eta^{(t)}\nabla_{\bm{\theta}} \mathcal{L}(\bm{\theta}^{(t)}) \\
+	\bm{\theta}^{(t+1)} &= \hat{\bm{\theta}}^{(t+1)} \odot \bm{M}^{(t)}
+	\label{eq:updaterule}
+\end{align}
+where $\eta^{(t)}$ is the learning rate at time step $t$ and $\mathcal{L}$ is the learning objective. The temporarily updated $\hat{\bm{\theta}}^{(t+1)}$ is further pruned by the binary mask $\bm{M}^{(t)}$$\in$ $\{0,1\}^{d}$, which is computed based on a given importance criterion $\bm{S}^{(t)}$:
+\begin{align}
+	\bm{M}^{(t)}_i=
+	\begin{cases} 
+		1, & \text{if }~\bm{S}^{(t)}_i\text{is in the top-}r^{(t)}\text{of }\bm{S}^{(t)}\\
+		0,  & \text{otherwise}  
+	\end{cases}
+\label{eq:mask}
+\end{align}
+where $r^{(t)}$$\leq d$ indicates the number of remaining parameters at time step $t$ according to a given sparsity scheduler.
+\subsection{Importance Criteria for Model Pruning}
+Popular importance criteria for model pruning include parameters' magnitude and sensitivity.
+\paragraph{Magnitude} is a simple yet effective importance criterion that is widely used for model pruning. It estimates the importance of each parameter as its absolute value, i.e., $\bm{S}^{(t)}_i=|\bm{\theta}^{(t)}_i|$. Despite its simplicity, the magnitude cannot accurately gauge the importance of parameters because even parameters with small magnitude can have a large impact on the model prediction due to the complex compositional structure of PLMs.
+
+\paragraph{Sensitivity} is another useful importance criterion. It estimates the importance of each parameter as the absolute change of the learning objective if the parameter is pruned, i.e., set to zero. The mathematical formulation of the sensitivity of $i$-th parameter is given by:
+\begin{align}
+	\bm{S}^{(t)}_i& =|\mathcal{L}(\bm{\theta}^{(t)}_{-i})-\mathcal{L}(\bm{\theta}^{(t)})| \\
+	&\approx |\bm{g}_i^{(t)}\bm{\theta}^{(t)}_i|
+\end{align}
+where $\bm{\theta}^{(t)}_{-i}$ is identical to $\bm{\theta}^{(t)}$ except that the $i$-th entry is set to zero and $g_i^{(t)}$ is the gradient of $i$-th entry. Though taking the training dynamics into account, sensitivity still estimates the importance of each parameter individually without considering the effect of holistic parameter update.

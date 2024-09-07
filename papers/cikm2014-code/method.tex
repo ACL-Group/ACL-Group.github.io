@@ -1,0 +1,145 @@
+\section{Our Approach}
+In this section, we introduce a probabilistic graphical model of repositories
+and the inference of it. In addition, we explore the method of how to map 
+the code file distributions to the hierarchical taxonomy.
+\subsection{Model for Repository}
+\label{sec:method}
+%\JK {why we design the model like this? explain it with examples.}
+Firstly, we will introduce the intuation of this model with the problems
+we listed in \secref{sec:pro} about \exref{ex-bear1}. As is known that
+programming languages are artificial languages which are different from
+natural languages. They have specific grammar and structures. Let's have a
+look at how programmers write these code files. 
+\begin{itemize}
+\item For code part, programmers intend select the words with use meaningful
+semanic, but tese words have to effected by the speical grammer of the specific
+programming language.
+\item For comment part, this is a natural language part where programmers
+talk to himself and other readers, i.e. {\it /* Get and return 
+the current wall-time in ticks since boot. */} in ``clock.c''. Of course,
+these text are in special area of programming.
+\item For commits, programmers usually have to consider what has been done
+during this change, this is directly related to the files it touches. In addition,
+according to the special usage of commit, some words like ``fix'', ``bug'' will 
+also apper inside.
+\end{itemize}
+
+We don't have labeled code data, but there are plenty of labeled natural language text
+of programming area on website, like {\it Stack overflow}. If we can extract
+the corresponding natural language semantic part of code files, we can take
+advantage of those labeled text to classify what semantics the code files are.
+
+
+To mine the topics of repositories, we have to get a comprehension of the 
+relationships between the topics of different part of the repositories.
+Figure \ref{fig:spet} shows the probabilistic graphical representation of the 
+source code system. In this figure, the left part represents one check in 
+message and the right part represents a source code file. The variable $a$ 
+between these two files means whether they are related to each other.
+\begin{figure}[h]
+\begin{center}
+\includegraphics[width=0.7\columnwidth]{figure/seprate.eps}
+\caption{Graphical Model for Code Repository.
+d:file, z:topic, w:word, l:language, c:commit, a:connection}
+\label{fig:spet}
+\end{center}
+\end{figure}
+
+We simulate the generation process of the source code repositories with some 
+simple assumptions:
+For each document $d_m$, the topic of it follows multinorminial distribution $z_{i,m} \sim Multi(z|d_m)$.
+Each words, both identifier from code and normal words from comments, also 
+follow multinorminial distribution when given the topic. 
+One one hand, comments are more likely to be netural languages that the coder used to explain the topics
+of those files, the generation os comments are just decided by the topics $w_{j,m} \sim Multi(w|z_{j,m})$. 
+On the other hand, the identifier of code are from the languages
+of computer, they could also be influenced by the programming 
+language itself, which is depicted like $w_{i,m} \sim Multi(w|z_{i,m},l)$.
+
+The generation of commit messages are different from code. 
+There is a ``many to many'' relationship between code files and commit messages.
+One code file may have a series of commit messages and one commit message may touch
+several code files. We make the assumption that they follow one Bernoulli distirbution
+$a_{u,m}\sim Bernoulli(a|c_u,d_m)$. Since the topics of one commit message 
+can be decided by what is done by this commit. Actually we simplify the reasons 
+into two main part, the topics of those files it changed and the commit itself.
+\begin{itemize}
+\item For the words that is decided by the code files it touches, they are 
+generated with two multinorminial distributions $z_{n,u}\sim Multi(z|D,a)$ and 
+$w_{n,u} \sim Multi(w|z_{n,u})$ 
+\item For those decided by the commit itself, we assume that that words 
+follow multinorminial distribution $w_{n,u} \sim Multi(w|c_u)$ 
+\end{itemize}
+
+Given the representation of the model, one repository can be generated with the 
+following process.
+
+\begin{itemize}
+\item \textcolor{red}{For each document $d_m$ which is under a set of directories $Dir$}
+\begin{itemize}
+\item \textcolor{red}{Draw a connection $b_{m}\sim Bernoulli(b|d_m,Dir)$}
+\end{itemize}
+\item \textcolor{red}{For each identifier token $w_i$ in a document $d_m$ which is under a set of directories $Dir$,}
+\begin{itemize}
+\item \textcolor{red}{Draw a topic $z_{i,m} \sim Multi(z|d_m,b_m,Dir)$}
+\item Draw an identifier $w_{i,m} \sim Multi(w|z_{i,m},l)$
+\end{itemize}
+\item For each comment token $w_j$ in a document $d_m$,
+\begin{itemize}
+\item Draw a topic $z_{j,m} \sim Multi(z|d_m)$
+\item Draw an token $w_{j,m} \sim Multi(w|z_{j,m})$
+\end{itemize}
+\item For each check in message $c_u$ and document $d_m$ 
+\begin{itemize}
+\item Draw a connection $a_{u,m}\sim Bernoulli(a|c_u,d_m)$
+\end{itemize}
+\item For each token $w$ of check in message $c$, as well as all the source code 
+files set $D$ and the connection matrix $a$
+\begin{itemize}
+\item Draw a topic $z_{n,u}\sim Multi(z|D,a)$
+\item Draw a token $w_{n,u} \sim Multi(w|z_{n,u},c_u)$ 
+\end{itemize}
+\end{itemize}
+
+The target result we want is a combination of the topic distribution of the 
+source code documents:
+
+\textcolor{red}{$p(topic|document, directory)=p(z|d, Dir)$.}
+
+We can easily find that it comes from two different parts, code files
+and commit messages.
+
+Since the words distributions of codes $p(w|z_{i,m},l)$ and commits $p(w|z_{n,u},c_u)$ 
+are both decided by two different part, we made the assumption as \equref{equ:split}. 
+\begin{align}
+\label{equ:split}
+\begin{split}
+p(w|z_{i,m},l)&=\eta p(w|z_{i,m})+(1-\eta) p(w|l)\\
+p(w|z_{n,u},c_u)&=\lambda p(w|z_{n,u})+(1-\lambda) p(w|c_u)\\
+\end{split}					
+\end{align}
+
+For the topic distribution of one commit message $p(z|D,a)$, since it is decided by 
+code files it touches, we model those code files as fair contributers. In other words,
+if one commit message only touches one code file, the topic of it is totally decided
+by the very code file; if one commit message touches ten code files, each file contributes
+$1/10$ of its topic distribution to the commit message.
+\begin{align} 
+\begin{split}
+p(z|D,a)=\sum _{d_m \in D }{ p(z|d_m,a_{u,m})}=\sum _{d_m \in D }\xi_{u,m} {p(z|d_m)}\\
+\end{split}					
+\end{align}
+where 
+\[\xi_{u,m}=\frac{a_{u,m}}{\sum _{m}{a_{u,m}}}\]
+
+\textcolor{red}{
+\begin{align} 
+\begin{split}
+p(z|d_m,b_m,Dir) = \mu p(z|d_m) + (1-\mu) p(z|b_m,Dir)\\
+p(z|b_m,Dir) = \sum _{dir_i \in Dir}{p(z|dir_i,b_m)}\\
+\end{split}					
+\end{align}
+}
+
+\input{inference}
+\input{mapping}

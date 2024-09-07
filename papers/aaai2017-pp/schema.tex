@@ -1,0 +1,108 @@
+\subsection{Schema Inference}
+\label{sec:schema}
+
+
+%With candidate schemas been generated, we now aim to learn the most suitable representations for each relation.
+For each relation $r$, after generating its candidate schemas, we now aim to learn the most suitable representation among them. 
+It's a natural idea to compute the conditional probability over all the candidates.
+As a data-driven approach, we model the learning process as a query processing
+task: \KZ{Rephrase: given the subject (or object) entity in an instance of $r$, 
+use the schemas to query the best possible entity at the other end of
+the relation.}
+%Since more general schemas may produce too many irrelevant querying results, while more specific schemas may not able to find the correct entity,
+In order to handle the trade-off between general and specific schemas, 
+we use maximum likelihood estimation across
+all queries as the measurement to discover the most suitable schemas, which lead to the correct result and produce less irrelevant entities.
+The likelihood is defined as below:
+
+\begin{equation}
+l(\theta) = \prod\nolimits_{i} {P(o_i | s_i ; \theta) P(s_i | o_i ; \theta)},
+\end{equation}
+\noindent
+where $\theta$ is the vector of schema probability distribution,
+whose length is the same as the number of schemas generated for relation $r$,
+and $s_i, o_i$ indicates the subject and object of the i-th entity pair respectively.
+
+We compute $P(o_i | s_i ; \theta)$ as a generative process:
+We first randomly choose a schema depending on Multinomial($\theta$), then we query the schema on $s_i$,
+and finally $o_i$ is randomly picked from the corresponding query results.
+We define this generation step as:
+
+\begin{equation}
+P(o_i | s_i ; \theta) = \sum\nolimits_{j} {\theta_j P(o_i | s_i, sc_j)}.
+\end{equation}
+
+Suppose $q(s_i, sc_j)$ is the queryresult set of $j$-th schema on 
+the $i$-th subject, $o_i$ is uniformly selected from the set,
+with probability defined below:
+
+\begin{equation}
+P(o_i | s_i, sc_j) = \left\{
+  \begin{aligned}
+  & 1 / \left| q(s_i, sc_j) \right| & ~ & o_i \in q(s_i, sc_j) \\
+  & \alpha & ~ & \rm{otherwise} \\
+  \end{aligned}
+\right.,
+\end{equation}
+\noindent
+here $\alpha$ is a smoothing parameter, 
+since we don't want the likelihood to be 0.
+The similar formula holds for $P(s_i | o_i ; \theta)$, 
+which stands for the probability of querying a subject from object.
+
+We have so far turned the schema inference problem into an optimization task: 
+adjusting the probability distribution $\theta$, 
+such that likelihood function is maximized. 
+In order to solve the problem, we apply the RPROP 
+algorithm~\cite{riedmiller1993direct}
+and iteratively search the best probability distribution.
+The algorithm converges after 500 iterations on average.
+
+%In this section, we model the probability distribution of schemas for each relation. 
+%Previously during the candidate schema generation, a set of candidate schemas have been generated from training instances of each relation. The candidate schemas are different from each other, and each of them represents one scenario the corresponding relation can be applied with different possibilities.
+%% an example here? 
+%
+%Thus it's natural that we need to give a probability distribution of all candidate schemas for each relation in order to better describe the semantic meaning of that relation when we put it into real tasks like knowledge base completion.
+%
+%First, we introduce some notations: %(12 lines)
+%\begin{itemize}
+%  \itemsep0em
+%  \item $In(r)$: the set of input instances of relation $r$;
+%  \item $subj_i(r), obj_i(r)$: the $i^{th}$ subject entity and object entity in the input instances of $r$, where $i \in [1, |In(r)|]$;
+%  \item $s_j(r)$: the $j^{th}$ schema generated for relation $r$;
+%  \item $obj_s(e_1), sub_s(e_2)$: given a schema $s$, 1) the set of all object entities of a subject entity $e_1$ in KB and 2) the set of all subject entities of an object entity $e_2$ in KB; 
+%  %\item $obj_r(e_1), sub_r(e_2)$: all distinct object (or subject) entities of $e_1$ (or $e_2$) in the input instances;
+%%  \item $NS_r(e_1), NS_r(e_1)$: all distinct $e_2$ (or $e_1$) where $\langle e_1, e_2 \rangle$ is in negative instances,
+%  %\item $obj_{sr}(e_1) = obj_s(e_1) \cap obj_r(e_1)$;
+%  %\item $sub_{sr}(e_2) = sub_s(e_2) \cap sub_r(e_2)$.
+%\end{itemize}
+%Our goal is to model the probability of schema $j$ given relation $r$: $p(s_j|r)$. 
+%In the mean time, we have to maximize the following likelihood objective function for all the input instances: 
+%\begin{equation}
+%\small
+%\prod\limits_{i=1}^{|In(r)|}{p(obj_i(r)|r, subj_i(r))
+%\cdot p(subj_i(r)|r, obj_i(r))}
+%\end{equation}
+%\normalsize
+%And we have:
+%\begin{equation}
+%\small
+%p(obj_i(r)|r, subj_i(r)) = \sum\limits_{j}{p(s_j|r)\cdot p(obj_i(r)|s_j,subj_i(r))}
+%\end{equation}
+%
+%Similarly, we can get $p(subj_i(r)|r, obj_i(r))$.
+%Then we use gradient descent to adjust $p(s_j|r)$ to maximize the objective function. 
+%And we query KB to calculate the following probability:
+%\begin{equation}
+%\small
+%  p(obj_i(r)|s_j,subj_i(r)) \\
+%   = \left\{
+%  	\begin{aligned}
+%	\! 1 / \left| obj_{s_j}(subj_i(r)) \right|  & ~ &  obj_i(r) \! \in \! obj_{s_j}(subj_i(r))  \\
+%	\! 0 & ~ & obj_i(r) \! \notin \! obj_{s_j}(subj_i(r))    \\
+%	\end{aligned}
+%  \right..
+%\end{equation}
+%\normalsize
+%
+%

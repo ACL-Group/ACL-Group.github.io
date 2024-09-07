@@ -1,0 +1,150 @@
+\section{Experiments}
+\label{sec:exp}
+
+In this section, we present experimental results to: (1) exhibit the benefits brought by PsySym's design choices such as multi-disease modeling, and the incorporation of status inference for symptom identification. (2) examine the effectiveness of symptom features for MDD. (3) demonstrate the interpretability enabled by symptom identification for MDD.
+
+\subsection{Methods of Comparison}
+
+For all prediction tasks, we mainly compared the proposed methods with 2 types of baselines: \textbf{TF-IDF+LR} is a representative non-deep learning method which utilizes TF-IDF to extract textual features, followed by a Logistic Regression model for prediction. \textbf{BERT/MBERT} uses pretrained, \texttt{base} size of BERT and MentalBERT \citep{ji2021mentalbert}, which can establish a strong baseline. More details like hyperparameter settings can be seen in Appendix \ref{apd:settings}.
+
+\subsection{Symptom Relevance Judgment}
+\label{sec:relevance_exp}
+
+For symptom relevance judgment, we first conduct experiments on PsySym without control posts mainly to check the effectiveness of different modeling choices. We report the performance in Table \ref{tab:symp} according to the threshold-free metric AUC, averaged across each symptom class in the subset of each disease.
+
+\begin{table}[h]
+    \small
+    \centering
+    \begin{tabular}{clc}
+    \hline
+    \multicolumn{1}{l}{} & Method & AUC   \\ \hline
+                         & TF-IDF+LR                      & 87.86 \\
+                         & BERT                           & 91.60 \\
+    \multirow{-3}{*}{\begin{tabular}[c]{@{}c@{}}Single\\ Disease\\ (7 models)\end{tabular}} & MBERT                 & \textbf{91.77} \\ \hline
+                         & MBERT                          & 91.00 \\
+                         & MBERT (loss mask)              & 92.21 \\
+    \multirow{-3}{*}{\begin{tabular}[c]{@{}c@{}}Multi\\ Disease\\ (1 model)\end{tabular}}   & MBERT (label enhance) & \textbf{92.94} \\ \hline
+    \end{tabular}
+    \caption{Symptom relevance judgment results on PsySym without control posts.}
+    \label{tab:symp}
+\end{table}
+
+The single disease methods on the first 3 rows leverage models trained separately on the each disease subset. We can see that BERT significantly outperforms TF-IDF+LR, while the further pretraining on mental-health corpus done by MBERT can bring additional improvement. We thus use MBERT in the following experiments. The last 3 multi-disease methods only train one model on the combined dataset of all diseases, where we will tackle the problem of missing labels with the techniques introduced in \S \ref{sec:model_rel}. Comparing the third and fourth row, we can see that the multi-disease model's performance drops with the default strategy of treating all missing labels as negative. However, with \textit{Loss Masking}, the multi-disease model can now outperform the single disease counterpart, and \textit{Label Enhancement} brings additional gain. This proves our hypothesis that the simultaneous modeling of multi-disease data can help improve the relevance judgment performance. 
+
+In order to predict symptom features for general user posts, we then train a relevance model on PsySym with control posts, leveraging the additional balanced sampler (\S \ref{sec:model_rel}). Its AUC is 98.54 and F1 (with threshold 0.5) is 67.03, averaged across 38 symptoms on the full test set containing all diseases and control posts, while directly transfer the model not trained with control posts would lead to only 30.53 F1.
+
+\begin{table*}[t]
+    \centering
+    \small
+    \begin{tabular}{lc}
+    \hline
+    \multicolumn{1}{c}{Posts (paraphrased for anonymity)}   & Predicted Symptom   \\ \hline
+    I have a problem with hoarding.                         & Obsession           \\
+    Compulsive nail biting is my problem and I also bathe compulsively.       & Compulsion   \\
+    I am under so much stress that not even bath can make the anxiety go away. & Anxious Mood \\ \hline
+    \multicolumn{2}{c}{Typical OCD symptoms: Obsession \cmark~ Compulsion \cmark~ Anxious Mood \cmark} \\
+    \hline
+    \end{tabular}
+    \caption{The predicted symptoms of some posts by an OCD patient, which covered all typical OCD symptoms and constituted a convincing explanation for the diagnose. }
+    \label{tab:explain_tp}
+\end{table*}
+
+\begin{table*}[t]
+    \centering
+    \begin{minipage}{.48\textwidth}
+      \centering
+      \small
+      \begin{tabular}{l|l}
+        \hline
+Dataset Label      & Autism, \textcolor{red}{Eating disorder, PTSD}  \\
+Disease Prediction & Autism  \\
+Predicted Symptom  & \begin{tabular}[c]{@{}l@{}}{[}Autism{]} social problems~\cmark \\ {[}EAT{]} appetite change~\xmark\\ {[}PTSD{]} fear of trauma~\xmark \end{tabular} \\
+        \hline
+      \end{tabular}
+    \end{minipage}
+    \begin{minipage}{.48\textwidth}
+      \centering
+      \small
+      \begin{tabular}{l|l}
+        \hline
+        Dataset Label      & OCD  \\
+        Disease Prediction & OCD, \textcolor{teal}{Anxiety}  \\
+        Predicted Symptom  & \begin{tabular}[c]{@{}l@{}}{[}OCD{]} obsession~\cmark \\ {[}Anxiety{]} anxious mood~\cmark\\ ~~~~~~~~~~~~~~~~~social anxiety~\cmark\end{tabular} \\
+        \hline    
+    \end{tabular}
+    \end{minipage}
+    \caption{Examples where our disease prediction model corrects the inaccurate labels produced by automatic methods. Symptom-based explanations can help detect such labeling errors and justify correct predictions.}
+    \label{tab:explain_fp_fn}
+\end{table*}
+
+\subsection{Symptom Status Inference}
+
+Since the status inference model is trained with the non-binary targets of annotation distribution, we use Mean Absolute Error (MAE) as the evaluation metric. To get a better grounding for understanding the model performance, we establish a no-model baseline  as the performance lower bound, using the mean probability in the test set as the prediction for all samples. We also use the expected MAE of a single annotator to estimate the performance upper bound. We train a Mental-BERT based model for status inference, achieving 0.1360 MAE, compared to a lower bound of 0.1940 and an upper bound of 0.1172, which indicates a plausible performance.
+
+\subsection{Mental Disease Detection}
+
+We show MDD performance in Table \ref{tab:disease} and compare the performance of methods utilizing pure text and symptoms. The training and evaluation for each disease is conducted in a binary setting, where the model needs to distinguish the diagnosed users of that disease and the control users, so users with other diseases will not be involved. We then report the average F1 across all 9 diseases. 
+
+\begin{table}[h]
+    \small
+    \centering
+    \begin{tabular}{lc}
+        \hline
+        Method          & F1             \\
+        \hline
+        TF-IDF+LR       & 43.73          \\
+        BERT \citep{nguyen2022improving}        & 51.46          \\
+        \hline
+        Symp            & 55.46          \\
+        Symp (Reweighting) & \textbf{57.09} \\
+        \hline
+    \end{tabular}
+    \caption{Mental Disease Detection Results, averaged across 9 diseases.}
+    \label{tab:disease}
+\end{table}
+
+We can see that \textit{Symp} outperforms all pure-text methods including the strong BERT model, suggesting the usefulness of symptom features for MDD. The \textit{Reweight} method that incorporates \textit{status} and \textit{subject} feature into symptom feature can bring further improvement, indicating that these additional aspects can help properly decide symptom risks for better MDD. 
+% Table \ref{tab:mdd_by_disease} in Appendix \ref{apd:mdd_results} will further show MDD performance broken down by each disease, which indicates that the \textit{Symp} models have a even higher advantage on the 7 diseases contained in \textit{PsySym} out of all 9 classes.
+
+\subsection{Case Study on Interpretability}
+\label{sec:interpret}
+
+One of the major goals of symptom identification is to enable machine learning models to provide explanations for disease diagnoses just as human psychiatrists. The binarized prediction of symptoms of our model, and the disease-symptom relations from our knowledge graph (derived from clinical manuals) can help achieve this. We provide concrete examples below. 
+
+Table \ref{tab:explain_tp} shows that, for a patient predicted to have OCD, the symptom model with reweighting (\S \ref{sec:disease_detect}) can find all typical OCD symptoms from his/her posting history, and thus justify the diagnose.
+
+Being able to interpret symptoms can also help us spot spurious diagnosis. Here we use the model to examine the correctness of disease labels produced by pattern matching based automatic method (\S \ref{sec:data_disease}). Despite its careful design, it can still make both false-positive and false-negative errors, as has been reported by \citet{cohan2018smhd}. Such problematic labels can negatively affect the generalizability of the model trained on them \citep{ernala2019methodological}, but they can be hard to detect. 
+
+Symptom-based explanations may provide an efficient way to detect these false labels. As is shown in Table \ref{tab:explain_fp_fn} (left), we can easily find and remove the falsely labeled diseases when there are few or no history of their corresponding symptoms. For the example at right, \textit{Anxiety} is missed by the labeling method, while the high prevalence of anxiety symptoms like anxious mood and social anxiety predicted from the user's post can indicate its presence. Therefore, the interpretability brought by symptoms can justify correct predictions and may further serve as reference for human correction of labels.   
+
+\subsection{Evaluation of Candidate Retrieval Strategy}
+\label{sec:exp_retrieve}
+
+In this section, we show the benefits of the proposed embedding-based candidate retrieval strategy with quantitative experimental results, compared with the keyword/pattern matching methods commonly used in previous works \citep{mowery2017understanding,yadav2020identifying}. Specifically, we test the effectiveness of different strategies in retrieving the positive samples among all annotated sentences of PsySym, and report the average \textit{precision} and \textit{recall} across 38 symptoms. A low \textit{recall} would harm the diversity of the annotated corpus, as we would be unable to annotated on sentences supposed to be symptom relevant, while a low \textit{precision} will lead to low annotation efficiency, since we will have to read through more posts in order to find those actually convey the symptom. 
+
+The compared methods are: 
+
+\paragraph{MeSH} The Medical Subject Headings (MeSH) thesaurus is a large-scale vocabulary of medical terms produced by National Library of Medicine (NLM)\footnote{\url{https://www.nlm.nih.gov/mesh/meshhome.html}}. We use the entity linker in scispacy \citep{neumann2019scispacy} to detect all MeSH terms (with alias) related to somatic symptoms and mental status in the sentence\footnote{Specifically, we detect terms under the class of Signs and Symptoms [C23.888], Emotions [F01.470] or Behavioral Symptoms [F01.145.126]}, and sentence with any single matched term will be retrieved. We tried to estimate its recall upper bound by greedily including all symptom terms so that some of them may be beyond the scope of mental health, and we thus don't report its precision. 
+\paragraph{LIWC (negemo)} Linguistic Inquiry and Word Count (LIWC) \citep{pennebaker2001linguistic} is a categorized vocabulary that can provide useful dimensions to analyze a person's thoughts, feelings, personality from language use. It has been shown in many works that some dimensions of LIWC are closely related to mental disorders \citet{shen2017depression,cohan2018smhd}, especially the Negative Emotion (negemo) words that include sadness, anxiety and anger related words, which are also symptoms in our KG. To leverage LIWC (negemo), we simply retrieve all sentences that contain any single negative emotion words. 
+
+\paragraph{SBERT} This is our proposed method for candidate retrieval (\S \ref{sec:data_retrieval}), which leverages embedding similarity instead of keyword matching used in the previous two methods. We study two variants of this method. \textbf{SBERT (manual only)} is our first attempt that only uses the symptom description collected from DSM-5 and clinical questionnaires. \textbf{SBERT (manual+post)} additionally incorporates representative posts of a symptom for some symptom classes that we found to have poor retrieval results with the previous methods. To get a binary retrieval decision for the calculation of precision and Recall, we use 0.5 to threshold on the calculated cosine similarity. This does not totally reflect the actual setting in our data collection, but allows a direct comparison with previous methods.
+
+\begin{table}[h]
+  \small
+    \centering
+    \begin{tabular}{lcc}
+    \hline
+    Method                 & Precision   & Recall    \\ 
+    \hline
+    MeSH                   & / & 37.12 \\
+    LIWC (negemo)          & 1.23 & 67.50 \\
+    \hline
+    SBERT (manual only)    & \textbf{50.36} & 66.12 \\
+    SBERT (manual+post)    & 48.89 & \textbf{77.09} \\
+    \hline
+    \end{tabular}
+    \caption{Candidate Retrieval performance on the annotated sentences of PsySym.}
+    \label{tab:cand_retrieve}
+\end{table}
+
+We can see from Table \ref{tab:cand_retrieve} that the recall of \textit{MeSH} is not high despite our greedy inclusion of matching terms. This suggests can keyword matching with professional terms (even with alias in MeSH) failed to identify the diverse expressions of symptoms on social media potentially due to its figurative language \citep{yadav2020identifying}. \textit{LIWC (negemo)} received a relatively high recall at the expense of precision. The possible reason is that the negative emotion words are too broad and does not target certain symptom. \textit{SBERT (manual only)} is enough to achieve both satisfying precision and recall. The symptom-specific descriptions can precisely detect candidates for each symptom, and embedding based retrieval can overcome the limitation of exact word matching methods, be tolerant to misspelling and synonyms, and recall sentences expressing the semantics of a symptom but with no specific keywords. \textit{SBERT (manual+post)} can further improve the recall while almost preserving the precision.\footnote{Note that our method does not achieve 100\% recall at the dataset because the evaluation is conducted at a pre-symptom basis, and a sentence related to symptom A can also be retrieved with the descriptions of symptom B, which is not counted in the recall of symptom A.} This indicates that the inclusion of posts can alleviate the mismatching between manual and candidate posts in the language style and the perspective (observation versus self expression). 

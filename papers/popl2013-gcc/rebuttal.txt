@@ -1,0 +1,119 @@
+Review A:
+
+1. The system consists of one coordination server and multiple agents 
+   (the clients). The server is not distributed, but the agents are distributed. 
+   The semantics of the computation model uses a centralized store, 
+   similar to assumptions in database systems. An implementation of 
+   a speculative distributed store will be an interesting and challenging future work.
+   
+2. cu is used where the agent wants to explicitly gives up the current choice branch. 
+
+   The system actually doesn't infer the placement of cm or cu.
+   cm is only automatically added to the end of a program, 
+   in case it is missing as a result of a programming error.
+   Our syntax dictates that there must be at least one cm in the program.
+   cm or cu does not have to be at the end of a program though and they
+   can be placed anywhere appropriate. Redundant cm's are ignored to 
+   guarantee a well-formed tree structure. 
+
+---
+
+Review B:
+1. Deadlocks are inevitable in any blocking concurrent programs with shared
+   resources. The purpose of the SN model is to give agents the ability to
+   specify exclusive choices to try alternatives in separate "worlds"
+   and thereby reduce the chances of deadlocks or starvation. It, however,
+   does not completely eliminate the possibility of deadlocks.
+
+   It is important to note that when our system creates another world, 
+   it also *copies* the store in the original world to the new world,
+   and therefore effectively *duplicates* the shared resources. 
+   That is why as far as deadlock is concerned, an SN program is strictly
+   *no worse* than its pure concurrent counterpart, regardless of the
+   complexity of choices in the program.
+
+2. Our proof-of-concept implementation is not particularly engineered to
+   be space efficient. Each atomic operation such as speculate and in is
+   handled by a separate thread. The main overhead comes from the Java stacks for
+   the threads  and for parsing of plain-text requests from clients. 
+   Minor overhead includes the indexes and triggers maintained on the server.
+
+   The maximum memory consumption we measured in Section 4 includes all
+   the above overhead, and hence is much larger than the theoretical space
+   required to encode the collective states only. 
+
+   A more carefully engineered implementation could significantly reduce 
+   the overall memory overhead.
+
+4. (Is it possible ... the semantics?)
+   Yes, it is possible for two agents from two different worlds to attempt 
+   to prune each other at the same time. Since the runtime galaxy structure
+   is centralized, the concurrency control is guaranteed by a tree locking
+   protocol. One of the pruning actions will lock the tree first and 
+   the other is pruned.
+ 
+   This behavior is reflected in the calculus where only one CM rule 
+   applies at a time.
+   
+5. (Let A and B be ...)
+   Suppose the SN program is A \oplus_k B.
+   The cu in A applies rule CU. As a result, \oplus_k is removed and 
+   B takes the position of \oplus_k.
+    - If B's cm comes from A[k] (i.e., the agent with id k), 
+      since \oplus_k is removed, rule CM-SKIP applies and treat this cm as redundant.
+    - Otherwise, rule CM applies whenever possible.
+
+
+6. (a) (Should one ... exclusive choices?)
+       Please see bullet 1 above.
+       
+   (b) (Is recursion a problem in practise?)
+       Recursion is not an issue. In fact, the flight reservation (FR) 
+       example uses indirect recursion: `fly` calls `wait_for_ticket`, 
+       and `wait_for_ticket` calls `fly`.
+
+       In SN, every program can be broken down into a number of
+       independently executing sequences of *atomic* actions.
+       Only the *next* step in the sequence is considered by the calculus.
+
+5. "exit" means leaving the "virtual worlds" (multiple possibilities) 
+   created by SN and return to the reality which represents just one possibility. 
+   This one single reality requires a consistent postcondition of the program in
+   all worlds that it lived in. 
+
+---
+
+Review C:
+
+1. Blocking is a basic feature in concurrent programming. Our framework
+   is an extension to the traditional concurrent programming and it doesn't 
+   prohibit blocking. Conventional speculative models without blocking,
+   (e.g., STM) relies on the ability to roll back or backtrack 
+   (as in Prolog cut). SN assumes a real-time application setting where 
+   such roll-backs are not feasible.
+
+   One important point to clarify to the reviewer is that two speculative
+   computations (in the form of two exclusive choices) from the *same* agent
+   do *not* block each other, because they live in separate and independent
+   worlds. They can, however, block or be blocked by computations from other
+   agents, which is the result of normal concurrency among different agents. 
+
+   What's more, we do not consider scheduler non-determinism in this framework,
+   because given a fixed scheduling algorithm, the schedule is actually 
+   deterministic. 
+
+2. ("B commits not only in w1, but also in w2...": should be w3?)
+   It *is* w2. 
+   w1 and w2 are both on the left-hand side of B_1. w3 is on the right-hand side.
+   Note that the parents of w1 to w_4 are *not* B_x's, 
+   while the parents of w5 and w7 are B_x's (B_2 and B_3).
+
+3. ("can kill as many as ...": as many what?)
+   as many *worlds* as ...
+
+---
+
+Review D:
+
+1. Solutions are pruned only by commit operations. When all agents use 
+   the *same* commit semantics, the fairness can be guaranteed. 

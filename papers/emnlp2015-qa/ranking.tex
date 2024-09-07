@@ -1,0 +1,96 @@
+\subsection{Schema Ranking}
+
+Given a relation group, the step of schema ranking produces a ranked list of relation schemas with two constraints.
+Take ``play\ in'' as an example, the ideal schemas will contain the pair
+$\langle actor,\ film \rangle$ and
+$\langle athlete,\ sports\ league \rangle$
+
+Each linked tuple $\langle e_1,\ rel,\ e_2 \rangle$ supports the type pair $\langle t_1,\ t_2 \rangle$
+where $(e_1, t_1),\; (e_2, t_2) \in IsA$ in the knowledge base. 
+We treat these pairs equally, since it's not trivial to
+tell which type is more related to the argument given the relation tuple as context.
+Combining all tuples in one group, we define the support of a type pair $tp$
+in a group (using the representative pattern $r$ to stand for the group):
+\begin{equation}
+\begin{aligned}
+sup_{r}(&\langle t_1, t_2 \rangle) = \\
+        &\{(e_1, t_1) \in IsA,\; (e_2, t_2) \in IsA \}
+\end{aligned}
+\end{equation}
+
+A simple intuition is to rank schemas by the size of the support.
+Since one entity belongs to multiple types, relation schemas with general types
+will be ranked higher.
+However, two different schemas may share the same support.
+For instance, given the relation ``\textit{X die in Y}'', 
+suppose Open IE extractions and entity linking step returns correct results,
+the schema $\langle person,\ location \rangle$ and $\langle deceased\ person,\ location \rangle$ have identical supports.
+The latter one shows a more concrete representation of the relation, because
+\textit{deceased person} covers small entities than \textit{person} in the knowledge base.
+
+Therefore, the schemas cannot be ranked by using the support alone.
+Next, we aim to extract the subsumption relations between types in the knowledge base,
+building the taxonomy of types.
+
+We first define all entities in $t$ as
+\begin{equation}
+cover(t) = \{e\; |\; (e, t) \in IsA\}.
+\end{equation}
+Intuitively, type $t_1$ is subsumed in $t_2$, 
+if all entities in $t_1$ also belong to $t_2$,
+that is, $cover(t_1) \subseteq cover(t_2)$. This uses the idea of
+\textbf{strict set inclusion}.
+For example, we can learn that the type \textit{person} subsumes types such as
+\textit{actor}, \textit{politician} and \textit{deceased person}.
+
+However, strict set inclusion doesn't always hold in the knowledge base.
+For example, entities in type \textit{award winner} are mostly \textit{person}, but there still has some
+organizations in it. The strict method fails to find the subsumption relation between \textit{award winner}
+and \textit{person}, while this subsumption actually holds with a large confidence. 
+%
+%The ranked list should be adjusted by the IsA relations between the types in
+%knowledge base $K$.
+%Each type $t$ in $K$ is subsumed by a set of entities (a.k.a. the
+%support set). Next we will write $Supp$ to denote the set of entities
+%it covers.
+%The main difficulty in generating type subsumptions is that the
+%support sets may be incomplete \KZ{Why incomplete and isn't type subsumption
+%already included in the ISA relation between types?},
+%\XS{We can consider ISA relation not explicit between types, thus we need the support set to
+%determine the subsumptions between types.}
+%thus making strict set inclusion computation impossible.
+%\KZ{The rest of this section needs to be rewritten to be consistent
+%with the problem definition section. You can't use $S$, which means a set
+%of extracted triples, and you can't mention Freebase!}
+
+To resolve this problem, we use a \textbf{relaxed set inclusion},
+where the set $cover(t_1)$ can be a subset of another set $cover(t_2)$ to a certain degree.
+We define the degree of the subsumption as the ratio between the number 
+of entities in the two sets: 
+\begin{equation}
+deg(t_1 \subseteq t_2) = \frac{\left|cover(t_1) \cap cover(t_2)\right|} {\left|cover(t_1)\right|}.
+\end{equation}
+%$deg(Supp_1\subseteq Supp_2)=\left|Supp_1 \cap Supp_2\right| / \left|Supp_1\right|$.
+If $deg(t_1 \subseteq t_2) > \epsilon$,
+then $t_1$ is subsumed by $t_2$, and $\epsilon$ is a confidence parameter 
+determined by weight tuning.
+By scanning all types in the knowledge base, all subsumption relations 
+with enough confidence are extracted, forming our type taxonomy.
+
+With a type hierarchy computed by above relaxed set inclusion, 
+we can define a schema 
+$\langle t_1,\ t_2\rangle$ subsumes another schema
+$\langle t_3,\ t_4\rangle$ if 
+i) $t_1$ subsumes $t_3$ and $t_2$ subsumes $t_4$;
+ii) $t_1$ subsumes $t_3$ and $t_2 = t_4$; or
+iii) $t_2$ subsumes $t_4$ and $t_1 = t_3$.
+
+If a schema (type pair) $tp_1$ subsumes another schema $tp_2$, 
+and their supports ($|sup_{r}(tp)|$) are approximately equal, 
+we give the more specific schema $tp_2$ a higher rank in the output list.
+Here two supports are roughly equal if:
+\begin{equation}
+\frac{\left|sup_{r}(tp_1)\right|-\left|sup_{r}(tp_2)\right|} {max(\left|sup_{r}(tp_1)\right|,\ \left|sup_{r}(tp_2)\right|)} < \lambda
+\end{equation}
+\noindent
+Where $\lambda$ is a threshold determined in the experiments.

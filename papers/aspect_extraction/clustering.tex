@@ -1,0 +1,119 @@
+\subsection{Clustering}
+\label{sec:clustering}
+
+
+
+The clustering phase consists of the following 3 stages, 
+demonstrated in \figref{fig:clustering}:
+\begin{itemize}
+	\item[1.] \textbf{Sentence representation and clustering}
+
+In the first stage we convert each sentence from the review into a vector
+representation and cluster the vectors into $N$ clusters, 
+each correponding to one preliminary aspect. We then collect the 
+sentences of the same aspect from the same review. 
+This stage gives us several sentence clusters and 
+in effect a segmentation of the reviews.
+
+	\item[2.] \textbf{Potential aspect inference}
+
+		Using LDA, in this stage we infer the potential aspects from the sentence clusters. From each sentence cluster we generate $M$ topics, resulting in $N\times M$ clusters of words.
+
+	\item[3.] \textbf{Overlap resolution}
+
+		In this stage we resolve the overlap between the word clusters and result in $C$ clusters of aspect candidates. Each cluster is a distribution over all the words in the dictionary, with weights indicating the relatedness of words to each potential aspect.
+\end{itemize}
+
+As mentioned in Section, one feature of the review texts is that many topics are compressed into a short paragraph where each topic corresponds to a potential aspect. Sentences in a review that are close to each other may talk about completely different aspects about the product. Also sentences about the same aspect may not appear in the review in a consecutive order. This makes topic modeling and aspect extraction on reviews difficult. 
+% One natural assumption about the reviews is that several consecutive sentences talk about the same topic, in our case one potential aspect. 
+It is helpful for aspect extraction if we can segment the reviews and cluster the segments across multiple reviews by the aspects they talk about. Here we make a simple assumption that in the reviews, a sentence only talks about one aspect of the correponding product.
+This design leads to our first clustering procedure: clustering on sentence level. We construct a vector representation for each sentence in the dataset, leveraging techniques like word embedding and neural network. In the following we will first introduce the sentence vectors we use in our method and then the clustering of those vectors.
+
+\subsection{Review Segmentation and Clustering}
+Reviews are often not very long but cover various aspects about a product, thus fine structures exist within review documents and the bag-of-word abstraction of normal topic models is not appropriate. One important characteristic of reviews is that the topics shifts quickly from sentence to sentence, which can be seen in the this typical piece of hotel review shown below:
+\begin{quote}
+ Pool is small and only 4 ft but refreshing. Hot tub also there. Staff were super friendly each day. Room was nothing special but clean and comfy. Lots of restaurants and bars nearby. Breakfast was great and despite being a busy weekend there was always a big selection available.
+\end{quote}
+Thus for user reviews, 
+it is more appropriate to start with the sentence level instead of the document level.
+Based on this observation, we design the first stage of our method to be a 
+sentence-level clustering.
+We first need to develop an embedding model to obtain 
+a vector representation for each sentence of the reviews. 
+We attempted two models, recurrent neural network (RNN) and paragraph
+vector (PV) \cite{le2014distributed}.
+
+\subsubsection{Recurrent Neural Network}
+To use RNN for obtaining sentence vectors, we train a language model on the review sentences. After the perplexity converges, we use the trained network to process each sentence of the dataset and take the last hidden vector as the vector representation of the sentence. In our method we use a variation of RNN, long-short term memory (LSTM) \cite{hochreiter1997long} which has a better performance at modeling long sentences.
+
+\subsubsection{Paragraph Vector}
+PV is a simple but powerful extension to Word2vec \cite{mikolov2013distributed} with two components, 
+distributed memory (PV-DM) and distributed bag-of-word (PV-DBOW). 
+The first one is similar to skip-gram in Word2vec and the second is similar to CBOW.
+An important advantage of paragraph vector models is that they require 
+no labeled data. Also, it doesn't require human experts to assign weights 
+for words in a paragraph based on linguistic knowledge. 
+The learned vector representations inherit an important property of Word2vec, 
+that is the semantics similarity. Also the final paragraph vector captures the 
+word order information with the part learned from PV-DBOW with the n-gram model.
+An advantage of paragraph vector over RNNs in practice is that it can 
+leverage trained word vectors. The word vectors can be trained on 
+a much larger corpus so they capture the semantics relationships more accurately, 
+then the paragraph vecotrs can be trained on a relatively small dataset. 
+Paragraph vectors are reported to word well with pre-trained word vectors. 
+However, people find that it is more suitable to train the word vectors 
+simultaneuosly for RNNs, so RNNs cannot leverage the word vectors learned 
+from a larger dataset. Also, the paragraph vector models are simple and 
+don't require storing a lot of information, by comparison for RNN we 
+need to store every state during the forward pass for back-propagation, 
+which is very memory consuming.
+
+We run a K-Means clustering on the sentence vectors and generate 
+$N$ sentence clusters. We then collect the sentences from the same review 
+that are clustered together to form smaller pieces of reviews. 
+Each review document is divided into at most $N$ smaller documents, each belonging
+to one of the $N$ clusters. As a result, we obtain $N$ groups of 
+smaller documents.
+
+\subsection{Potential Aspects Inference}
+In the first stage, we constructed several clusters of 
+topic-coherence documents by sentence-level clustering.
+As mentioned previously, aspects appear as topics in user reviews, 
+and in the second stage
+we use topic modeling to infer the topics from each document cluster.
+We use LDA \cite{blei2003latent} as the topic model. We run LDA within each document group, 
+treating each review piece as a document, and generating $M$ topics. 
+This will give us in total $N\times M$ topics, that is, word distributions. 
+
+\subsection{Overlap Resolution}
+Since in the first stage we perform clustering at sentence level, and it is relatively coarse,
+there are non-negligible overlaps between clusters at the word level. 
+In user reviews, sentences like the following is very common:
+\KZ{awkdjlakjwhd}
+The overlaps between different clusters become
+noises within each cluster. We resolve this overlap next.
+
+\KZ{from the following, i don't see why overlap is resolved.
+can you give an intuition on why the following approach solves
+the overlap problem? You can take the adjective ``good'' as an example..}
+
+From the topic modeling, we generate in total $N\times M$ 
+topics where each topic is a distribution of words. 
+Suppose there are $Z$ distinct words, then we have 
+$N\times M$ vectors of size $Z$.
+We perform dimensionality reduction on these vectors and
+\KZ{akwjdhlkj}
+We run another K-Means to cluster the topic vectors 
+Subsequently, we are left with $C$ clusters, 
+each consisting of several topics. We then take 
+the averge of the topics to get $C$ word distributions.
+\KZ{How to average? Give formulas or details.}
+
+It is because of the existence of noise topics from 
+LDA that instead of $K$, which is the expected number of 
+aspects, we take $C$ clusters, which is larger than $K$. 
+\KZ{Why is there noise topics from LDA? Any evidence of this from
+previous work, cite? 
+But you didn't say how you select the final $K$ aspect
+words from $C$.}
+\KZ{Keep only nouns.}

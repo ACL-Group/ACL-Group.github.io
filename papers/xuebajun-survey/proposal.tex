@@ -1,0 +1,98 @@
+\section{Research Proposal}
+
+Now we propose two approaches to answer K12 questions in our scenario.
+We first introduce a searching approach over community QA system, then we discuss
+the other approach based on knowledge bases.
+
+\subsection{Searching Based Approach}
+
+In the searching based proposal, knowledge in community QA system will
+help answer a new question. The intuition is to find the most similar questions
+and summarize their answers.
+In the following proposal, we assume using Baidu Zhidao as the cQA system.
+Three main steps are listed below:
+
+1. \textbf{Question clustering}. All questions in Baidu Zhidao needs to form into clusters.
+Question clusters gather similar questions together, and replacing original questions by
+summarized clusters can reduce the computation cost in further steps.
+We separate a natural language question into two parts: focus entities, and relation template.
+Focus entities (could be at least 1) are extracted by entity linking tools, and the relation template
+is the question surface form with entities replaced by a placeholder ``\$e\$''.
+Necessary tricks could be made to remove useless parts in a relation template.
+As a clustering task, all questions within a cluster share the same focus entities,
+and relation templates are close to each other.
+
+In order to measure the similarity between relation templates, we plan to use an embedding model
+to encode relation templates into a vector representation.
+Fortunately, Baidu Zhidao have already provided ``similar questions'' in the web page of each question.
+We all collect $\langle q, q' \rangle$ question pairs as our training data, if $q$ and $q'$ share the same
+focus entities, and $q'$ is the similar question of $q$ provided by Zhidao.
+Negative question pairs are also prepared via random combination.
+Following the idea of Toutanova et al.~\shortcite{toutanova2015representing},
+we build a CNN model for vector embedding, and train the model as a classification problem:
+whether two questions are paraphrased or not.
+
+After training step, we apply hierarchical clustering approach: initially each question is cluster,
+for each step, the two nearest clusters (largest cosine similarity) are merged,
+and update the embedding vector as the average over all questions in the cluster.
+The merging stops if the cosine similarity between any two clusters are small than some threshold $\tau$.
+
+2. \textbf{Question weighting}. Regarding clusters as documents, and relation templates as terms,
+we calculate tf-idf score for each question in the cluster.
+The relation template is more representative to a cluster if it mentioned multiple times in the cluster (different users
+asked the same question in really similar style), and less representative if it occurs in many different clusters
+(indicating somewhat common but not meaningful questions).
+
+3. \textbf{Answer predicting}. When coming a new question $q_{new}$, we extract its focus entities and template,
+and calculate the relation similarity to each cluster.
+Answers of a question $q$ in the cluster $C$ contributes to the new question, the weight of contribution
+is defined as:
+
+$w(q, q_{new}) = sim(q_{new}, C) * tf\_idf(q, C)$.
+
+Finally we summarize answers from the best answers of these weighted similar questions.
+For factoid questions, we recognize all answer entities from answer text, and perform
+weighted majority voting algorithm over all the similar questions;
+for true-or-false questions, we first divide answers into two groups, then we show
+the weighted supporting ratio of each group, as well as top opinions in each group;
+for subjective questions, it's related to another task called answer summarization,
+currently we plan to just output the top weighted answer.
+
+
+
+
+
+\subsection{Ontology Based Approach}
+
+We first discuss the construction of knowledge base.
+We plan to build the knowledge base on both textbooks and Baidu Baike resources.
+The knowledge base contain entities, types, and predicates between entities,
+and it's better to provide aliases on both entities, types and predicates.
+For the side of textbook, Xuebajun have already built the ontology,
+but currently we don't have much knowledge about that (except one PPT slide).
+If it's necessary to enrich the ontology, editorial efforts are considered because
+data from textbooks are limited.
+To build the ontology from Baidu Baike, we plain to leverage the infobox in each
+article, and build the knowledge base upon infoboxes.
+Some entity links in the infobox are missing, currently we are working on missing link completion.
+Besides, predicates names in Baike infobox are not uniformed.
+As an example, we found ``spouse'', ``wife'', ``first wife'', ``second wife'' representing
+the same semantic meaning.
+In order to retrieve uniform predicate names, techniques like clustering could be applied here.
+Once knowledge bases from textbooks and Baidu Baike are prepared, we merge them into one big ontology.
+Existing approaches~\cite{xiang2015ersom} can be applied here.
+
+Now we discuss the query generation strategy.
+We plan to follow Bast and Haussmann~\cite{bast2015more} as our starting point, because we don't
+expect K12 users will ask question with too complex structure.
+Therefore we prefer a slot filling strategy as the initial trial, which is easier to implement
+and better to avoid over-fitting problem.
+In order to match natural language words to predicates in the knowledge base,
+we can use lexical, word derivational and synonym matching strategy to discover semantic
+associations between input question and structured query.
+Besides, we can search corpus for sentence that focus entity and candidate answer co-occurs.
+Context words in the sentence can be indicators of selected predicates.
+Taking F1 of each candidate query structure as the measurement,
+we can adopt pair-wise ranking algorithm to learn feature weights.
+
+

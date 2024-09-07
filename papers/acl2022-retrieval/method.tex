@@ -1,0 +1,58 @@
+\section{Approach}
+
+We first introduce the background of dual-encoder for text-image retrieval. Then we describe our two-stage model compression framework in detail.
+
+
+\subsection{Background on Dual-Encoder}
+\label{pre}
+Dual-encoder architecture employs two separate neural networks to encode inputs from different modalities and map them to a shared  space. 
+
+We denote the image encoder as $f_v$ and the text encoder as $f_t$ in the context of text-image retrieval. To train $f_v$ and $f_t$, it is common to adopt an objective that pushes the embeddings of matched text-image pairs closer while pushing those of non-matched text-image pairs apart. Specifically, \textbf{C}ontrastive \textbf{L}anguage-\textbf{I}mage \textbf{P}retraining~(CLIP)~\cite{clip} optimizes an InfoNCE~\cite{infonce} loss:
+%\begin{align}
+%	\mathcal{L}_{t2v}=-\frac{1}{N}\sum_{i=1}^{N}\log{\frac{\exp(f_t(x_i)^\top f_v(y_i)/\tau)}{\sum_{j=1}^{N}\exp(f_t(x_i)^\top f_v(y_j)/\tau)}}
+%	\label{infonce}
+%\end{align}
+\begin{align}
+	\mathcal{L}_{t2v}=-\frac{1}{N}\sum_{i=1}^{N}\log{\frac{e^{f_t(x_i)^\top f_v(y_i)/\tau}}{\sum_{j=1}^{N}e^{f_t(x_i)^\top f_v(y_j)/\tau}}}
+	\label{infonce}
+\end{align}
+Here, $f_t(x_i)$ and $f_v(y_j)$ are the L2-normalized embeddings of text in the $i$-th pair and image in the $j$-th pair. $N$ is the mini-batch size and $\tau$ is the temperature to scale the logits. The final objective is the sum of $L_{t2v}$ and its symmetric version $L_{v2t}$.
+
+\subsection{Two-Stage Model Compression}
+\label{sec2}
+Despite good retrieval accuracy, models like CLIP still pose non-trivial memory 
+footprint and inference time, which is undesirable for low-resource devices 
+such as smart phones. 
+
+To tackle this issue, we propose a two-stage compression framework to make large dual-encoder model smaller and faster while retaining its accuracy. A schematic overview is illustrated in \figref{fig:overview}. The first stage is \textit{task-agnostic}, where we leverage massively available non-paired texts/images to separately compress the text/image encoder using an intra-modal contrastive knowledge distillation scheme. The second stage is \textit{task-specific}, where we sequentially fine-tune the distilled image and text encoder using a combination of multiple techniques. We denote the image and text encoder of the large dual-encoder as $f_v^{T}$ and $f_t^{T}$ and those of the compressed model as $f_v^{S}$ and $f_t^{S}$.
+
+\subsubsection{Stage-1}
+\label{stage1}
+The extremely large scale of text-image pairs~(e.g., 400 million used to train CLIP) makes it possible to make up for the noise in data and train over-parametrized large dual-encoder~(i.e., $f_v^{T}$ and $f_t^{T}$) from scratch to learn aligned visual and language representations. However, it is difficult to train small model~(i.e., $f_v^{S}$ and $f_t^{S}$) with lower capacity using the same \textit{inter-modal} learning scheme.
+
+To circumvent this issue, we propose to exploit massively available non-paired data from the web and optimize an \textit{intra-modal} contrastive objective that aligns the output embeddings of $f^{S}$ and pretrained $f^{T}$, which can be seen as a form of knowledge distillation~\cite{hinton2015distilling}. Here we take visual modality as an example. Given a collection of images $\{y_i\}_{i=1}^N$, we feed them to both $f_v^{S}$ and $f_v^{T}$ to produce two sets of image embeddings $\{f_v^{S}(y_i)\}_{i=1}^{N}$ and $\{f_v^{T}(y_i)\}_{i=1}^{N}$. Then we optimize the following contrastive objective for updating $f_v^{S}$:
+\begin{align}
+	\mathcal{L}_{v2v}=-\frac{1}{N}\sum_{i=1}^{N}\log{\frac{e^{f_v^{S}(y_i)^\top f_v^{T}(y_i)/\tau}}{\sum_{j=1}^{N}e^{f_v^{S}(y_i)^\top f_v^{T}(y_j)/\tau}}}
+\end{align}
+The same formulation is symmetrically applied to language modality to obtain $L_{t2t}$ for updating $f_t^{S}$:
+\begin{align}
+	\mathcal{L}_{t2t}=-\frac{1}{N}\sum_{i=1}^{N}\log{\frac{e^{f_t^{S}(x_i)^\top f_t^{T}(x_i)/\tau}}{\sum_{j=1}^{N}e^{f_t^{S}(x_i)^\top f_t^{T}(x_j)/\tau}}}
+\end{align}
+Essentially, $f_v^{S}$ and $f_t^{S}$ are trained to recover the representation power of $f_v^{T}$ and $f_t^{T}$ in a decoupled manner.
+
+\subsubsection{Stage-2}
+\label{stage2}
+After training $f_v^{S}$ and $f_t^{S}$ using general-domain data, 
+it is necessary to adapt the learned representations to downstream tasks 
+using in-domain data. First, we fine-tune $f_v^{T}$ and $f_t^{T}$ on paired 
+text-image data $D=\{(x_i, y_i)\}_{i=1}^{N}$ using standard InfoNCE loss~(\secref{pre}). In the experiments, we found that jointly fine-tuning image 
+and text encoder results in retrieval performance even worse than no fine-tuning at all. 
+Therefore, we choose to sequentially fine-tune $f_v^{T}$/$f_t^{T}$ by fixing the other one. The resulting fine-tuned encoders are denoted as $f_v^{T^{\prime}}$ and $f_t^{T^{\prime}}$ and are henceforth kept fixed. Next, for training $f_v^{S}$ and $f_t^{S}$, we propose several techniques  essential to successful compression:
+
+\textbf{Knowledge Distillation~(KD).} In addition to the standard InfoNCE loss, we design two kinds of knowledge distillation objectives to learn from $f_v^{T^{\prime}}$ and $f_t^{T^{\prime}}$. One is the  Kullback-Leibler divergence between image-text matching distribution predicted by $f_v^{T^{\prime}}$ and $f_t^{T^{\prime}}$ and the one predicted by $f_v^{S}$ and $f_t^{S}$. This resembles previous response-based knowledge distillation~\cite{hinton2015distilling}. The other is the same contrastive objective  defined in \secref{stage1}. It indirectly encourages the alingment between visual and language representations.
+
+\textbf{Sequential Finetuning~(SF).} Similar to how we get $f_v^{T^{\prime}}$ and $f_t^{T^{\prime}}$, we also fine-tune $f_v^{S}$ and $f_t^{S}$ in a sequential manner. Concretely, we first let the compressed model share the same text encoder with the target dual-encoder and only fine-tune its image encoder. After that, we then fix the image encoder and fine-tune its text encoder in the same way.
+
+\textbf{Hard Negative Mining~(HN).} Prior works on contrastive representation learning~\cite{simclr,simcse}  typically exploit in-batch negative samples. Though efficient, image-text pairs in a batch are randomly sampled and are likely to be trivially unrelated. Models trained in such a way may fail in cases where candidates are similar. To achieve more accurate retrieval, we mine hard negatives from the entire corpus. In our sequential fine-tuning setting, we first use $f_t^{T^{\prime}}$ to compute embeddings of all texts in the corpus and index them with Faiss~\cite{faiss}. During training $f_v^{S}$, for each image $y_i$ we use $f_v^{S}(y_i)$ as query to the index and obtain its top-k texts as negative samples. Afterward, we use the trained $f_v^{S}$ to compute embeddings of all images in the corpus and build the index. During training $f_t^{S}$, for each text $x_i$ we use $f_t^{S}(x_i)$ as query to the index and get its top-k images as negative samples.
+
+The complete training objective of stage-2 is  defined as $\mathcal{L}=\mathcal{L}_{t2v}+\mathcal{L}_{v2t}+\mathcal{L}_{KD}+\mathcal{L}_{HN}$.

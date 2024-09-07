@@ -1,0 +1,117 @@
+\subsection{Ranking}
+\label{sec:ranking}
+
+%The ranking phase takes the soft clustering results from the previous phase 
+%and ranks both the clusters and the words in each cluster.
+
+% Note that the clusters of words from previous phase are not ordered. 
+% But in practical product reviewing, the aspects should be treated differently. 
+% As mentioned in \secref{sec:intro}, the ranking of the aspects should 
+% reflect the opinion of the users. 
+% \KZ{I don't quite understand this...
+% Do you mean that if users pay more attention to one aspect, this aspect should
+% be ranked higher? The above needs to be rephrased.} 
+% Also the quality of the clusters, i.e.,
+% how related are the words to the aspect - may vary, due to different frequencies of the aspects in the corpus. \KZ{Don't understand the above either. I assume
+% you want to return the top relevant words to an aspect cluster as the most
+% representative aspect word. But why is it related to the frequency of the 
+% aspect in the corpus?}
+% Also, as mentioned in 
+% \secref{sec:system_overview}, the clustering is mainly based on 
+% co-occurrence of words, which may not fully capture the semantic 
+% relatedness of words. \KZ{Why not?} Motivated by these, 
+% we proposed to do a 2-stage ranking based on the clustering result, 
+% with the help of knowledge bases: first rank the aspect clusters, 
+% then the words in each cluster.
+
+Some aspect clusters extracted from hotel reviews are shown in \tabref{table:cluster_example}.
+Each row is an aspect cluster with words ranked by word distribution.
+We manually select the best aspect words for each cluster and show them in boldface.
+These aspect words act as representatives of other words in the corresponding cluster,
+ so they should be at the center of the clusters semantically.
+However, it can be seen that not all chosen words have the highest frequency.
+In order to not only provide such aspect clusters, 
+but also automatically select the best aspect words,
+in the following ranking phase we adjust the word rankings by taking the semantic
+distance between words into consideration.
+
+\begin{table}[t]
+\centering
+\begin{tabular}{|l|} \hline
+breakfast, meal, \textbf{food}, tasty, dinner, ... \\\hline
+\textbf{staff}, desk, service, friendly, reception, ... \\\hline
+close, city, \textbf{location}, place, central, ... \\\hline
+bed, shower, spacious, \textbf{room}, size, ... \\\hline
+\hline
+\end{tabular}
+\caption{Several aspect clusters extracted from hotel reviews.
+  Each row shows the candidate words of an aspect, sorted by the weight of each word. 
+Bold-faced words are the chosen representatives of each aspect cluster.}
+\label{table:cluster_example}
+\end{table}
+
+When ranking words in each cluster, we want to make sure that one word doesn't appear at top in multiple clusters. We first calculate a confidence score of each cluster based on their distinctiveness: if the word distribution of one cluster is different from all other clusters, it has a high confidence score and we process it first. When ranking the words within each cluster, we also consider the clusters that have already been ranked, that is, clusters with higher confidence scores.
+
+\subsubsection{Ranking Clusters}
+\label{sec:ranking_clusters}
+
+As analyzed in the previous section, the noise in each cluster is introduced by the overlap between clusters. We follow this direction and propose a measurement for the quality of clusters based on their distinctiveness.
+The \textbf{distinctiveness} of a cluster measures how 
+different is its word distribution from other clusters'. 
+Intuitively, a cluster is of high quality when it has small overlapping 
+with other clusters. We measure this by calculating the weighted sum of 
+mutual information of the words within the cluster against all other clusters. 
+
+The mutual information of two random variables is a measure for the mutual dependence. For random variables $X$ and $Y$, their mutual information is defined by 
+\begin{equation}
+MI(X, Y) = \sum_{y\in Y} \sum_{x\in X} p(x, y) \log\left(\frac{p(x, y)}{p(x)p(y)}\right) \label{eq:mi}
+\end{equation}
+
+Let $a$ be a word in cluster $c, c\in[1,C]$ with frequency $f(c, a)$. 
+Let $S(c, a)$ be the score of word $a$ in cluster $c$, 
+then the score of the cluster $c$, $S(c) = \sum_{a} S(c, a)$. 
+$S(c,a)$ is calculated by the mutual information between $a$'s appearance 
+in cluster $c$ and $a$ in all other clusters. 
+
+\begin{align*}
+	S(c, a) &= \log\left(\frac{f_c(a)}{\sum_{r\in[1, C], r\neq c} f_r(a)}\right) \\
+			&= \log(f_c(a)) - \log(\sum_{r\in[1, C], r\neq c} f_r(a))
+    S(c) &= \sum_{a} S(c, a) \\
+         &= \sum_{a} \sum_{d\in [1, C], d\neq c} MI(a_c, a_d) \\
+         &= \sum_{a} \sum_{d\in [1, C], d\neq c} 
+\end{align*}
+
+Finally the clusters are ranked in decending order of the score. 
+
+\subsubsection{Ranking Words}
+\label{section:ranking_words}
+
+Each cluster consists of words related to a potential aspect and we want 
+to find what is the aspect. We do this by finding the word that best 
+summarizes each cluster. For ranking the words in one cluster on how they 
+summarize the cluster, we leverage the intuition behind Lesk 
+lemmatization algorithm and WordNet to 
+define a \emph{semantic similarity} $\sims(w_1, w_2)$ between words $w_1$ and $w_2$.
+The semantic similarity measures how much the two words are related. 
+The similarity consists of two parts:
+
+\begin{itemize}
+    \item Path similarty $\sims_p$ is calculated by the shortest path that connects two words in the is-a (hypernym/hyponym) taxonomy. The scores range from 0 to 1. \KZ{This is a very old and rudimentary use of WordNet. However, it doesn't
+work very well because the distance between any pair of hypernym/hyponym is
+actually different.}
+    \item Definition overlap $\sims_d$ is calculated based on 
+the gloss paragraphs of the two words in WordNet. \KZ{Elaborate further as
+this step seems crucial?}
+We train a recurrent neural network language model on a large dataset 
+and use it to embed the paragraphs, then calculate the cosine of the two embedding vectors as the similarity of of the two definitions.
+\end{itemize}
+
+The final semantic similarity score is calculated by $\sims(w_1, w_2) = \sims_p(w_1, w_2) + \sims_d(w_1, w_2)$. When ranking words inside each cluster, we start with the clusters with high confidence, by the order calculated from the previous step. For word $w$ in cluster $i$, there is a weight, $u_{w,i}$, assigned by the LDA. When calculating the score of word $w$ in cluster $i$, denoted by $s_{w,i}$, we also consider its score from all previous clusters $1\sim i-1$, $s_{w,1} \sim {w,i-1}$. Similar to cluster ranking, we consider the mutual information, resulting in the final calculation of the score:
+$$s_{w,i} = u_{w,i} \sum_{w'} \sims(w, w') - \sum_{j=1}^{i-1} s_{w,j}$$
+\KZ{What's the intuition for doing the above? What if you don't do it just just
+treat each cluster independently? Can we have some evaluation results on this?
+Generally in this method section, there are many design decision made. We
+need to justify them carefully either by intuition, or by citation (previous
+work) and it would be the best if we can substantiate them using eval results.}
+
+The final word order in each cluster is sorted by this score.

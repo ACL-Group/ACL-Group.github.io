@@ -1,0 +1,199 @@
+\section{Approach}
+\label{sec:approach}
+
+Our algorithm tries to fuzzy match a seed pair of the form
+($h$, $t$) to a sentence $s$. To match either $h$ or $t$ against $s$,
+we make the following three attempts in succession: i) exact lexical 
+match with some tolerance, ii) partial match after syntactic analysis,
+iii) whole concept semantic match. A sentence sequentially goes through three steps to find the commonsense arguments in it. The fuzzyness of matching aims to increase as the tolerance of varying parts in a phrase enhances. We explain these three methods below.
+
+concept and sentence should all in lemma form.
+
+1. Input: a sentence and a list of concepts, output: the concepts that fuzzily matches. e.g. sentence: ``... A a B C...'' and there is a concept: ``A B C'', output is [``A B C'']
+
+Note that concepts and sentences are in lemma form.
+
+
+2. Input: a sentence and a list of concepts, output: the concepts that syntactically  matches. e.g. sentence: ``... A a B C...'' and there is a concept: ``A B C'', we change the concept into the form [?, B, C], `?' means it could be replaced with another word. We further constituency parse the sentence to get the chunks. If one of the chunks contains [B, C] (assume the chunk is [X, B, C]), we pass the chunk and concept into step3. If step3 returns True, we consider chunk [X, B, C] and concept [A, B, C] are similar phrases and we record the chunk and the concept.
+
+Note that concepts and sentences are in lemma form.
+
+todo:
+\begin{enumerate}
+
+\item  parse corpus. save \{'sen':sentence, 'parse':chunk\}
+\item  parse concept. save MWE form and its lemma form.
+\item  match MEW form with sentence.
+\item  record [concept-phrase]
+\item  output [variable part of the phrase]
+\end{enumerate}
+
+
+3. Input: $p_{chunk}$ (phrase from chunk) and $p_{phrase}$ (phrase from concept), output: if they are semantically similar.
+3.1 obtain phrase embeddings of $p_{chunk}$ and $p_{phrase}$. calculate cosine similarity between them. if sim $\geq$ threshold, return True. if not, go to step 3.2.
+3.2 obtain hyponym embedding of $p_{chunk}$ and hypernym embedding of $p_{phrase}$. calculate cosine similarity between them. if sim $\geq$ threshold, return True. if not, return False.
+
+Note that phrases are in original form.
+
+\subsection{Exact match with tolerance}
+Because in the context of the sentence, the concept may appear with some
+ad hoc modifiers, completely exact match may have low recall. 
+Thus we allow the insertion of $\lambda$ arbitrary words anywhere into the concept term. We empirically set $\lambda$ as one because larger value, while potentially helps discover more concepts, may introduce noise. 
+Furthermore, if the concept contains only one word, we will check if the POS tags of the concept and the token in sentence match because single word tends to have multiple senses. The algorithm is show in \algoref{alg:lexical_algo} and the example is in \exref{tolerance}.
+
+\begin{algorithm}[tb]
+	\small
+	\caption{Lexical-level algorithm}
+	\label{alg:lexical_algo}
+	\textbf{Input}: Concepts $C$, sentence $s=\{w_1, ..., w_N\}$\\
+	\textbf{Output}: Concept sequence $C_s$ 
+	\begin{algorithmic}[1]
+		\Procedure{HASH\_CONCEPT}{$C$}
+		\State {$dict \gets \{\}$}
+		\For {$c \in C$}
+		\State {$c0 \gets first\ word \ of c$}
+		\If {$c0 \notin dict.keys$}
+		\State {$dict[c0] \gets []$}
+		\EndIf
+		\State {$dict[c0].insert(c)$}
+		\EndFor
+		\State \textbf{return} {$dict$ }
+		\EndProcedure
+		
+		\Procedure{LEXICAL\_MATCH}{$C, s$}
+		\State {$C_s \gets \{\}$}
+		\State {$dict \gets HASH\_CONCEPT(C)$}
+		\For {$w_i \in s$}
+		\If {$w_i \in dict.keys$}
+		\For {$c \in dict[w_i]$}
+		\State {$t \gets \{w_i, w_{i+1}, ..., w_{i+|c|+\lambda}\}$}
+		\If {$c ~\textrm{is a subsequence of}~t $}
+		\State {$C_s \gets C_s + \{c\}$}
+		\EndIf
+		\EndFor
+		\EndIf
+		\EndFor
+		\State \textbf{return} {$C_s$ }
+		\EndProcedure
+	\end{algorithmic}
+\end{algorithm}
+
+
+\begin{example}\label{tolerance}
+Given a concept: `\uline{a} \uline{nice} \uline{glass} \uline{of} \uline{wine}', it will match the sentence: `John orders \uline{a} \uline{nice} \uline{glass} \uline{of} \uline{Italian} \uline{wine} to celebrate his birthday.' with the tolerance of one word.
+\end{example}
+\yuelan{1. why we choose the tolerance to be one?  2. delete the algorithm because this approach is straight forward, given an example is enough }
+
+%The detailed algorithm is
+%in Algorithm \ref{algo:lex}.
+
+%\begin{algorithm}
+%xxx
+%xxx
+%\caption{Tolerant String Match}\label{algo:lex}
+%\end{algorithm}
+
+%1. check if surface form is similar (lexical level)
+%\begin{itemize}
+%\item ( ShanShan's code) 
+%\item With Two-Layer Edit-distance by using subsequence
+%\end{itemize}
+
+\subsection{Partial match with syntactic analysis}
+The commonsense concepts can be long phrases that contain
+syntactic structures, and some elements in these structures may be
+optional or replaceable. Our next idea is to analyze the seed concept
+by dependency parsing and identify words or subphrases in it that is free 
+to be replaced. And these replaceable parts will be semantically matched
+with the phrases of input sentence while the fixed parts will be exactly matched.
+
+Formally, the algorithm follows these steps:
+\begin{itemize}
+\item Obtain frequent n-grams ($2 \leq n \leq 5$) from a large text
+corpus such as Yahoo Answers, which is rich of formal and informal
+use of language; 
+\item Keep those n-grams whose dependency structure is stable (or
+has a dominant dependency structure) and consider these as multi-word expressions (MWEs);
+\item Given a seed concept $c$, identify all the non-overlapping MWEs in it;
+this may result in a number of different configurations, an example is shown in \exref{pattern}. 
+The word spans which are not covered by any MWEs in $c$ are called place
+holders and are subject to replace;
+\begin{example}\label{pattern}
+
+The seed concept: `a nice glass of wine' results in two configurations: `a nice glass \uline{of} \uline{wine}' and `a nice glass of \uline{wine}', because `a nice glass' and `a nice glass of' are both MWEs learned in our first two steps.
+
+\end{example}
+\item For each configuration, check whether the place holders are 
+natural phrases (by checking against the constituent parse tree of $c$); 
+keep this config if all its place holders are natural phrases.
+\item Fuzzy match each configuration with the input sentence. The MWEs must be exactly matched, while the placeholders can be replaced with a semantically
+similar phrase (see \secref{sec:semantic}).
+\end{itemize}
+
+
+\subsection{Whole phrase semantic match}
+\label{sec:semantic}
+Some phrases are not similar in surface form but have close meaning. Given a pair of phrases, we should discriminate whether they are semantically similar. We model semantic closeness from two perspectives: synonym or hypernym/hyponym. For example, \textbf{company} and \textbf{corporation} are synonyms, \textbf{company} and \textbf{microsoft} are hypernym/hyponym. 
+
+For synonym, we use BERT\cite{devlin2018bert} to encode phrases and calculate cosine similarity between phrase embeddings. If the similarity is above threshold, we consider these two phrases are synonym.
+
+As for hypernym/hyponym, we follow \cite{yu2015learning} to pre-train hypernym/hyponym embeddings. Specifically, we use GRU to encode hypernym/hyponym and GloVe\cite{pennington2014glove} (300 dimension, trained on 6B tokens) to initialize embeddings matrix. We create test set from Probase\cite{wu2012probase}. If the cosine similarity between two phrases is above a threshold, they are classified as hypernym/hyponym relation. We enumerate several threshold values and find setting it as ... achieve highest accuracy (xx\%) on test set. 
+
+We use pre-trained phrase vectors to find matching sentences by computing similarity score. Phrase vectors are trained on PPDB. 
+\begin{itemize}
+\item Build Phrase Vectors (using both paraphrase data and isa data)
+\item Compute the PV for a phrase in the input sentence and the phrase
+to be matched. Use LSTM to encode phrase, and X to encode checking sentences.
+\item Calculate the similarity score among them.
+\end{itemize}
+
+\yuelan{a picture of how it works}
+
+% Task definition: given a sentence, apply constituency parsing on it to obtain noun phrases and verb phrases. Map them to semantically related concepts in commonsense KBs. Thus we need to compare similarity between phrases and there could be millions of %phrases (e.g. there are 12,501,527 entities in Probase).
+
+%Word-level semantic similarity:
+%\begin{itemize}
+%   \item taxonomy-based: edge count, depth-based
+%    \item corpus-based: mutual information, IDF
+%    \item embedding-based: cosine-similarity
+%\end{itemize}
+
+%Text-level semantic similarity: based on word-level similarity. Suppose two text $T_1=\{w_1,\ldots,w_n\}$ and $T_2=\{w_1,\ldots,w_m\}$. Then one way to compute is:
+%\begin{align*}
+%   sim(T_1,T_2)=\frac{1}{2}(\sum_{w\in T_1} c_w\max_{w'\in T_2}sim(w,w')+\\
+%\sum_{w\in T_2} c_w\max_{w'\in T_1}sim(w,w'))
+%\end{align*}
+%where $c_w$ is the weight, can use IDF.
+%
+%Or we can restrict the pair in $sim(w,w')$ to be unique.
+
+%--------------------
+%\begin{itemize}
+%\item extract phrases from a sentence
+
+%\item have a collections of concepts
+
+%\item use tf-idf to match phrases in 1 and 2 (see https://medium.com/tim-black/fuzzy-string-matching-at-scale-41ae6ac452c2)
+
+%\end{itemize}
+
+%\subsection{Augment Commonsense Arguments}
+%\label{sec:augment}
+%We categorize commonsense arguments into two types: noun phrasal commonsense arguments and verb phrasal commonsense arguments.
+
+%\subsubsection{Noun Phrasal Commonsense Arguments}
+%\label{sec:np}
+%A commonsense argument can derive into two kinds of variants: synonym and instance. For example, \textit{exercise}'s synonym variants are: \textit{[play sport, work out, go to the gym, build up body]} and instance variants are: \textit{[play basketball, jog, swim]}. 
+%\paragraph{Synonym Variants}
+%We use WordNet and \textit{Synonym} relation in ConcetpNet5.7 to obtain synonyms of a given argument. 
+%First we utilize GlossBERT to conduct word sense disambiguation. Then we find corresponding synsets in WordNet and commonsense arguments in ConceptNet with same sense. 
+%(show examples)
+%\paragraph{Instance Variants}
+%We use WordNet and \textit{IsA, InstanceOf} relation in ConcetpNet5.7 to obtain instances of a given argument. 
+%Furthermore, we utilize hypernymy relations taxonomies such Probase and WebIsALOD. 
+%(show examples)
+
+%\subsection{Phrasal Pattern Extraction}
+%To accurately find adequate variants of phrasal concepts, the identification of invariable and semi-variable phrases is considered as an indispensable part before the stage of matching. Slangs and Multiples Words Expressions are the two major parts in our case %of invariable/semi-variable phrases, and  any replacement on the invariable part may change their original meaning. For example, ``rain cats and dogs'' is a phrasal slang that can not be understood easily on semantic level but is wildly used in our daily life to %mean ``rain heavily'', and any change on it will differ the commonly accepted meaning.
+
+%Multi Word Expressions and slangs are extracted from Yahoo Answer. The data is generated randomly from all files under a variety of themes, which are 1 million question-answer pairs in total. The property of multi word expressions is a little different than slang, %since every word in a slang is fixed but words in multi word expressions follows a pattern and have a flexibility on some parts of the word (Like pronouns, determiners, etc.). For example, "keep your eyes on it" can be considered as a multi word expression, but %the variants can be "keep a close eye on something", "keep their eyes on it". Therefore, instead of storing a bag of expressions, we store a bag of patterns.  To determine the pattern (subtree of dependency parse tree), we first search for contiguous tokens which %contains two to four words and among them should include at least one verb. Record the frequency of these tokens and keep track of original sentence ID. Apply the dependency parse on sentences that contains high frequency tokens. For each token, save all %the edges in the dependency tree that at least one node is contained in the token (denote nodes as -1 if this node cannot be found in token) and record the frequency as well. Based on the frequency of edges, each token has a probability distribution over all %recorded edges, which we can use to get an entropy of each token to check if it has dominant edges. These dominant edges are the patterns we found , and these tokens are multi words expressions we aim to find.

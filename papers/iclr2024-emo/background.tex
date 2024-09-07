@@ -1,0 +1,45 @@
+\section{Background and Motivation}
+\label{sec:bg}
+\subsection{Auto-regressive Language Modeling}
+Current language generation systems are predominantly based on probabilistic neural auto-regressive language models~(LMs)~\citep{bengio2000neural}. Denoting a language model parametrized by $\theta$ as $Q_{\theta}$, it essentially computes the 
+probability of a given text sequence $\bm{x}$ as the product of each token's conditional probability given preceding tokens:
+\begin{equation}
+    Q_{\theta}(\bm{x})=\prod_{t=1}^{|\bm{x}|}Q_{\theta}(x_t|x_{<t})
+    \label{eq:prob}
+\end{equation}
+Prior works have adopted various neural architectures, e.g., LSTM~\citep{lstm}, GRU~\citep{gru}, and now the most widely used Transformer~\citep{transformer}, to transform natural language input to next token probability. To estimate $\theta$, the most common approach is to perform self-supervised pre-training on enormous 
+volume of text corpus using maximum likelihood estimation. Given the data distribution $P$, the training objective of MLE is equivalent to minimizing the forward cross-entropy between $P$ and $Q_{\theta}$:
+\begin{align} 
+    \label{eq:mle_1}
+    \mathcal{L}_{\text{MLE}}=\text{CE}(P,Q_{\theta})&=-\mathbb{E}_{\bm{x}\sim P}[\log{Q_{\theta}(\bm{x})}] \\
+    &=-\mathbb{E}_{\bm{x}\sim P}[\sum_{t=1}^{|\bm{x}|}\log{Q_{\theta}(x_t|x_{<t})}] \\
+    &=\mathbb{E}_{x\sim P}[\sum_{t=1}^{|\bm{x}|}\text{CE}(P(\cdot|x_{<t}), Q_{\theta}(\cdot|x_{<t}))]
+    \label{eq:mle_2}
+\end{align}
+From Eq.~\ref{eq:mle_1} to Eq. \ref{eq:mle_2}, the sentence-level cross-entropy is further decomposed into the sum of forward cross-entropy between token-level data distribution $P(\cdot|x_{<t})$ and model distribution $Q_{\theta}(\cdot|x_{<t})$.
+
+\subsection{Deficiency of Maximum Likelihood Estimation}
+\label{sec:deficiency}
+In this subsection, we will delve into certain properties of the forward cross-entropy employed in MLE training, and elucidate the impact of these properties on the learned model distribution.
+\subsubsection{Recall-Prioritization}
+
+A series of recent works~\citep{lucic2018gans,sajjadi2018assessing,djolonga2020precision} have generalized the classification metric \textit{recall} to measure the quality of generative modeling. Specifically, recall here is defined as the model distribution $Q_{\theta}$'s coverage of data distribution $P$, i.e., a high recall means that high likelihood tokens under $P$ shall also have high likelihood under $Q_{\theta}$. In contrast, the \textit{precision} of $Q_{\theta}$ focuses on measuring whether low-quality tokens~(unlikely under $P$) have low probabilities under $Q_{\theta}$. To elaborate further, we derive the gradient of forward cross-entropy w.r.t model parameters $\theta$ as follows:
+\begin{equation}
+    \nabla_{\theta}\mathcal{L}_{\text{MLE}}=-\mathbb{E}_{\bm{x}\sim P}[\sum_{t=1}^{|\bm{x}|}\frac{\nabla_{\theta}Q_{\theta}(x_t|x_{<t})}{Q_{\theta}(x_t|x_{<t})}] \\
+    \label{eq:grad_mle}
+\end{equation}
+Eq.~\ref{eq:grad_mle} clearly shows that, by minimizing $\mathcal{L}_{\text{MLE}}$ via gradient descent, $Q_{\theta}$ is encouraged to only assign a high probability to the ground-truth next token and therefore being recall-prioritized. Consequently, the precision of $Q_{\theta}$ is not adequately incentivized in MLE because Eq.~\ref{eq:grad_mle} does not explicitly discourage learning of low-quality tokens. In short, recall-prioritization results in insufficient optimization of $Q_{\theta}$'s precision and amplifies the need for enormous amounts of high-quality text corpus to overcome this limitation.
+\subsubsection{Negative Diversity Ignorance}
+Another noteworthy property of MLE is its ignorance of diverse supervision signals of non-ground-truth tokens during auto-regressive language modeling~\cite{zhang2018minimum,li2019data}. Specifically, MLE assumes token $x_t$ observed in training sample $\bm{x}$ is the only ground-truth token at time step $t$ and maximizes its log-likelihood under $Q_{\theta}$. Concurrently, the remaining tokens other than $x_t$ in the vocabulary are treated \textit{equally incorrect}, and their probabilities are implicitly penalized in MLE. This can be demonstrated by analyzing the partial derivative of $\text{CE}(P(\cdot|x_{<t}),Q_{\theta}(\cdot|x_{<t}))$ w.r.t the output logits $\bm{z}$ before softmax:
+\begin{equation}
+    \frac{\partial \text{CE}(P(\cdot|x_{<t}),Q_{\theta}(\cdot|x_{<t}))}{\partial z_i}=
+    \begin{cases}
+        Q_{\theta}(x_t)-1 \quad \text{if}~v_i = x_t\\
+        Q_{\theta}(v_i) \quad \text{others}
+    \end{cases}
+\end{equation}
+where $v_i$ denotes the $i$-th token in the vocabulary. To reach a local minimum during gradient-based optimization~($\text{gradient norm}\to0$), the model will try to increase the probability of $x_t$~($Q_{\theta}(x_t)\to1$) and decrease the probability of all other tokens~($Q_{\theta}(v_i)\to0$). In practice, however, certain tokens can serve as plausible alternatives to $x_t$, e.g., synonyms of $x_t$. The training objective should assign high probabilities to those tokens rather than penalize them as did in MLE. In essence, such an inability of MLE may inhibit building more powerful neural models of human language that can accurately distinguish the relative correctness of the next token.
+
+\subsubsection{Train-test mismatch}
+\label{sec:train_test_mismatch}
+When training is completed, language models are often evaluated against objectives that differ significantly from MLE. For example, ROUGE~\citep{rouge} for summarization and BLEU~\citep{bleu} for machine translation. This creates a train-test mismatch for language modeling. In other words, we draw sample $\bm{x}$ from $Q_{\theta}$ and then assess its quality using certain evaluation function $f(\cdot)$, i.e., maximizes $\mathbb{E}_{\bm{x}\sim Q_{\theta}}[f(\bm{x})]$, where $f(\cdot)$ varies according to different downstream scenarios. This is inconsistent with MLE in which the expectation is taken w.r.t data distribution $P$, i.e., $\mathbb{E}_{x\sim P}[\log{Q_{\theta}(x)}]$. Most prior works have attempted to address this issue by incorporating the evaluation objective $f(\cdot)$ into training and adopting reward-augmented maximum likelihood~\cite{raml,zhang2018minimum,brio} based on the policy gradient theorem~\citep{pg} or contrastive learning. However, such changes incur non-trivial overhead, and the choices of evaluation function $f(\cdot)$ are usually task-specific and less applicable for general language modeling. In light of this, there is a critical need for objectives that exhibit better train-test consistency to enhance the efficacy of language modeling.

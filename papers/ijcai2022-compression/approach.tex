@@ -1,0 +1,123 @@
+\section{Approach}
+
+We first describe a new module-based two-branch container that serves as the fundamental backbone. Then we 
+introduce a two-stage framework named LCD and elaborate on how it incorporates this container for language model compression. A schematic overview is shown in \figref{fig:overview}.
+\subsection{Module-based Two-branch Container} 
+\label{sec:branch}
+In the context of language model compression, we assume both teacher and student networks share the same layer structure, e.g., Transformer layer for PLMs like BERT. We propose a module-based two-branch container that is on-the-fly filled by a probability scheduler during training. 
+
+
+
+\subsubsection{Module}
+A module can be regarded as a dynamically instantiated layer for each branch. For a given teacher network $\mathcal{T}$ with $L_{\mathcal{T}}$ layers and a target student network $\mathcal{S}$ with $L_{\mathcal{S}}$~($L_{\mathcal{S}}\small{<}L_{\mathcal{T}}$) layers, each of the two branches will have $L_{\mathcal{S}}$ modules. Each of the two modules at layer $i$  either contain one corresponding layer from student network or $r$~($r$ is the compression ratio, i.e.,
+$L_{\mathcal{T}}/L_{\mathcal{S}}$, e.g., $r=2$ in \figref{fig:overview}'s example) corresponding layers from 
+teacher network. This is determined by sampling a 0/1 random variable $b_i$ from a Bernoulli distribution with probability $p$ to be 1 and $1-p$ to be 0:
+\begin{align}
+    \nonumber
+    b_i \sim \text{Bernoulli}(p_i) 
+\end{align}
+Let $M_{i}^1$ and $M_{i}^2$ denote $i$-th modules of the two branches respectively, we define:
+\begin{align}
+    \nonumber
+    M_{i}^1=
+    \begin{cases} 
+        \mathcal{S}_i,  & \text{if }b_i=1 \\
+        \{\mathcal{T}_k\}_{k=i*r-1}^{(i+1)*r-2} & \text{if }b_i=0
+    \end{cases} \\
+    \nonumber
+    M_{i}^2=
+    \begin{cases} 
+        \{\mathcal{T}_k\}_{k=i*r-1}^{(i+1)*r-2} & \text{if }b_i=1 \\
+        \mathcal{S}_i,  & \text{if }b_i=0 
+    \end{cases}
+\end{align}
+In this way, teacher and student layers are organized in an interleaved manner, allowing deeper mutual interaction. 
+
+\subsubsection{Branch}
+A branch is a stack of modules that takes an input~(e.g., a sentence) and produces a task-specific output~(e.g., probability distribution over label space). It realizes both forward computation and backward gradient propagation. 
+The forward computation of a branch can be written as:
+\begin{align}
+    \bm{H}_0 &= \bm{X} \\
+    \bm{H}_i &= M_i(\bm{H}_{i-1}) \\
+    y &= C(\bm{H}_{L_{\mathcal{S}}}) 
+\end{align}
+where $\bm{X}$ is the sequence of input embedding, $\bm{H}_i$ is the hidden states output by $i$-th module $M_i$, and $y$ is the final output by a task-specific layer $C$. The backward gradient propagation is also similar to regular fine-tuning, except that 
+(1) gradients are propagated through two computation graphs. (2) teacher layers are fixed and only student layers get updated.
+
+\subsubsection{Probability Scheduler}
+The probability scheduler encapsulates the strategy on how we decide the probability $p_i$. We use a global probability $p$~(i.e., $\forall 1\leq i\leq L_{\mathcal{S}},~p_i=p$) and  adopt a linear scheduler~\cite{theseus} which 
+increases $p$ from a small value $p_{init}$ to 1 by constant step size $k$:
+\begin{align}
+    \nonumber
+    p = \text{min}(1, p_{init}+kt)
+\end{align}
+where $t$ is the current time step. In this case, student layers are more frequently assigned to the second branch at an early time and then gradually moved to the first branch. Ultimately, the first branch becomes the 
+complete student network while the second branch becomes the complete teacher network. We also discuss different schedulers in \secref{sec:ablation}.
+
+\subsection{LCD: Learning from Collaboration and Demonstration}
+The two-branch container described above only defines the computation process of data. Based on the container, we now introduce a two-stage learning framework LCD, short for Learning from 
+Collaboration and Demonstration, which applies different learning strategies in these two stages.
+
+\subsubsection{Learning from Collaboration}
+In the collaboration stage, the two branches are both optimized for a regular task-specific objective $L_{task}$ which was also used to fine-tune the complete teacher network. 
+For instance, $L_{task}$ can be defined as the cross-entropy loss for a classification task:
+\begin{align}
+    \mathcal{L}_{task}=-\frac{1}{N}\sum_{i=1}^N\sum_{c\in C}\mathbbm{1}[y_i=c]*\log{P_{\theta_{\mathcal{T}},\theta_{\mathcal{S}}}(c|x_i)} 
+\end{align}
+where $(x_i, y_i)$ is the $i$-th sample from training set, $C$ is the set of class labels, and $\theta_{\mathcal{T}}$/$\theta_{\mathcal{S}}$ are the parameters of all teacher/student layers in current branch. 
+
+During back-propagation, only $\theta_{\mathcal{S}}$ get updated while $\theta_{\mathcal{T}}$ are frozen. 
+In this way, every student layer is encouraged to simulate its corresponding teacher layers in order to minimize the task objective, realizing \textit{\textbf{implicit}} knowledge transfer.
+
+\subsubsection{Learning from Demonstration}
+In the demonstration stage, we stack all teacher layers as a complete teacher network in parallel to the two branches and use it to provide \textit{\textbf{explicit}} demonstrations. 
+The two branches are both optimized for a comprehensive knowledge distillation objective $L_{distill}$. For effective knowledge transfer, we design $L_{distill}$ to consider both demonstrations from intermediate layers and output layer.
+
+For intermediate demonstration, we define two losses $L_{intra}$ and $L_{inter}$. $L_{intra}$ measures the similarity between representations of each module and all teacher 
+layers with an attention mechanism considering each sample independently:
+\begin{align}
+    \mathcal{L}_{intra}&=-\frac{1}{N}\sum_{i=1}^N\sum_{j=1}^{L_{\mathcal{S}}}\text{MSE}(h_{i,j},\tilde{h}^{\mathcal{T}}_{i,j}) \\
+    \tilde{h}^{\mathcal{T}}_{i,j}&=\sum_{l=1}^{L_{\mathcal{T}}}\frac{\text{exp}(h_{i,l}^{\mathcal{T}}\cdot h_{i,j})}{\sum_{l^\prime =1}^{L_{\mathcal{T}}}\text{exp}(h_{i,l^\prime}^{\mathcal{T}}\cdot h_{i,j})}*h_{i,l}^{\mathcal{T}}
+\end{align}
+where $h_{i,j}=\text{Mean}(\bm{H}_{i,j})$, $h_{i,l}^{\mathcal{T}}=\text{Mean}(\bm{H}_{i,l}^{\mathcal{T}})$, MSE is the mean-square-error. In contrast, $L_{inter}$ measures the overall similarity between representations of 
+each branch and teacher network considering all samples in the mini-batch:
+\begin{align}
+   \mathcal{L}_{inter}&=-\frac{1}{N_{b}}\sum_{i=1}^{N_b}\log{\frac{\text{exp}(\bar{h}_i\cdot \bar{h}^{\mathcal{T}}_i)}{\sum_{k=1}^{N_b}\text{exp}(\bar{h}_i\cdot \bar{h}_{k}^{\mathcal{T}})}} \\
+   \bar{h}_i&=\text{\textbf{W}}\cdot \text{Concat}(\{h_{i,j}\}_{j=1}^{L_{\mathcal{S}}}) \\
+   \bar{h}_i^{\mathcal{T}}&=\text{\textbf{W}}^{\mathcal{T}}\cdot \text{Concat}(\{h_{i,j}^{\mathcal{T}}\}_{j=1}^{L_{\mathcal{T}}})
+\end{align}
+where $\text{\textbf{W}}$ and $\text{\textbf{W}}^{\mathcal{T}}$ are learnable linear transformations to produce summarized representations $\bar{h}_i$ and $\bar{h}_i^{\mathcal{T}}$ for $i$-th sample, and $N_b$ is the batch size.
+
+For output demonstration, we define $L_{output}$ to measure the divergence between outputs of each branch and teacher network. For classification task, $L_{output}$ is defined 
+as the KL divergence between output distributions:
+\begin{align}
+    \mathcal{L}_{output}&=\frac{1}{N}\sum_{i=1}^ND_{KL}(y_i||y_i^{\mathcal{T}})
+\end{align}
+For regression task, $L_{output}$ is defined as the mean-square-error between output scalars:
+\begin{align}
+    \mathcal{L}_{output}&=\frac{1}{N}\sum_{i=1}^N\text{MSE}(y_i, y_i^{\mathcal{T}})
+\end{align}
+
+Combining the above objectives, we derive the final distillation objective as their weighted sum:
+\begin{align}
+    \mathcal{L}_{distill}&=\alpha*\mathcal{L}_{intra}+\beta*\mathcal{L}_{inter}+(1-\alpha-\beta)*\mathcal{L}_{output}
+    \label{eq:distill}
+\end{align}
+where $\alpha$ and $\beta$ are both empirically set to 0.2 to avoid extensive hyper-parameter search.
+
+Since we do not utilize any task-specific ground-truth label during demonstration stage, we can easily integrate data augmentation to generate more training data for more sufficient knowledge transfer. We show the 
+effectiveness of data augmentation in the experiment section.
+  
+\subsubsection{Weighting Strategy}
+\label{sec:weighting}
+By far we have described the branch-wise learning objectives in both stages. Because we have two branches anytime during training and they may have a different number of student 
+layers, the strategy for weighting the losses computed by the two branches is an important factor for optimization. To this end, we propose to use the Bernoulli probability $p$ defined in \secref{sec:branch} as the weighting coefficient, such that the loss amortized to each student layer is roughly the same.  
+When $p$ is small~(e.g., $p<0.5$), more student layers are in the second branch hence more weight is put on losses computed by the second branch. When $p$ is close to 1, most 
+student layers are in the first branch, and losses computed by the first branch have a larger weight accordingly. Particularly when $p$ reaches 1, all student layers stay in the first branch 
+and constitute the complete student network.
+
+The final training objective $\mathcal{L}_{col}$ for collaboration stage and $\mathcal{L}_{demo}$ for demonstration stage are both defined as the linear interpolation between losses of the two branches, where the superscript indicates the branch id:
+\begin{align}
+    \mathcal{L}_{col} &= p * \mathcal{L}_{task}^1 + (1-p) * \mathcal{L}_{task}^2 \\
+    \mathcal{L}_{demo} &= p * \mathcal{L}_{distill}^1 + (1-p) * \mathcal{L}_{distill}^2
+\end{align}

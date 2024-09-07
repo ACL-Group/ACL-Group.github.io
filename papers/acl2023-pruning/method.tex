@@ -1,0 +1,135 @@
+\section{Methodology}
+Instead of heuristically defining the importance criterion as in prior pruning methods, we take a step back and rethink the design of the importance criterion for model pruning from an optimization perspective. From our analysis, we draw an equivalence between finding the optimal stepwise pruning decision and solving an equality-constrained 0-1 Integer Linear Programming problem. We further show that the optimal solution to this problem leads to a new importance criterion for model pruning. Moreover, we propose a simple yet effective self-regularization scheme to facilitate the generalization ability of the sparse model. We elucidate our analysis in \secref{sec:analysis} and describe our self-regularization scheme in \secref{sec:sr}.
+% \subsection{Analysis}
+\subsection{Rethinking Importance Criterion from the Optimization Perspective}
+\label{sec:analysis}
+Without loss of generality, we denote $\mathcal{L}$ as the learning objective when adapting a pre-trained language model $f$ with parameter $\bm{\theta}$ to a downstream task. At $t$-th training iteration, we denote the current model parameters as $\bm{\theta}^{(t)}$ and the evaluated learning objective as $\mathcal{L}(\bm{\theta}^{(t)})$.
+
+The temporal variation of the learning objective $\mathcal{L}(\bm{\theta}^{(t)})$ at time step $t$ is given by the second-order Taylor series expansion:
+\begin{align}
+	\Delta\mathcal{L}^{(t)}&=\mathcal{L}(\bm{\theta}^{(t)}+\Delta \bm{\theta}^{(t)})-\mathcal{L}(\bm{\theta}^{(t)}) \\ \nonumber
+	&= \nabla_{\bm{\theta}}\mathcal{L}(\bm{\theta}^{(t)})^{\top}\Delta \bm{\theta}^{(t)}+ \\
+	& \frac{1}{2}\Delta \bm{\theta}^{(t)^{\top}}\bm{H}^{(t)}\Delta \bm{\theta}^{(t)}+o(|\Delta\bm{\theta}^{(t)}|^2)
+	\label{eq:7}
+\end{align}
+where $\bm{H}^{(t)}$ is the Hessian matrix at step $t$. 
+It is known that the largest eigenvalue $\lambda_{max}$ of Hessian matrices in 
+a PLM is typically small~\cite{eigen}, i.e., $\Delta \bm{\theta}^{(t)^{\top}}\bm{H}^{(t)}\Delta \bm{\theta}^{(t)}\leq\lambda_{max}|\Delta \bm{\theta}^{(t)}|_2^2\approx 0$. Thus, we ignore the second-order term as well as the infinitesimal of higher order in \eqnref{eq:7}:
+\begin{align} \nonumber
+	\Delta\mathcal{L}^{(t)}&=\nabla_{\bm{\theta}}\mathcal{L}(\bm{\theta}^{(t)})^{\top}\Delta \bm{\theta}^{(t)} \\
+	&=\sum_{i=1}^{d}\bm{g}_i^{(t)}\cdot \Delta \bm{\theta}^{(t)} _i
+	\label{eq:8}
+\end{align}
+Under the iterative pruning setting, the actual temporal variation $\Delta\bm{\theta}^{(t)}_i$ of $i$-th parameter depends on whether it is allowed to be updated or forced to zeroed out. Formally, we use a binary variable $\bm{x}_i^{(t)}$ to indicate the pruning decision of $i$-th parameter at time step $t$, i.e., $\bm{x}_i^{(t)}=1$ means $\bm{\theta}^{(t)}_i$ is updated and $\bm{x}_i^{(t)}=0$ means $\bm{\theta}^{(t)}_i$  is pruned. 
+%\KZ{Earlier we used $M_i^t$ as the binary mask, now we are using $x$. A bit confusing. I also find the notation in this subsection to be too complicated.}
+The temporal variation in \eqnref{eq:8} can now be rewritten as:
+\begin{align}
+	\Delta\mathcal{L}^{(t)}=\sum_{i=1}^{d}\bm{g}_i^{(t)}(\bm{x}_i^{(t)}\Delta\hat{\bm{\theta}}_i^{(t)}+(1-\bm{x}_i^{(t)})(-\bm{\theta}_i^{(t)}))
+\end{align}
+where $\Delta\hat{\bm{\theta}}_i^{(t)}=-\eta^{(t)}\bm{g}_i^{(t)}$ is the gradient descent update.  Finding the optimal pruning decision that leads to the smallest $\Delta\mathcal{L}^{(t)}$ is now converted to an equality-constrained 0-1 integer linear programming~(ILP) problem of variables $\bm{x}^{(t)}$:
+\begin{align}
+%	\label{eq:ks}
+\nonumber
+	\tilde{\bm{x}}^{(t)}&=\underset{\bm{x}^{(t)}}{\arg\min} ~\Delta\mathcal{L}^{(t)} \\
+	\text{s.t.~~~~~}\sum_{i=1}^d &\bm{x}_i^{(t)}=r^{(t)}, \bm{x}_i^{(t)}\in\{0,1\} 
+	\label{eq:10}
+\end{align}
+where $r^{(t)}$ is the number of remaining parameters at step $t$ according to the pre-defined sparsity scheduler. 
+%\KZ{I find this scheduler to be a bit 
+%interesting. The overall goal should be to hit a predefined sparcity, such as 80\%, but how to reach there in each iteration may not be steady speed. So I 
+%wonder how this scheduler works. It seems that every iteration theres a sparsity
+%budget which is the $v^{(t)}$, but who determines this?}
+If we consider each parameter $\bm{\theta}^{(t)}_i$ as an item and $r^{(t)}$ as the total capacity,  the problem that \eqnref{eq:10} defines can be treated as a special case of 0-1 Knapsack problem where the weight for each item is one and the value for each item is given by:
+%Instead of relying on an external specialized solver~\cite{ilp1}, we prove that the optimal solution $\tilde{\bm{x}}^{(t)}$ can be efficiently derived based on the following new importance criteria:
+\begin{align}
+	\bm{S}_i^{(t)}=-\bm{g}_i^{(t)}\Delta\hat{\bm{\theta}}_i^{(t)}-\bm{g}_i^{(t)}\bm{\theta}_i^{(t)}
+	\label{eq:score}
+\end{align}
+Contrary to the general 0-1 Knapsack problem which is known to be NP-complete, fortunately, the equal-weight 0-1 Knapsack is a P problem.  Its optimal solution can be obtained by sorting items in descending order according to their values and selecting the top-$r^{(t)}$ ones:
+\begin{align}
+	\tilde{\bm{x}}^{(t)}_i=
+	\begin{cases} 
+		1, & \text{if }~\bm{S}^{(t)}_i\text{is in the top-}r^{(t)}\text{of }\bm{S}^{(t)}\\
+		0,  & \text{otherwise}  
+	\end{cases}
+	\label{eq:problem}
+\end{align}
+%\KZ{This equation seems to be very similar to Eq (3)?}
+
+%Putting it in the context of iterative pruning, we can interpret the value defined in \eqnref{eq:score} as a principled new importance criterion and use it to rank all model parameters.
+Putting it in the context of iterative pruning, our analysis theoretically reveals the validity of: (1) selecting parameters based on the ranking of certain importance criterion; (2) using \eqnref{eq:score} as a  principled new importance criterion.
+%Based on the above analysis, it is then natural for us to interpret the value defined in \eqnref{eq:score} as a new importance criterion and use it to rank all model parameters during iterative pruning. 
+
+%Specifically, we compute the  importance scores  for all parameters via \eqnref{eq:score} and used to rank them in descending order. Then the parameters with top-$v$ largest importance scores are updated and the remaining parameters are pruned to zero:
+
+%
+%\begin{proof}
+%	$\Delta\mathcal{L}^{(t)}$ can be further rewritten by grouping the summation depending on the variables $\bm{x}^{(t)}$:
+%	\begin{align}\nonumber
+%		\Delta\mathcal{L}^{(t)}=-(\underbrace{\sum_{i\in\bm{I}_u}-\bm{g}_i^{(t)}\Delta\hat{\bm{\theta}}_i^{(t)}}_{\text{\textit{\textbf{updated}}}} +\underbrace{\sum_{j\in\bm{I}_{p}}\bm{g}_i^{(t)}\bm{\theta}_i^{(t)}}_{\text{\textit{\textbf{pruned}}}})
+%	\end{align}
+%	If the pruning decisions of $\bm{\theta}_i^{(t)}$ and $\bm{\theta}_j^{(t)}$ are swapped where $i\in \bm{I}_u$ and $j\in \bm{I}_p$, the difference between the altered temporal variation  $\Delta\mathcal{L}^{(t)}_{i\leftrightarrow j}$ and $\Delta\mathcal{L}^{(t)}$ is given by:
+%	\begin{align}\nonumber
+%		&\Delta\mathcal{L}^{(t)}_{i\leftrightarrow j}-\Delta\mathcal{L}^{(t)} \\ \nonumber
+%		=&\bm{g}_j^{(t)}\Delta\hat{\bm{\theta}}_i^{(t)}-\bm{g}_i^{(t)}\Delta\hat{\bm{\theta}}_i^{(t)}+\bm{g}_j^{(t)}\bm{\theta}_j^{(t)}-\bm{g}_i^{(t)}\bm{\theta}_i^{(t)} \\ \nonumber
+%		=&\bm{S}_i^{(t)}-\bm{S}_j^{(t)} \\ \nonumber
+%		\geq &0
+%	\end{align}
+%	
+%	Therefore, $\tilde{\bm{x}}^{(t)}_i$ derived by combining \eqnref{eq:score} and \eqnref{eq:problem} is the optimal solution to the 0-1 ILP problem.
+%\end{proof}
+
+\subsection{Self-regularization}
+\label{sec:srr}
+In vanilla fine-tuning, the learning objective $\mathcal{L}$ is defined as the training error $\mathcal{L}_{er}$~(a.k.a empirical risk in statistical learning) over the empirical data distribution.  However, minimizing such training error does not translate to good generalization. Moreover, as iterative pruning proceeds, the number of non-zero parameters in the model monotonically decreases. The reduced model capacity increases the learning difficulty~\cite{difficulty1,difficulty2} and usually leads to degenerated generalization performance of the sparsified model~\cite{movement}. 
+
+Confronting the above challenges, we propose an effective self-regularization scheme tailored to improving the model's generalization ability during iterative pruning. Concretely, besides learning from the hard label of training data, the output of the current model with parameter $\bm{\theta}^{(t)}$ is also regularized by the output of the latest best-performing model checkpoint with parameter $\bm{\theta}^{(t_l)}$, where $t_l\leq t$ denotes the time step at which the latest checkpoint was saved. The learning objective of self-regularization is defined as:
+\begin{align}
+	\mathcal{L}_{sr}=\mathcal{D}(y_{\bm{\theta}^{(t)}},y_{\bm{\theta}^{(t_l)}})
+\end{align}
+where $\mathcal{D}$ can be any divergence metric, e.g., KL-divergence for classification tasks. $\mathcal{L}_{sr}$ is then integrated with the original learning objective, i.e., $\mathcal{L}=\mathcal{L}_{er}+\mathcal{L}_{sr}$.
+\paragraph{Why does self-regularization work?}Our self-regularization is similar to teacher-student knowledge distillation in the sense that the model output is regularized by the output of another model. However, the most critical difference is that the ``teacher'' in self-regularization is instantiated by checkpoint with increasing sparsity, such that the capacity gap between ``teacher'' and ``student'' is dynamically adjusted. We theoretically justify the effectiveness of self-regularization as follows:
+% \KZ{I don't quite understand the 
+%``expected generalization error'' $R$. Is there such a thing? How do you 
+%quantify that? We gotta be careful when we are using these special notations>}
+\newtheorem{theorem}{Theorem}
+\begin{theorem}
+	Let $t_i$ and $t_{j}$ where $t_{i}\geq t_{j}$ denote the time steps at which two different checkpoints are saved; Let $R(f_{\bm{\theta}^{(t\leftarrow t_i)}})$ and $R(f_{\bm{\theta}^{(t\leftarrow t_j)}})$ denote the expected generalization error of models learned from $f_{\bm{\theta}^{(t_i)}}$ and $f_{\bm{\theta}^{(t_j)}}$; Let n denotes the size of training data; $|\cdot|_{\text{C}}$ denotes a capacity measure of function class $\mathcal{F}_{\bm{\theta}}$. Based on previous expositions on VC theory~\cite{vc}, we have the following asymptotic generalization bounds hold:
+	\begin{align}\nonumber
+		R(f_{\bm{\theta}^{(t\leftarrow t_i)}})\leq \underbrace{O(\frac{|\mathcal{F}_{\bm{\theta}^{(t)}}|_{\text{C}}}{n^{\alpha_{i}}})+\underset{ \mathcal{F}_{\bm{\theta}^{(t\leftarrow t_i)}}}{\inf}R(f_{\bm{\theta}^{(t)}})}_{bound(f_{\bm{\theta}^{(t\leftarrow t_i)}})} \\
+		R(f_{\bm{\theta}^{(t\leftarrow t_j)}})\leq \underbrace{O(\frac{|\mathcal{F}_{\bm{\theta}^{(t)}}|_{\text{C}}}{n^{\alpha_{j}}})+\underset{ \mathcal{F}_{\bm{\theta}^{(t\leftarrow t_j)}}}{\inf}R(f_{\bm{\theta}^{(t)}})}_{bound(f_{\bm{\theta}^{(t\leftarrow t_j)}})}  \nonumber
+	\end{align}
+Because $\bm{\theta}^{(t_i)}$ is a later checkpoint with higher sparsity than $\bm{\theta}^{(t_j)}$, we have the learning speed $1\geq \alpha_{i}\geq \alpha_{j}\geq \frac{1}{2}$, then the following inequality holds with high probability:
+\begin{align}\nonumber
+	bound(f_{\bm{\theta}^{(t\leftarrow t_i)}}) \leq bound(f_{\bm{\theta}^{(t\leftarrow t_j)}})
+\end{align}
+\end{theorem}
+In summary, self-regularization works by enabling a tighter generalization bound compared to learning from training data alone or a static dense teacher as in knowledge distillation. Please refer to Appendix \ref{sec:B} for detailed derivation.
+\label{sec:sr}
+
+\subsection{The Algorithm}
+Here we formally summarize our algorithm PINS~(\underline{P}runing with principled \underline{I}mportance a\underline{N}d \underline{S}elf-regularization) in Algorithm \ref{alg:alg}:
+\begin{algorithm}[h]
+	\caption{PINS} %算法的名字
+	\hspace*{0.02in} {\bf Input:} %算法的输入， \hspace*{0.02in}用来控制位置，同时利用 \\ 进行换行
+	Training set $\mathcal{D}_{tr}=\{(x_i, y_i)\}_{i=1}^N$; Validation set $\mathcal{D}_{val}$; pre-trained parameters $\bm{\theta}$;  maximum training steps $T$; evaluation interval $t_{eval}$. \\
+	\textbf{Initialize:} $\bm{\theta}^{(0)}\leftarrow \bm{\theta}$, $t_{l}\leftarrow 0$, best validation accuracy $\text{acc}_{t_l}\leftarrow -\text{INF}$.
+	\begin{algorithmic}[1]
+		\For{$t=0$ to $T-1$}
+				 \State Sample a mini-batch  $(\bm{x}, \bm{y})$ from $D_{tr}$
+				 \State Compute current model's output $\bm{y}_{\bm{\theta}^{(t)}}$
+				 \State Compute latest best-performing checkpoint's output $\bm{y}_{\bm{\theta}^{(t_l)}}$
+				 \State Compute $\mathcal{L}$ based on $\bm{y}_{\bm{\theta}^{(t)}}$, $\bm{y}_{\bm{\theta}^{(t_l)}}$ and $\bm{y}$
+				 \State Compute $\bm{S}^{(t)}$ via \eqnref{eq:score}
+				 \State Compute $\bm{\theta}^{(t+1)}$ via \eqnref{eq:updaterule} and \eqnref{eq:mask}
+				 \If{$t \% t_{eval}=0$ and acc$_{t}$>acc$_{t_l}$}
+				  \State acc$_{t_l}\leftarrow\text{acc}_{t}$, $\bm{\theta}^{(t_l)}\leftarrow\bm{\theta}^{(t)}$
+				 \EndIf
+		\EndFor
+
+	\end{algorithmic}
+	\hspace*{0.02in} {\bf Output:} %算法的结果输出
+the pruned parameters $\bm{\theta}^{(T)}$.
+	\label{alg:alg}
+\end{algorithm}
+%\subsection{PINS: Pruning with Principled Weight Importance and Self-regularization}

@@ -1,0 +1,79 @@
+
+
+\section{Experimental Setups}
+% introduce the datasets, evaluation metrics of different tasks
+In this section, we first define the evaluation metrics for sensitivity. Then, we introduce two representative dialogue understanding tasks with corresponding datasets. We present the implementation details of the approaches at the end.
+
+
+
+\subsection{Evaluation Metrics for Sensitivity}
+\label{sec:quatification}
+
+By replacing names in $D_{te}$ for $T$ times, we can construct multiple test sets. The divergence of the predicted results among $D^t_{te}|_{t=1}^T$ for each sample reflects the model's sensitivity to speaker names. Following \citet{prabhakaran2019perturbation}' work, we define two metrics for evaluating the speaker name sensitivity, including 
+\textbf{Score Deviation (D-*)} equaling
+\begin{equation}
+	E_{i=1}^{N^{te}} [ \rm{StdDev} (Score(\{d^t_i, o^t_i\})|_{t=1}^T) ]
+\end{equation}
+and \textbf{Score Range (R-*)} equaling
+\begin{equation}
+	\begin{aligned}
+		E_{i=1}^{N^{te}} [& \max(\rm{Score}(\{d^t_i, o^t_i\})|_{t=1}^T) \\
+		&-  \min(\rm{Score}(\{d^t_i, o^t_i\})|_{t=1}^T)]
+	\end{aligned}
+\end{equation}
+Both metrics can be combined with different task-specific metrics for each model, and the lower the better.
+
+If test data are constructed by switching all speaker names in each sample and we call it \textbf{change-all-name} test. We can also only change the name of a single speaker each time to do \textbf{change-one-name} tests for analyzing fine-grained sensitivity.% and can be evaluated in the same way.
+
+%change-all-name change-one-name
+
+\subsection{Dialogue Understanding Tasks}
+
+
+
+%We implement our experiments on dialogue summarization and question generation tasks.
+
+\textbf{Dialogue Summarization} aims at generating fluent and concise summaries covering the salient information in given dialogues. The input to the model is a concatenation of speaker-utterance pairs and the output is a narrative summary. We experiment with the SAMSum dataset~\cite{gliwa2019samsum} that consists of more than 16k open-domain dialogues among 2 or more interlocutors. Rouge-2 F1 scores~\cite{lin2004rouge} and BertScore F1~\cite{zhang2019bertscore}~\footnote{We adopted the microsoft/deberta-xlarge-mnli model for BertScore recommended by \url{https://github.com/Tiiiger/bert_score}} are task-specific metrics to evaluate the generated summaries by comparing with the reference.
+
+\textbf{Question Generation} is to generate a question given an input dialogue and its corresponding answer span. An answer is appended at the end of the corresponding dialogue as the model's input. We use the Molweni dataset~\cite{li2020molweni} made up of around 10k task-oriented dialogues sampled from the Ubuntu Chat Corpus.
+Similar to the question generation work based on SQuAD1.1, we extract (dialogue, answer, question) tuples from the original Molweni dataset and ignore the unanswerable questions. Bleu~\cite{papineni2002bleu} and Rouge-L F1 are used for evaluations.
+
+
+
+The statistics of each dataset are listed in Table~\ref{tab:taskdata}. We calculated the macro-average scores of samples for each evaluation metric, so that it is comparable to sensitivity metrics~\footnote{In the official implementations online, some scores are macro-averaged among samples while others are micro-averaged.}.
+
+\begin{table}[h]
+	\scriptsize
+	\centering
+	\begin{tabular}{lrrrrrr}
+		\hline
+		\textbf{Dataset} & \textbf{\#Train} &\textbf{ \#Val} & \textbf{\#Test}  & \textbf{Avg} & \textbf{Std} &\textbf{\#Test Speakers} \\
+		\hline
+		
+		SAMSum & 14,732 & 818 & 819 & 23.44 & 12.72 & 1,932\\
+		Molweni &20.873 & 2,346 & 2,560 & 7.05& 2.02 & 8,770\\
+		
+		
+		\hline
+	\end{tabular}
+	\caption{A summary of tasks and datasets. \#Train, \#Val and \#Test refer to the number of samples in the corresponding dataset. Avg and Std are the statistics for the number of words. \#Test Speakers corresponds to the number of samples for change-one-name tests mention in Sec~\ref{sec:quatification}.}
+	\label{tab:taskdata}
+\end{table}
+
+
+
+\subsection{Implementation Details}
+
+We use BART-large
+%~\footnote{\url{https://huggingface.co/facebook/bart-large}} 
+as our basic pre-trained language model. We truncate inputs to the first 1024 tokens and the learning rate is set to $3e-5$ with weight decay equaling 0.01 for both tasks. The model is fine-tuned with batch size equaling 32 and for 10 epochs. We evaluate the performance on the validation set after each epoch with Rouge-2 F1 and Bleu for dialogue summarization and question generation respectively. The checkpoint with the highest score on the validation set is saved for testing. During the inference, we decode with no\_repeat\_ngram\_size=3, length\_penalty=1.0 and num\_beams=4.
+All of our experiments are done on a single RTX 2080Ti with 12G GPU memory.
+Considering the GPU memory footprint and the total training time, we set $K=2$. It's the same for Aug and FreAug for fair comparisons.
+
+We test online approaches with their corresponding test sets. For offline approaches, we focus on two sources of $P$. One is \textbf{in-distribution names} representing speaker names from the corresponding training set. The other is \textbf{all-possible names} with more than 117 thousand names~\footnote{https://data.world/arunbabu/gender-by-names}, which could reflect the models' performances in complicated real scenarios. 
+For methods with sampling operations, we construct corresponding data with 3 different random seeds for fine-tuning, and 5 for testing, i.e. $T=5$ in Sec.~\ref{sec:quatification}. Results are averaged over the total number of runs.
+
+
+%The last one is \textbf{frequent names} which will be introduced in Section~\ref{sec:dda}.
+%Other specific groups of speaker will be mentioned in Section~\ref{sec:unfairness}.
+

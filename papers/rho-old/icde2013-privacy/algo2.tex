@@ -1,0 +1,756 @@
+ \section{Partial Suppression Algorithm}
+\label{sec:algo}
+
+\renewcommand{\algorithmicforall}{\textbf{for each}}
+%\algnotext{ENDFOR}
+%\algnotext{ENDIF}
+%\algnotext{ENDWHILE}
+%Main algo and its variants. Give pseudo code and description.
+%Use pics whenever possible. Discuss the ``knob''.
+
+%First we come to the question why we opt for partial suppression.
+%We are inspired by the global suppression proposed in $\rho$-uncertainty \cite{Cao:2010:rho}.
+%Apparently, we had a immediate impression that it would suppress
+%many items including both non-sensitive and sensitive ones.
+%Although privacy model has been satisfied, but the data is highly
+%cut sparse. \cite{Cao:2010:rho} also used global generalization method to anonymize transactions.
+%As we can see, data is generalized, rules mined from the generalized data also become vague.
+%It not only creates disambiguated rules but also influences the practical usage of the mined rules.
+%In the last part of \cite{Cao:2010:rho}, authors also addressed problems of generalization method,
+%the non-monotonicity property.
+%Since both algorithms in \cite{Cao:2010:rho} rely on global suppression,
+%the authors clarified that both algorithms are meant for datasets which may include large number of transactions,
+%but the number of distinct items per transaction is relatively small.
+
+%Partial suppression in our mind is the one that can suppress as few items as possible to
+%satisfy the criteria of a safe set-valued table (see Definition \ref{def:safety_table}).
+%If we are required to suppress only one item we won't suppress more.
+%This is the intuition of partial suppression.
+%Partial suppression also draws some doubts in
+%\cite{Cao:2010:rho, tkde:VerykiosEBSD04:ARH,tkde:WuCC07:hiding} mainly for
+% its side-effects in rule mining.
+%But no one really takes action to challenge the
+%side-effects in anonymization of transaction datasets.
+%So we are the first to try and we believe its not that bad
+%as you see and also the partial suppressed result is practical in usage.
+%In experimental section we will compare results of our
+%partial suppression algorithm with results of both algorithms in $\rho$-uncerntainty \cite{Cao:2010:rho},
+%we will show that partial suppression method
+%is much better than you think and will be acceptable in practical usage.
+
+
+%%%
+% TODO comments
+%\XH{do we need to declare that, later when we say update $linked(q)$
+%we also mean to update $\csize(q \cup \{e\})$ for
+%each sensitive item $e \in \linked(q)$ implicitly?
+%}
+%%%
+
+The Optimal Suppression Problem defined in Section \ref{sec:prob} is
+a combinatorial optimization problem. To find the optimal suppressor, it needs
+to check all combinations of items suppressed, which yields $O(2^N)$
+complexity and $N$ is the total number of items in $T$. Instead we present
+the partial suppression algorithm as a heuristic solution to Optimal
+Suppression Problem.
+%By definition of a safe set-valued table (Definition
+%\ref{def:safety_table}), the breach probability of each \qid in $Q$ must be
+%under the threshold $\rho$ (Definition \ref{def:safety_qid}).
+%For
+%example, given a \qid $q=\{a, b, \alpha\}$ and all its linked sensitive items
+%$\linked(q)=\{\beta\}$, where $\{a, b\}$ are non-sensitive items and
+%$\{\alpha, \beta\}$ are sensitive items, if $\csize(q)=5$, $\csize(q \cup
+%\{\beta\})=3$ and $\rho=\frac{1}{3}$, then $\breach(q)=\frac{3}{5}>\rho$.
+%\begin{definition}[Data Structures]
+%We define three key data structures in this framework.
+%$B$ is a \qid buffer which is a set of \qids.
+%$K$ is a mapping which is essentially a materialized function from \qid $q$ to $\csize(q)$.
+%$L$ is a mapping from \qid $q$ to $\linked(q)$.
+%\end{definition}
+Before we present the details of our algorithm, we define some notations for
+simplifying the description.
+\begin{definition}[Data Structures]
+We define three key data structures in this framework. $B$ is a \qid buffer
+which stores a set of \qids. $S$ is a \textbf{mapping} which is essentially a
+materialized function from \qid $q$ to $sup(q)$. $L$ is a \textbf{mapping}
+from \qid $q$ to $\linked(q)$.
+\end{definition}
+In the following algorithms, we will also use $sup(\cdot)$ and
+$\linked(\cdot)$ to denote the computations of these two functions, and use
+$S(\cdot)$ and $L(\cdot)$ to denote the access of the elements of the two
+data structures.
+\begin{definition}[Minimum suppression]
+\label{minimum}
+Minimum suppression of item $t$ to make strong sensitive association rule
+$\SA(q,e)$ safe, i.e. $conf(q,e)\leq\rho$:
+ \hspace{4mm}
+\[MS(t,\SA(q,e))=
+\begin{cases}
+sup(q\cup \{e\})-sup(q)\rho & t=e  \\
+\frac{sup(q\cup \{e\})-sup(q)\rho}{1-\rho} & t\in q \\
+ \infty & otherwise
+\end{cases} \]
+\end{definition}
+%\emph{Minimum suppression} is essentially the number of item $t$ suppressed
+%to fix the inference $\mathcal{A}(q,e)$.
+Specifically, it represents that we do not intend to suppress more items to
+make $\SA(q,e)$ a safe one as it can make $conf(q,e)$ even smaller.
+\begin{definition}[Residual of Item type $t$]
+The residual of item $t$ is defined as
+\[ residual(t)=\frac{sup_{T^\prime}(\{t\})}{sup_T(\{t\})} \]
+where $T$ is the original data and $T^\prime$ is the internal suppressing
+result.
+% being\XH{??} anonymized data.
+\end{definition}
+
+%\XJ{move this para to algo sec} \MakeRed{
+Our main idea is although the total number of ``dangerous'' association rules
+maybe the worst case exponential in the original data, incremental
+``invalidation'' of some of the rules through partial suppression of small
+number of affected items can dramatically decrease the number of these bad
+rules, which leads to quicker convergence to a solution.
+%}
+%%%
+%
+%In this paper, we adopts three kinds of partial suppression policies.
+%The first one is \PartialR, which suppresses only sensitive items
+%in the consequents. The second one is \PartialL, which
+%suppresses only items in the antecedents.
+%The third one is \PartialALL, which suppresses items in
+%both the consequents and the antecedents.
+%\PartialL and \PartialALL suppress both sensitive
+%and non-sensitive items, whereas \PartialR suppresses only
+%sensitive items.
+Next we present the \textbf{general framework}, known as the \textbf{basic
+algorithm}.
+
+\subsection{The Basic Algorithm}
+%
+%Table \ref{table:problem_notations} and \ref{table:algo_notations}
+%include notations for some global variables and parameters.
+%They are defined in advance in order to omit the declarations in
+%related functions.
+
+\begin{algorithm}[th]
+\caption{$\PartialSuppressor(T, D_S, \rho, \bmax)$}
+\label{algo:partialsuppressor}
+\begin{algorithmic}[1]
+    \STATE Initialize $safe\leftarrow\TRUE$, $i\leftarrow 1$;
+%    \STATE Initialize $safe\leftarrow\TRUE$
+    \LOOP
+        \STATE Initialize $sup$, $\linked$, $S$, $L$;
+        \WHILE {$|B|<b_{max}$ \AND $i\leq |T|$} \label{algo:enu_s}
+             \STATE Fill $B$ with \qids generated by $T[i]$, \label{algo:enumerate1}
+             \STATE update $sup$, $\linked$, $S$, $L$; \label{algo:enumerate2}
+             \STATE $i\leftarrow i+1$;
+        \ENDWHILE \label{algo:enu_e}
+		\STATE \textcolor{red}{update $sup$, $\linked$, $S$, $L$;}
+%        \STATE Calculate $\rho$ of each $qid$ in $|B|$ \label{algo:update}
+        \IF {$B$ contains an unsafe \qids}\label{line:containunsafe}
+            \STATE $\SanitizeBuffer(T, B, sup, \linked, S, L)$;\label{line:sanitizebuffer}
+            \STATE $safe\leftarrow\FALSE$;
+        \ENDIF
+        \IF {$i \ge |T|$ \AND $safe$}
+            \STATE \textbf{break};\label{algo:partialbreak}
+        \ELSIF {$i \ge |T|$}
+                \STATE $i\leftarrow 1$;
+                \STATE $safe\leftarrow\TRUE$;
+%                \STATE \textbf{continue}
+        \ENDIF
+    \ENDLOOP
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[th]
+\caption{$\SanitizeBuffer(T, B, sup, \linked, S, L)$}
+\label{algo:sanitize}
+\begin{algorithmic}[1]
+\STATE $\policy \leftarrow \SuppressionPolicy()$; \label{choose_heur}
+\REPEAT
+\label{algo:pick_rs}
+    \STATE pick any $q,e$ such that $conf(q,e)>\rho$;
+    \IF {$\policy = Distribution$}
+        \STATE $d\gets\underset{d\in q\cup\{e\}}{\arg\max}\,H_{dist}(d)$;
+        \label{algo:heur_dist}
+    \ELSE
+        \STATE $d\gets\underset{d\in q\cup\{e\}}{\arg\min}\,H_{mine}(d)$;
+        \label{algo:heur_mine}
+    \ENDIF
+%    \IF {$\policy = Distribution$}
+%        \STATE  find $\SA(q,e)$ with maximal $H_{dist}(d)$, where
+%        \STATE  $d\in q\cup\{e\}$ \AND $conf(q,e)>\rho$
+%        \label{algo:heur_dist}
+%    \ELSE
+%        \STATE find $\SA(q,e)$ with minimal $H_{mine}(d)$, where
+%        \STATE  $d\in q\cup\{e\}$ \AND $conf(q,e)>\rho$
+%        \label{algo:heur_mine}
+%    \ENDIF
+    \STATE $X\leftarrow q\cup\{e\}$;
+    \STATE $k\leftarrow MS(d,\SA(q,e))$;\label{line:sanitize-k}
+    \WHILE{$k>0$}\label{line:sanitize-whilek}
+        \STATE $R\leftarrow$ a record containing $X$, i.e. $R\subseteq
+        \container(X)$;
+        \label{pick_row}
+        \STATE $R\leftarrow R-\{d\}$;\label{line:sanitize-suppress}
+        \STATE Update $sup$, $\linked$, $S$, $L$ of \qids contained in $R$;
+        \label{algo:update_kl}
+        \STATE $k \leftarrow k-1$;
+    \ENDWHILE
+\UNTIL{there is no unsafe \qid in $B$}   \label{algo:pick_re}
+\end{algorithmic}
+\end{algorithm}
+
+To ensure a table is safe, we must make sure all \qids in $Q$ are safe.
+\PartialSuppressor (Algorithm \ref{algo:partialsuppressor}) presents the
+top-level algorithm. The partial suppressor iterates over the table $T$, and
+for each record $T[i]$, the algorithm first generates  \qids from $T[i]$ and
+sanitizes the unsafe ones. The suppressor terminates when the whole table is
+scanned and there is no unsafe \qid.
+%This termination condition ensures the algorithm achieves at
+%least a local {\em optimum} in terms of minimizing the suppressions.
+
+A \qid can be considered as a combination of different item types,
+  and the number of distinct \qids is in exponential scale.
+So one of the most time-consuming phases in partial suppression is
+  the generation of distinct \qids.
+An ideal solution to reduce the time cost in \qid generation is to enumerate
+all distinct \qids in main memory. But this is impractical since the number
+of distinct \qids can be prohibitive. We therefore introduce a \qid buffer of
+capacity $\bmax$ to balance the space consumption with the generation time.
+The value of $\bmax$ is significant. Small $\bmax$ values will cause
+repetitive generation of \qids, while large $\bmax$ values will cause useless
+generation of to-be non-existing \qids. Effects of different $\bmax$ values are
+shown in Section \ref{sec:eval}.
+
+As described in Algorithm \ref{algo:partialsuppressor}, starting from the
+current record $i$, the algorithm repeatedly enumerates \qids in $T[i]$ to
+fill the buffer and increments $i$ until $B$ is full (Lines
+\ref{algo:enu_s}-\ref{algo:enu_e}).
+% In algorithm \ref{algo:partialsuppressor}
+%while buffer $B$ is not full, it recursively generates \qids from the record
+%$T[i]$ (Lines \ref{algo:enu_s}-\ref{algo:enu_e}).
+For each $q$ generated (Line \ref{algo:enumerate1}-\ref{algo:enumerate2}), if
+it is already in $B$, increment $sup(q)$. Otherwise, insert $q$ into the
+buffer and set $sup(q)$ to $1$. At the same time, update $\linked(q)$ with
+the complementary sensitive set (only sensitive items) of $q$ in $T[i]$.
+%When $B$ is full, line
+%\ref{algo:update} in algorithm \ref{algo:partialsuppressor} is invoked to
+%scan $T$ from index $i$ to $j$, and update $K(\cdot)$ and $L(\cdot)$.
+Furthermore, in \qid generation we utilize a fixed size cache to remember \qids
+whose linked items $\linked(\cdot)$ is empty, to prevent generating \qids that
+are superset of them. It's a pruning technique we can leverage
+ since if a short \qid does not link to sensitive items in $T$, neither do its supersets.
+After that, if $B$ contains an unsafe \qid, we call \SanitizeBuffer to
+suppress items from $T$ so that the unsafe \qid becomes safe.
+\textcolor{red}{add something about the added statement in Algorithm 1}
+
+\subsection{Buffer Sanitization}
+\label{sec:sanitize} Each time \qid buffer $B$ is ready, \SanitizeBuffer
+(Algorithm \ref{algo:sanitize}) is invoked to start processing \qids in $B$
+and make all of them safe. We first partition \qids in $B$ into two groups,
+{\em safe} and {\em unsafe} according to Definition \ref{def:probability} and
+\ref{def:safety_qid}.
+ Then in each iteration (Lines \ref{algo:pick_rs}-\ref{algo:pick_re}), \SanitizeBuffer
+ picks the `best` (according to below heuristic functions) strong sensitive association
+ rule %whose confidence is above $\rho$
+ to sanitize (Lines \ref{algo:heur_dist} and \ref{algo:heur_mine}).
+
+As we mentioned before we target to preserve the original data distribution
+or retain mineable useful association rules with limited spurious rules
+invented in the anonymized data, while minimizing the item deletions. By
+noticing the reason why global suppression does not introduce spurious rules,
+we introduce the following heuristic function to imitate global suppression
+in order to avoid introducing spurious rules, while minimizing
+item deletions.
+\subsubsection{Spurious Rule Impediment}
+
+%Then we introduce our second heuristic function which trys to retain minable
+%rules with fewer spurious rules invented.
+As we mentioned before, to learn from the characteristic of global
+suppression - no spurious rules introduced, we devise a heuristic which takes
+deletions towards global suppression while using partial suppression. We
+define \[H_{mine}=residual(t)*MS(t, \SA(q,e))\] as the heuristic
+function which prevents introducing spurious rules.
+This product expresses
+the strategy that we want to introduce fewer spurious rules by imitating the
+effect of global suppression while suppressing as few items as possible.
+We try to maintain the support
+of some items and suppress some items as many as possible to
+satisfy our privacy model. Notice that a spurious rule ($\mathcal{A}(q,e)$) is introduced when
+ $sup(q)$ becomes small and if $sup(q)$ is small enough to ignore, $\mathcal{A}(q,e)$
+will not be learned even $conf(q,e)$ larger than a certain threshold.
+ Therefore, we are prone to
+suppress those items which have been suppressed before to minimize the
+support of spurious rules. As
+you can see, each time we choose the sensitive association rule with lowest
+$H_{mine}$ to perform sanitization (Line \ref{algo:heur_mine}).
+
+However, $H_{mine}$ goes the opposite side of preserving the original data
+distribution. Therefore, we introduce the following heuristic function
+separately to preserve the original data distribution and minimizes the
+deletion in local optimal.
+\subsubsection{Minimum Distance}
+%We first present the heuristic function which helps to preserve data
+%distribution.
+Consider a sensitive association rule $\SA(q,e)$, where $e$ is a
+sensitive item and $conf(q,e) > \rho$.
+%$q$ is not a safe \qid following the
+$\SA(q,e)$ is not a safe rule following the
+ Definition \ref{def:safety_rule}. To make $conf(q,e)$ not
+above $\rho$,
+%we must make the confidence
+%of the inference not larger than $\rho$, thus
+we should choose an item type $t\in q\cup \{e\}$ to suppress from
+$\container(q\cup \{e\})$.
+%$\mathcal{A}(q,e)$ and decide the minimum number of occurrences of $t$ to be
+%deleted from  $\mathcal{A}(q,e)$ or just eliminate this inference from $T$.
+Kullback-Leibler divergence is defined as
+ \[H(Q||P)=\sum_{t\in
+D}Q(t)log\frac{Q(t)}{P(t)}\]
+where P(t) is the original distribution of $t$
+and $Q(t)$ is the current
+% (before selecting this removal)
+ distribution of $t$, which is often used to characterize the distribution
+ distance.
+Noticing that by suppressing some of item $t$s when $Q(t)>P(t)$, it may make
+the K-L divergence smaller, thus we define
+\[H_{dist}=\frac{Q(t)log\frac{Q(t)}{P(t)}}{MS(t, \SA(q,e))}\]
+ as the heuristic
+function which helps to preserve data distribution. The ratio expresses the
+strategy that picking an item type $t$ to suppress which maximally recovers
+the data distribution and minimizes the deletion in local optimal.
+ The numerator indicates the divergence of the data distribution on $t$.
+ The larger the absolute value is,
+the larger distribution difference of $t$ now is compared with the original
+situation. However, if the value is less than 0, i.e. $Q(t)<P(t)$, we'd
+better not suppress $t$, since it may further decreases $Q(t)$ and
+deteriorates the data distribution. Therefore the larger the numerator is,
+the item has more priorities to be chosen to suppress.
+%Furthermore, if the value is positive, applying suppression will
+%improve the data distribution. So the removal of $t$ is urgent and valuable
+%when this value is large.
+% However, if the numerator is less than 0, we better not suppress $i$ since
+%$Q(i)$ has already been less than $P(i)$.
+The denominator indicates the minimum suppression. The smaller the number is,
+the fewer items are suppressed. Each time we choose sensitive association
+with the highest $H_{dist}$ to perform sanitization (Line
+\ref{algo:heur_dist}).
+
+
+%
+% By iterating over all unsafe \qids, we can all sensitive
+%inferences whose confidence larger than $\rho$ from those {\em unsafe} \qids.
+%Then in each iteration, the algorithm fetches one sensitive association
+%$\SA(q,e)$ and fix it.
+
+ Depending on whether the downstream utilities require to preserve
+ data distribution or do mining tasks,
+ \SuppressionPolicy (Line \ref{choose_heur}) in \SanitizeBuffer determines
+ which heuristic function should be used.
+% Next we will show the two heuristic
+% functions that help to find the `best` association to fix.
+
+After suppressing the item $d$, unsafe \qids may become safe, while safe ones
+may become unsafe again, an undesirable situation known as {\em regression}.
+Algorithm \SanitizeBuffer Line \ref{algo:update_kl} determines the set of
+\qids that would be affected by suppressing $d$. This step is like the $qid$
+generation step in Algorithm \PartialSuppressor Line \ref{algo:enumerate1}
+and \ref{algo:enumerate2}.
+ There are also different ways to pick a
+record from $\container(q\cup \{e\})$ to suppress item $d$ (Line
+\ref{pick_row}), currently for simplicity we just use the randomized way.
+
+\subsection{Implementation Specifics}
+\label{algo:impmentation}
+The partial suppressor is a framework under which our algorithm
+implementation relies on the following two approximation techniques to make
+the performance practically acceptable.
+%. Although
+%the termination of the algorithm is proved in the analysis section, the time
+%performance doesn't seem very good.
+%Therefore, we introduce two approximation
+%method to improve the time performance but maintain the quality of the
+%result.
+
+\subsubsection{Handle Long Records}
+%We notice that the result has a property that the sensitive items don't exist
+%in a long record in the final result. Such property indicates that the
+%algorithm converges very quickly when it handles a long record. However, the
+% \qids generated by long records are enormous and most of them are useless
+%since sensitive items will be suppressed after handling only a small amount
+%of those  \qids. Therefore we decide to handle long records separately. First,
+%we consider only sensitive items in that record versus all sensitive items in
+%$T$ as an optimization. Second, we only enumerate some  \qids, e.g,1000, and
+%sanitize them. Third, when there are no sensitive items in this record, we do
+%not consider this record anymore (We don't need to generate  \qids from this
+%record) because those  long \qids are not expected frequently in the dataset
+%which means that they hardly contribute to the support of association rules.
+%However, if  the suppressor cannot eliminate all sensitive items by only generating
+%\qids combined with all sensitive items in one long record, we should
+%still generate \qids from that record.
+A record $R$ has as many as $2^{|R|}$ \qids. Suppose $\bmax = 10^6$, then a
+single record of length $20$ can fill up $B$. However, long \qids are not
+expected frequently in the dataset, and thus can be handled separately. Since
+we can't possibly enumerate all the \qids within a long record, we do this in
+batches. Because the number of sensitive items are limited in any record,
+sanitizing the first batch of \qids in a long record may already cause the
+removal of all the sensitive items in that record. A record without sensitive
+items doesn't contribute any unsafety to sensitive association rules, on the
+contrary provides some safety , and hence no further actions are needed for this long
+record.
+
+There are three implementation issues in handling long records. First, each
+time when {\em batch size of } \qids are generated, it will be costly to scan
+the whole table to determine the related $sup(\cdot)$ and
+$\linked(\cdot)$. Instead we use the $\container(\cdot)$ of each item in
+\qid, and calculate the intersection of all the containers to determine the
+$sup(\cdot)$ and $\linked(\cdot)$. This is much faster than the whole
+table-scanning method when \qid is not a frequent itemset in $T$.
+
+ Second, when computing
+$\linked(q)$ in a long record, we consider only sensitive items in that
+record versus all sensitive items in $T$ as an optimization. This is correct
+because if there is a sensitive item $e$ in another record $R$ which is
+linkable by $q$, update of $L(q)$ and $S(q)$ for $e$ can be done when we
+handle $R$ later.
+
+ Third, our algorithm provides a preprocessing option that
+suppresses all sensitive items from records whose size is regarded large
+enough.
+%
+%
+\subsubsection{Heuristic Approximation}
+In Algorithm \SanitizeBuffer Lines \ref{algo:heur_dist} and
+\ref{algo:heur_mine}, in each iteration it is very time-consuming to iterate
+over all strong sensitive association rules to find the `best` one with
+maximal $H_{dist}$ or minimal $H_{mine}$ to sanitize, since the number of
+\qids are enormous and each \qid can link to various sensitive items.
+%For each $\SA(q,e)$, we have to calculate the highest
+%$H_{dist}$ or the lowest $H_{mine}$.
+While the iteration number are also propositional to the number of \qids, so
+the cost is tremendous. Therefore, we use an approximation way which randomly
+pick small amount of \qids in the buffer, e.g 1,000, and calculate the
+maximal $H_{dist}$ or the minimal $H_{mine}$ among them to find the locally
+`best` one to sanitize.
+%We pick the candidate item by a local greedy algorithm.
+%
+%The two approximation strategies do improve the time performance dramatically
+%but may deteriorate the result. However, we conduct experiments to justify
+%that even by using such approximations, our result is much better than the
+%previous work.\XH{need Kenny revise}
+
+\subsection{Speedup By Divide-and-Conquer}
+\label{subsec:speedup}
+%\subsection{Optimization in Time By Divide-and-Conquer}
+%\KZ{Let's not talking about experiments here. We haven't done any experiments yet
+%in this section. Just say ``when execution time is of concern, we use the
+%following divide-and-conquer framework to speed up the execution''. And
+%avoid saying "deeply go".}
+%Although our algorithm can terminate within an acceptable time,e,g,2 hours,for most datasets
+% by using the two approximation strategies, it is still too long for practical issues.
+The above \textbf{basic algorithm} incurs cost which relies on the average
+transaction size, the table size, and the domain size. When data is very
+large and execution time is of concern, we can use a divide-and-conquer (DnC)
+framework that partitions the input data dynamically, runs \PartialSuppressor
+on them individually and combines the results in the end. This approach is
+correct in the sense that of each suppressed partition is safe, so is the
+combined data (See Lemma \ref{CorrectnessOfPartitioning} in Section
+\ref{sec:analysis}). This approach also gives rise to the parallel execution
+on multi-core or distributed environments which provides further speed-up
+(this will be shown in Section \ref{sec:eval}).
+
+\begin{algorithm}
+%\caption{Top level partitioning controller}
+\caption{$\SplitData(T, D_S, \rho, \bmax, \tmax)$} \label{algo:splitdata}
+\begin{algorithmic}[1]
+    \IF { $Cost(T) > \tmax$ }
+        \STATE Split $T$ equally into $T_1$ , $T_2$
+        \STATE $\SplitData(T_1, D_S, \rho, \bmax, \tmax)$
+        \STATE $\SplitData(T_2, D_S, \rho,  \bmax, \tmax)$
+    \ELSE
+        \STATE $\PartialSuppressor(T, D_S, \rho, \bmax)$
+    \ENDIF
+\end{algorithmic}
+\end{algorithm}
+
+The divide-and-conquer algorithm is shown in Algorithm \ref{algo:splitdata}.
+The main idea is that we split the input table whenever the estimated cost of
+suppressing that table is greater than a predefined parameter $\tmax$. And
+for simplicity we are just using an randomized two-equal-size-partition
+splitting on the original data when the estimated time is above $\tmax$.
+Equation (\ref{eq:costfunc}) is defined to estimate that cost.
+
+\begin{equation}\label{eq:costfunc}
+Cost(T)=\frac{|T|*2^{\frac{N}{|T|}}}{D}
+\end{equation}
+%where $\mathcal{AVG}$ is the average transaction size, i.e. $\frac{N}{|T|}$,
+where $N$ is the total number of items in $T$. The function estimates the
+average number of \qids per item type. The larger this value is, the more
+sensitive association rules we should handle. The cost function is used when
+data size is large enough. We claim that in cases when $|T|$ is relatively
+small there is no need to apply DnC.
+
+\subsection{Analysis}
+\label{sec:analysis}
+
+% Analyze the main algo: time complexity, space complexity.
+% Some properties to consider:
+%
+% \begin{itemize}
+% \item give a bound on the total number of items suppressed;
+% \item give a bound on the deviation in distribution from the original data;
+% \item give a bound on the number of association rules that we eliminate;
+% \item and what else??
+% \end{itemize}
+
+In this section, we present several theorems and lemmas along with their proofs
+in order to provide an all-aspect analysis of the problem and our algorithm.
+
+%\begin{theorem}
+%  The Optimal Suppression Problem in Definition \ref{def:osp} is NP-hard.
+%\end{theorem}
+%% TODO prove the whole problem hierarchy
+%\begin{proof}
+%  TODO
+%\end{proof}
+%
+%\begin{lemma}
+%\label{lemma:rule}
+%  If the inference $\mathcal{A}(q,a)$ is safe,
+%  then  $\mathcal{A}(q,a, b_1,b_2,\dots,b_n)$ is safe for any sequence of $\{b_i\}$.
+%\end{lemma}
+%\begin{proof}
+%  \begin{align*}
+%    \text{$q\rightarrow a$ is safe}
+%    \Rightarrow
+%    &\, \frac{\csize(q\cup\{a\})}{\csize(q)} \le \rho \\
+%    \Rightarrow
+%    &\, \csize(q\cup\{a\}) \le \rho\cdot\csize(q)
+%  \end{align*}
+%  \begin{align*}
+%    &\, (q\cup\{a\}) \subset (q\cup\{a, b_1,b_2,\dots,b_n\}) \\
+%    \Rightarrow
+%    &\,  \csize(q\cup\{a, b_1,b_2,\dots,b_n\}) \leq \csize(q\cup\{a\}) \le \rho\cdot\csize(q) \\
+%    \Rightarrow
+%    &\, \frac{\csize(q\cup\{a, b_1,b_2,\dots,b_n\}}{\csize(q)} \le \rho \\
+%    \Rightarrow
+%    &\, \text{$q\rightarrow a, b_1,b_2,\dots,b_n$ is safe}
+%  \end{align*}
+%\end{proof}
+%
+%Lemma \ref{lemma:rule} shows that we do not have to consider rules with consequent of length 2 or longer.
+
+\begin{lemma}%[Correctness of partitioning]
+\label{CorrectnessOfPartitioning}
+  If $q$ is safe in both $T_1$ and $T_2$, then $q$ is safe in $T = T_1 \cup T_2$.
+\end{lemma}
+\begin{proof}
+For any item $a$,
+  \begin{align*}
+   q~\text{is safe in}~T_1 &\Rightarrow sup_{T_1}(q\cup\{a\}) \le \rho\cdot sup_{T_1}(q) \\
+   q~\text{is safe in}~T_2 &\Rightarrow sup_{T_2}(q\cup\{a\}) \le \rho\cdot sup_{T_2}(q)
+  \end{align*}
+  So \begin{align*}
+   sup_{T_1}(q\cup\{a\}) + sup_{T_2}(q\cup\{a\}) &\le \rho\cdot sup_{T_1}(q) + \rho\cdot sup_{T_2}(q)
+  \end{align*}
+  And \begin{align*}
+    sup_T(q\cup\{a\}) &= sup_{T_1}(q\cup\{a\}) + sup_{T_2}(q\cup\{a\}) \\
+    sup_T(q) &= \csize_{T_1}(q) + sup_{T_2}(q)
+  \end{align*}
+  So $$ \frac{sup_T(q\cup\{a\})}{sup_T(q)} \le \rho~\Rightarrow q~\text{is safe in}~T .$$
+\end{proof}
+
+\begin{theorem}
+\label{CorrectnessOfPartialSuppressor}
+  \PartialSuppressor always terminates with a correct solution.
+\end{theorem}
+\begin{proof}
+We first prove that if the algorithm terminates, the suppressed table is safe.
+Note that the algorithm can only terminate on Line \ref{algo:partialbreak}
+  in Algorithm \ref{algo:partialsuppressor}.
+  Therefore, two conditions must be satisfied. First the record cursor $i$ should
+  exceed the table size $|T|$. Second the value $Safe$ must be \TRUE. $Safe$ is true
+  if and only if there is no unsafe \qids in the table, otherwise  Line \ref{algo:sanitize}
+ will assign $Safe$ to \FALSE. If $i$ exceed $|T|$ and $Safe$ is \TRUE, the algorithm
+must scans the table at least once and doesn't find any unsafe \qids. Hence, the
+ suppressed table is safe.
+
+
+Then we prove that \PartialSuppressor always terminates by measuring the
+  number of items left (denoted $l$) in the table after each step of suppression.
+Initially, $l=l_0=\sum_{i=1}^{|T|} |T[i]|\le |D| |T|$.
+We state that for every invocation of \SanitizeBuffer, Line \ref{line:sanitize-suppress}
+  in Algorithm \ref{algo:sanitize} is always executed at least once.
+So the value $l$ strictly decreases in a positive integer
+when \SanitizeBuffer is invoked.
+And before the table becomes safe, \SanitizeBuffer will be invoked for
+  every iteration of the loop in Algorithm \ref{algo:partialsuppressor}.
+So $l$ strictly decreases for each loop iteration in \PartialSuppressor.
+Because $l$ starts from a finite number which is at most $l_0=\sum_{i=1}^{|T|} |T[i]|$,
+  \PartialSuppressor must terminate.
+Otherwise there will be an infinite descending chain of all the $l$ values.
+
+
+Now we prove that Line \ref{line:sanitize-suppress} in Algorithm \ref{line:sanitizebuffer}
+  is always executed once \SanitizeBuffer is invoked.
+Whenever \SanitizeBuffer is invoked, it is guaranteed that there exists
+  an unsafe \qid $q\in B$ (see Line \ref{line:containunsafe}  in Algorithm \ref{algo:partialsuppressor}).
+$q$ is unsafe so that there always exists an item $e\in\linked(q)$ such that $conf(q,e)>\rho$,
+  i.e. \[ \frac{sup(q\cup\{e\})}{sup(q)}>\rho \Rightarrow
+   sup(q\cup\{e\})-\rho\cdot sup(q)>0 .\]
+For $k$ on Line \ref{line:sanitize-k} in Algorithm \ref{algo:sanitize},
+  \[ k = MS(d,\SA(q,e))\]
+  and
+  \[MS(d,\SA(q,e)) \geq sup(q\cup\{e\})-\lfloor\rho\cdot sup(q)\rfloor \ge 1\]
+  as is shown in Definition \ref{minimum}.Therefore,
+  it is guaranteed that the number of deletions is at least 1
+  because the rule $q\rightarrow e$ is unsafe and there must be some deletions to make it safe.
+So $k\ge 1$ on Line \ref{line:sanitize-whilek} for the first time.
+Thus the condition is satisfied and Line \ref{line:sanitize-suppress} is executed.
+\end{proof}
+
+\begin{corollary}
+The divide-and-conquer optimization \SplitData is correct.
+\end{corollary}
+\begin{proof}
+It follows directly from Lemma \ref{CorrectnessOfPartitioning} and
+Theorem \ref{CorrectnessOfPartialSuppressor}.
+\end{proof}
+
+%\begin{theorem}
+%Let %$M = |T|$ be the size of table $T$,
+%$l$ be the average record length,
+%$c = r_r r_d$ where $r_r$ is the regression rate and $r_d$ is the qid duplicate rate.
+%The average time complexity of \PartialSuppressor is
+%\[ O(c \cdot 2^l |T|^2 l (\bmax (1-\rho) + l)). \]
+%\end{theorem}
+%\begin{proof}
+%{\small\begin{verbatim}
+%  general idea:
+%  l1 <- estimate the number of iterations
+%    for the loop in algorithm 1 -- assume
+%    there is a parameter: regression ratio
+%  may have to assume the data in some distribution
+%    (e.g. power-law) -- related to Figure 1
+%    count the number of invocations of HandleShort
+%      --> b_max
+%    count the number of invocations of HandleLong
+%  l2 <- estimate the number of iterations
+%    for the loop in algorithm 3
+%  l1+l2 -> the number of invocation of SanitizeBuffer
+%  estimate complexity of SanitizeBuffer
+%  estimate complexity of line 7 to 13 in algorithm 3
+%    (related to distribution in Figure 2)
+%  estimate the complexity of UpdateBuffer
+%\end{verbatim}}]
+
+%Let $n_1$ be the number of short records,
+%$n_2$ be the number of long records,
+%$p(i)$ be the probability of a record being length $i$,
+%$l_m$ be the maximum record length,
+%$t=1-\rho$.
+%
+%Let $v_1$ be the number of invocations of \HandleShortRecords.
+%In the process of generating qids and filling them into the qid buffer $B$,
+%duplicates cannot be counted.
+%If duplicates are allowed, the number of qids generated by a record is
+%just $r=\sum_{i=1}^{\lmin-1} p(i)\cdot\#qid(i)$ where
+%$\#qid(i)$ is the expected number of qids generated by a record of length $i$.
+%Then $\bmax/r$ records are used to fill the buffer (duplicates allowed).
+%So roughly $v_1=\frac{n_1\cdot r}{\bmax r_d}$ times to consider all distinct qids
+%in short records, for a single pass.
+%
+%For \HandleLongRecord, the number of invocations is $v_2=n_2$ if
+%we do not take multiple passes of table scanning (i.e., the loop in algorithm 1) into consideration.
+%Assume the loop in \HandleLongRecord is iterated for $v_3$ times, then \SanitizeBuffer is
+%roughly invoked for $v_1 + v_2 v_3$ times.
+%
+%There are 4 major parts in the computation. We will consider them one by one.
+%
+%The first part is Line 4 to 7 in Algorithm 2, since the buffer capacity is $\bmax$,
+%the maximum number of iterations here is roughly $\bmax r_d$.
+%\HandleShortRecords will be invoked for $v_1$ times, so
+%the total time cost by this part of computation is roughly $v_1 \bmax r_d$.
+%
+%The second part is \UpdateBuffer in Algorithm 2. For the invocation
+%$\UpdateBuffer(B, T, i, j, K, L)$, the purpose is to update $K$ and $L$
+%by considering qids in records $T[i..j]$ which are also in $B$.
+%So a single call invocation of \UpdateBuffer costs roughly $(j-i+1)|B|$.
+%Hence, the total time cost by this part of computation is roughly
+%$v_1 (|T| - \frac{\bmax}{r}) \bmax$.
+%
+%The third part is Line 7 to 13 in Algorithm 3. Note that in reality
+%the computation from Line 10 to 12 can be done at the same time when
+%calculating Line 8. And in the worst case, the total time cost by calculating
+%these intersections is $\dnum l_m |T|$. And the total time cost by
+%this part of computation is $v_2 v_3 \dnum l_m |T|$.
+
+%The fourth part is all the invocations of \SanitizeBuffer.
+%For a single invocation of \SanitizeBuffer, there are two sub-parts to consider.
+%The first sub-part is the intersection calculation on Line 5 in Algorithm 4,
+%which costs roughly $l |T|$.
+%The second sub-part is the computation from Line 14 to 25 in Algorithm 4,
+%which costs roughly $k |B|$, where $k$ is determined on Line $9$.
+%In the worst case, $k= t |T|$.
+%So for a single invocation of \SanitizeBuffer, the time cost is roughly
+%$|B| r_r l (|T| L + t |T| |B|)$ where $|B|$ is the size of the buffer.
+%Because \SanitizeBuffer is invoked $v_1$ times in \HandleShortRecords,
+%with buffer size $\bmax$, and $v_2 v_3$ times in \HandleLongRecord,
+%with buffer size $\dnum$,
+%the total time cost by this part of computation is roughly
+%$v_1 \bmax r_r l (l |T| + t |T| \bmax) + v_2 v_3 \dnum r_r l (l |T| + t |T| \dnum)$.
+%
+%Summing up these four parts we can get the following time cost.
+%\begin{align*}
+%  n_1 r
+%+ \frac{n_1 (r |T| - \bmax)}{r_d}
+%+ \frac{n_1 |T| r l r_r (\bmax t + l)}{r_d} \\
+%+ l_m |T| n_2 \dnum v_3
+%+ l |T| n_2 \dnum v_3 r_r (l + \dnum t)
+%\end{align*}
+%By eliminating non-denominating terms, we get the order of \[ O(c \cdot 2^l |T|^2 l (\bmax (1-\rho) + l) ) .\]
+%\end{proof}
+%
+%For a given dataset, the expected time complexity is actually quadratic to the size of the table.
+
+%\begin{theorem}
+%  The space complexity of \PartialSuppressor on table $T$ is \[ O(\sum_{i=1}^{|T|} |T[i]| + \bmax) .\]
+%\end{theorem}
+%\begin{proof}
+%Let $N = \sum_{i=1}^{|T|} |T[i]|$, then $N$ is the sum of the numbers
+%of all item occurrences.
+%This term is easy to explain since the algorithm has to store
+%the original table $T$.
+%So we only need to consider local data structures
+%created in \PartialSuppressor
+%and related functions for the term $O(\bmax)$.
+%
+%For \PartialSuppressor, the most significant memory cost is from the \qid buffer of size $\bmax$.
+%For \HandleShortRecords, there is only $O(1)$ extra memory space for loop variables like $j$.
+%For \HandleLongRecord, there is also $O(1)$ extra memory cost.
+%For \SanitizeBuffer, except for the $O(1)$ memory space for local variables, it also involves
+%  the storage of $\linked(\cdot)$ and $\csize(\cdot)$.
+%Because all the \qids updated are from the buffer $B$, the total number of \qids being active at any time
+%  is no greater than the capacity of the buffer, i.e. $\bmax$.
+%In order to keep the information of $\linked(\cdot)$ and $\csize(\cdot)$,
+%  there will be $O(\bmax)$ extra memory space used.
+%\end{proof}
+
+%\begin{theorem}
+%  The algorithm suppresses at most $O(xxx)$ item occurrences on average.
+%\end{theorem}
+%\begin{proof}
+%  TODO
+%\end{proof}
+%
+%\KZ{Say something about the property of regression?}
+%
+%\KZ{A property for DnC time performance? The experiment seems to show that
+%time decreases exponetially with $t_{max}$ for Retail, which is amazing!}
+
+%\begin{property}
+%  Idea: distribution similarity ...
+%\end{property}
+%\begin{proof}
+%  TODO
+%\end{proof}

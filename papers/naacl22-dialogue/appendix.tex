@@ -1,0 +1,322 @@
+\section{Related Work}
+\label{sec:relatedwork}
+%Consideration of our approach over previous approaches on 
+Dialogue summarization and pretrained language models are discussed as follows.
+
+%\subsection{Dialogue Summarization}
+
+\textbf{Dialogue Summarization:} A growing number of works have been proposed for dialogue summarization in recent years. 
+In this work, we mainly refer to the chat summarization defined in~\cite{feng2021survey}.
+Previous works widely explore dialogue features explicitly and input them as known labels to enhance the dialogue understanding ability of summarization models.
+Features, including dialogue acts~\cite{goo2018abstractive}, topic transitions~\cite{chen2020multi}, discourse dependencies~\cite{chen2021structure}, coreference relations~\cite{liu2021coreference}, argument graphs~\cite{fabbri2021convosumm}, semantic structures or slots~\cite{lei-etal-2021-finer-grain,zhao-etal-2021-give-truth}, etc. are carefully designed and collected by transferring tools pre-trained on other corpus or unsupervised methods with multiple hyper-parameters. 
+%Such specific features are not suitable for all scenarios and they highly relied on human labors or experts to redesign heuristic rules or hyper-parameters when implementing on a new dataset.
+These work also modify the basic transformer-based models with additional encoders~\cite{chen2020multi} or attention layers~\cite{chen2021structure,liu2021coreference,lei-etal-2021-finer-grain,zhao-etal-2021-give-truth} to utilize the injected features.
+\citet{liu-etal-2021-topic-aware} propose a contrastive learning approach for dialogue summarization with multiple training objectives. They also introduce a number of hyper-parameters for contrastive dataset construction and balancing among those objectives.
+
+%Different from previous approaches, we propose to do post-training before dialogue summarization tasks, exploiting the vanilla model's representation ability. And our approach is proved to be more effective with less implementation costs. 
+
+
+%Multi-view~\cite{chen2020multi} proposes to add separators between input utterances by topic segments and conversational stages with a double-encoder design.
+%Structure-BART~\cite{chen2021structure} constructs inter-utterance discourse graphs and intra-utterance action graphs with a graph encoder layer between the encoder and decoder structure.
+%ConvoSumm~\cite{fabbri2021convosumm} improves summarization by constructing an argument graph for each dialogue session and linearizing the graph as the input for models.
+%DialoBART~\cite{feng2021language} takes advantage of the pretrained response generator model DialoGPT\cite{zhang2020dialogpt} to label features with special tokens including keywords extraction, redundancy detection and topic segmentation.
+%Coref-Attention~\cite{liu2021coreference} utilizes coreference resolution tools accompanied with human-designed rules to get coreference links between words in dialogues.
+
+%and may also modify the vanilla pretrained encoder-decoder model to utilize their additional labels.
+
+
+
+%\subsection{Pretrained Language Models}
+
+\textbf{Pretrained Language Models:} Previous pretrained seq-to-seq models can be divided into two categories by training data formats.
+One is models pretrained on narrative text, such as BART~\cite{lewis2020bart}, PEGASUS~\cite{zhang2020pegasus}, and T5~\cite{raffel2020exploring}. They use training data from Wikipedia, BookCorpus~\cite{zhu2015aligning} and C4~\cite{raffel2020exploring}. These models show great potentials for tasks such as translation and story ending generation. %, where both the input and output are in narrative text format.
+The other is models pretrained on dialogue, such as DialoGPT~\cite{zhang2020dialogpt} and PLATO~\cite{bao2020plato}. Their training data are general-domain dialogues, such as Reddit~\cite{henderson2019repository} and Twitter~\cite{cho2014learning}. These models work for dialogue response selection and generation tasks. %, aiming at finding or generating the most suitable utterance given the dialogue history.
+All of the above models are trained to exploit language features within the same data format, with pre-training tasks such as masked token/sentence prediction and utterance permutation.
+%on tasks including masked language modeling, next utterance or sentence prediction, and utterance or sentence permutation, exploiting the language modeling features within the same data format.
+Pretraining with cross-format data hasn't been researched so far. 
+%With the rapid growth of single format data understanding and generation mentioned above, cross-format tasks become new hot points, such as dialogue summarization. 
+%Different from the previous language modeling training target, 
+%such cross-format pretraining focuses on rephrasing between a third-person point of view and multi-speaker views.
+As a first step, we focus on narrowing the gap by learning to rephrase unidirectionally from dialogue to narratives.
+
+
+
+\section{Implementation Details}
+\label{sec:details}
+We use BART\footnote{\url{https://huggingface.co/facebook/bart-large}} as our basic language model. For both post-training and fine-tuning, the speakers and utterances of each dialogue are concatenated into a single sequence and truncated to the first $1024$ tokens.
+The learning rate is set to $3e-5$ with weight decay equaling $0.01$. The number of warmup steps is $500$ and dropout is $0.1$. The model is tested on the corresponding validation set after each training epoch and % It stops training when the Rouge-2 F1 score doesn't improve on the validation set or it reach the maximum training epoch.
+the early-stop is activated if there is no improvement in the Rouge-2 F1 score.
+The early-stop and maximum training epochs are set to $3$ and $10$.
+During inference, i.e., validation and testing,
+the beam size is set to $4$ with length penalty equaling $1.0$
+and no-repeat-n-gram size equaling $3$. 
+The minimum and maximum lengths are set to the corresponding lengths
+of the reference summaries based on statistics of each dataset, allowing for free-length text generation.
+Besides, for the inference on the validation set during the post-training stage, we also set the first $3$ tokens as the known prefix. This constant number enables a fair comparison of performances on validation sets under different experimental settings.
+All of our experiments are done on an RTX 2080Ti with 11G GPU
+memory. We run experiments three times and show the best results following~\cite{feng-etal-2021-language}. 
+%We will open-source all of the used datasets and codes.
+
+%We also reimplement the baseline BART fine-tuning
+%directly with the above hyper-parameters on different datasets for
+%a fair comparison.
+
+\section{Other Types of Paraphrase Datasets}
+\label{sec:para}
+
+\begin{table}
+	\small
+	\centering
+	\begin{tabular}{lll}
+		\toprule[1pt]
+		\textbf{Datasets} & \textbf{Input} & \textbf{Output} \\
+		\midrule[1pt]
+		{DialIndirect} & $U_{1\sim8}$& \makecell[l]{Katarina says,``Hello, I got ...\\ we work together'' Jill says,\\``Hi :) ......  nice and sunny''}\\
+		\midrule[1pt]
+		{ExtSum} &$U_3$, $U_6$ & \makecell[l]{Katarina ...... a flat from Liz.\\ She will ...... after 6 pm.} \\
+		\midrule[1pt]
+		{ExtSumM} &$U_{3\sim6}$&\makecell[l]{Katarina ...... a flat from Liz.\\ She will ...... after 6 pm.}  \\
+		\midrule[1pt]
+		\multirow{2}{1cm}{{ExtSent/\\ExtSentM}}&$U_3$&Katarina ...... a flat from Liz. \\
+		\cmidrule{2-3}
+		& $U_6$ &Katarina will ...... after 6 pm. \\
+		\midrule[1pt]
+		{DSum} & $U_{1\sim8}$& \makecell[l]{Katarina ...... a flat from Liz.\\ She will ...... after 6 pm.}\\
+		
+		\midrule[1pt]
+		\multirow{2}{1cm}{{DialSent}} & $U_{1\sim8}$ &Katarina ...... a flat from Liz. \\
+		\cmidrule{2-3}
+		&$U_{1\sim8}$ &Katarina will ...... after 6 pm. \\
+		
+		\bottomrule[1pt]
+	\end{tabular}
+	\caption{An illustration of post-training pairs generated from the example in Figure~\ref{fig:example}. ExtSent and ExtSentM get the same training pairs in this case.}
+	\label{tab:datasets2}
+\end{table}
+
+
+\begin{table}[h]
+	\small
+	\centering
+	\begin{tabular}{lrrrr}
+		\toprule[1pt]
+		\textbf{Datasets} & \textbf{Train/Val} & \textbf{IW} & \textbf{OW} & \textbf{CR} \\
+		\midrule[1pt]
+		\multicolumn{5}{l}{\textit{SAMSum}} \\
+		{DialIndirect} & 14,731/818 & 124.10 & 157.41 & 1.31 \\
+		{ExtSum} & 14,731/818 & 31.23 & 23.44 &0.94  \\
+		{ExtSumM} & 14,731/818 & 66.09 &23.44 & 0.69 \\
+		{EntSent} & 29,757/1,654 & 31.05 & 11.93 &0.68  \\
+		{ExtSentM} & 29,757/1,654 & 46.45 & 11.93 & 0.60 \\
+		{DSum} & 14,731/818 & 124.10 & 23.44 & 0.25 \\
+		{DialSent} &29,757/1,654  & 149.93 & 11.93 & 0.13 \\
+		\midrule[1pt]
+		\multicolumn{5}{l}{\textit{DialSumm}} \\
+		{DialIndirect} & 12,460/500 & 187.52 & 215.30 & 1.16 \\
+		{ExtSum} & 12,460/500 & 44.43 & 30.02 &0.84 \\
+		{ExtSumM} & 12,460/500 & 94.32 &31.02 &0.61  \\
+		{EntSent} & 22,407/840 & 39.27 &17.78  &0.65  \\
+		{ExtSentM} &22,407/840  &61.17  & 17.78 & 0.56 \\
+		{DSum} & 12,460/500 & 187.52 & 31.02 & 0.18 \\
+		{DialSent} &22,407/840  &214.00 & 17.78 & 0.10 \\
+		\bottomrule[1pt]
+	\end{tabular}
+	\caption{Statistics of constructed datasets. IW and OW refer to the number of words in the input and output of corresponding dataset. DSum and DialSent are in-list for easier comparison.}
+	\label{tab:rephrasedatasets}
+\end{table}
+
+
+To make the input and output carry the same amount of information,
+one way is to fix $D$ as input and convert utterances into indirect speech
+as the output. \citet{ganesh2019restructuring} restructured dialogue into text with complicated rules
+%considering discourse relations among utterances for zero-shot scenarios. However, their complicated rules
+which are not released and difficult to transfer among datasets under different scenarios. Thus, we only use simple rules to convert all of the utterances into [$r_t$ says,``$u_t$''] and concatenated as the output. We call this dataset as \textbf{DialIndirect}.
+
+Another way is fixing $S$ as output and removing the redundant utterances in $D$ to get the rephrasing input. We take advantage of the idea of oracle extraction for news summarization~\cite{zhou-etal-2018-neural-document} and regard the combination of dialogue utterances with the highest Rouge scores computed with $S$ as the input. 
+Considering that utterances are highly dependent, we modify the original extraction algorithm by extracting all of the utterances lying between the extracted ones, 
+different from the window-sized snippet selection in~\cite{liu-etal-2021-topic-aware}.  Datasets with or without this modification are called \textbf{ExtSum} and \textbf{ExtSumM} respectively.
+
+A summary $S$ is divided into sentences to construct more rephrase pairs.
+%We use Spacy~\footnote{\url{https://spacy.io/}} to
+Similar extraction operations can be done between $D$ and $p$, and we 
+get \textbf{ExtSent} and \textbf{ExtSentM} datasets.
+
+An example of the paraphrase pair generated from the dialogue-summary pair 
+in Figure~\ref{fig:example} is shown
+in Table~\ref{tab:datasets2}.
+The statistics of post-training datasets derived from SAMSum and DialSumm are shown in Table~\ref{tab:rephrasedatasets}. We compare the performances between different rephrasing approaches with these datasets of our two-stage approach with the fine-tuning-only BART. The results are in Table~\ref{tab:rephrasing}. 
+
+DialIndirect performs incredibly well on SAMSum. However, if we use the converted dialogue as input and directly fine-tune the original BART, the results are only 50.91/28.51/50.25 for Rouge-1/2/L.
+It shows that when accompanied with the post-training stage, the model can learn relationships between speakers and utterances, and boundaries of utterances better than a direct transformation of dialogue inputs. 
+This rule-based transformation falls on DialSumm compared with BART baseline. More complicated rules may lead to better results, but such labored work is not what we are after. 
+
+\begin{table}[h!]
+	\small
+	\centering
+	\begin{tabular}{lccc}
+		\toprule[1pt]
+		\textbf{Models} & \textbf{Rouge-1} & \textbf{Rouge-2} & \textbf{Rouge-L} \\
+		\midrule[1pt]
+		\multicolumn{4}{l}{\textit{SAMSum}} \\
+		{BART} &52.06 &27.45 &48.89 \\
+		{DialIndirect} &  53.08&28.51  & \textbf{50.25} \\
+		{ExtSum} &  53.20& 28.26 & 49.80 \\
+		{ExtSumM} & 52.20 & 27.91 & 49.74   \\
+		{EntSent} & 51.82 & 27.43 & 49.19   \\
+		{ExtSentM} & 51.66 & 27.27 &  48.96  \\
+		{DSum} & 52.52&27.51 &49.03 \\
+		{DialSent} & \textbf{53.54} & \textbf{28.91} &  50.21 \\
+		
+		\midrule[1pt]
+		
+		\multicolumn{4}{l}{\textit{DialSumm}} \\
+		{BART} & 53.01&29.18 &51.34 \\
+		{DialIndirect} &  52.54&29.13  &51.68 \\
+		{ExtSum} & 51.83 & 27.92 &50.33  \\
+		{ExtSumM} & 52.29 & 27.72 & 50.09   \\
+		{EntSent} & 51.41 & 27.81 & 49.65   \\
+		{ExtSentM} & 52.46 & 28.86 & 51.36 \\
+		{DSum} & 53.27 & 28.64 & 51.69 \\
+		{DialSent} &\textbf{54.73} & \textbf{30.47}&  \textbf{53.46}  \\
+		\bottomrule[1pt]
+	\end{tabular}
+	\caption{Comparisons among different post-training approaches and fine-tuning-only BART baseline on dialogue summarization.}
+	\label{tab:rephrasing}
+\end{table}
+
+
+The extraction-based methods fall behind the others. The modification to the algorithm tends to bring more noises than useful information to the input as the results drop mostly. 
+Besides, splitting the summary into sentences doesn't improve the results here.
+In a word, such hard extractions hurt the intricate discourse and coreference relations among utterances and are not suitable for cross-format data construction.
+
+DialSent with PGG task outperforms other methods and BART consistently across datasets, while DSum with PGG performs almost the same as BART.
+If we use DialSent data to augment the original DSum during fine-tuning, the results on SAMSum are 44.61/22.81/44.15 for Rouge-1/2/L respectively showing that the data in both datasets is not compatible. Thus, our approach is different from data augmentation.
+Overall, post-training with cross-format rephrasing intuition does help with dialogue summarization,
+
+
+
+
+\section{Case Studies}
+\label{sec:cases}
+We show more cases as follows.
+
+
+\begin{table}[th]
+	\small
+	\centering
+	\begin{tabular}{lp{4.9cm}}
+		\toprule[1pt]
+		{Dialogue} &  \makecell[l]{\textbf{Kate}: Hey, do you know if our medical \\insurance covers hospital costs? \\\textbf{Greg}: Hm, it depends \\\textbf{Mel}: What happened dear? \\\textbf{Kate}: I broke my arm and they're \\sending me to the hospital :/ \\\textbf{Greg}: Call Linda or ask someone at the \\reception, they should be able to tell \\you what kind of package you have \\\textbf{Kate}: thnx} \\
+		
+		\hline
+		{Reference} & \textbf{Kate} broke her arm and she's going to the hospital. She'd like to know whether her medical insurance covers hospital costs. \textbf{Greg} suggests her to call \textbf{Linda} or ask someone at the reception about it. \\
+		
+		
+		\hline
+		{BART} &   \textbf{Kate} broke her arm and they're sending her to the hospital. \textbf{Greg} doesn't know if their medical insurance covers hospital costs. \textbf{(53.33/37.93/53.19)}\\
+		
+		\hline
+		{Multi-view} &  \textbf{Kate} broke her arm and they're sending her to the hospital. \textit{\textbf{Greg} will call \textbf{Linda} or ask someone} at the reception to find out if their insurance covers hospital costs.\textbf{(67.64/51.52/56.15)}\\
+		
+		\hline
+		{DialoBART} &   \textbf{Kate} broke her arm and they're sending her to the hospital . \textbf{Greg} advises her to call \textbf{Linda} or ask someone at the reception .\textbf{(65.57/50.85/67.62)}\\
+		
+		\hline
+		{DialSent-PGG} &\textbf{Kate} broke her arm and they're sending her to the hospital. \textbf{Greg} advises her to call \textbf{Linda} or ask someone at the reception if their insurance covers hospital costs. \textbf{(71.64/55.38/62.39)}\\
+		\bottomrule[1pt]
+	\end{tabular}
+	\caption{A case from SAMSum. \textbf{Names} are in bold and \textit{unfaithful contents} are in italic. Rouge-1/2/L scores(\%) are in parentheses.}
+	\label{tab:case1}
+\end{table}
+
+The case in Table~\ref{tab:case1} is a dialogue happened between three speakers from SAMSum. 
+The labeled dialogues, which are directly extracted from Multi-view's and DialoBART's released datasets are shown in Table \ref{tab:case1inputs}. ``$\mid$'' label for Multi-view refers to the topic transitions and stage transitions for the same dialogue respectively. 
+We can see that topic segments by Multi-view BART are reasonable. However, such linear segmentation is not quite suitable for this dialogue since the first and third topics are the same.
+``$\mid$'' in DialoBART just refers to the end of each utterance.
+DialoBART failed to label any topic transitions or redundant utterances.
+
+Compared to the reference summary, the summary generated by BART lost the information about Greg's suggestion, and DialoBART lost the information about ``medical insurance'' even though it recognized ``medical insurance'' as a keyword.
+Multi-view did incorrect reasoning on who will call Linda.
+Our model generated a more condensed summary covering the same key points as the reference with the original dialogue as input.
+
+\begin{table}[h]
+	\small
+	\centering
+	\begin{tabular}{lp{5cm}}
+		\toprule[1pt]
+		\makecell[l]{{Multi-view}\\ {Topic}}& Kate: Hey, do you know if our medical insurance covers hospital costs? Greg: Hm, it depends $\mid$ Mel: What happened dear? Kate: I broke my arm and they're sending me to the hospital :/ $\mid$ Greg: Call Linda or ask someone at the reception, they should be able to tell you what kind of package you have Kate: thnx $\mid$
+		\\
+		
+		\hline
+		\makecell[l]{{Multi-view}\\ {Stage}} & $\mid$ Kate: Hey, do you know if our medical insurance covers hospital costs? Greg: Hm, it depends Mel: What happened dear? $\mid$ Kate: I broke my arm and they're sending me to the hospital :/ $\mid$ Greg: Call Linda or ask someone at the reception, they should be able to tell you what kind of package you have Kate: thnx
+		\\
+		
+		\hline
+		\makecell[l]{{DialoBART}} & Kate : Hey , do you know if our medical insurance covers hospital costs ? $\mid$ Greg : Hm , it depends $\mid$ Mel : What happened dear ? $\mid$ Kate : I broke my arm and they're sending me to the hospital $\mid$ Greg : Call Linda or ask someone at the reception , they should be able to tell you what kind of package you have $\mid$ Kate : thnx \#KEY\# Mel Kate Greg Hey do you know if our medical insurance covers hospital costs happened dear Linda reception package\\
+		
+		\bottomrule[1pt]
+	\end{tabular}
+	\caption{Modified inputs by Multi-view and DialoBART.}
+	\label{tab:case1inputs}
+\end{table}
+
+%\begin{table}[h]
+%	\small
+%	\centering
+%	\begin{tabular}{lp{5cm}}
+%		\toprule[1pt]
+%		\textbf{Dialogue} & \makecell[l]{\textbf{Linda}: Hi Dad, I want to buy flowers for \\mum! But I don't remember which one\\ she likes :( \\ \textbf{Michael}: Well, she likes all the flowers\\ I believe \\\textbf{Linda}: That doesn't help! I'm on a \\flower market right now! \\ \textbf{Michael}: Send me some pics then \\ \textbf{Linda}: <file\_photo>   \ \textbf{Michael}: Tulips\\ are nice, roses too \\ \textbf{Linda}:  What about carnations? \\ \textbf{Michael}: No, carnations are boring :D \\ \textbf{Linda}: Thanks Dad, srsly… \\ \textbf{Michael}:  What about freesias? She \\likes them a lot, are there any there? \\ \textbf{Linda}: <file\_photo>  \\ \textbf{Michael}: Take those!} \\
+		
+%		\hline
+%		\textbf{Reference}& \textbf{Linda} wants to buy flowers for her mother and asks
+%		\textbf{Michael} which flowers does she like. \textbf{Michael} suggests \textbf{Linda} to buy freesias.\\
+%		\hline
+%		\textbf{BART}&\textbf{Linda} wants to buy flowers for her mum, but she doesn't remember which one she likes. She's on a flower market right now. \textbf{Michael} recommends tulips, roses and freesias. \textbf{(52.83/27.45/51.78)}\\
+%		\hline
+%		\textbf{Multi-vew}& \textbf{Linda} wants to buy flowers for her mum. She is on a flower market right now. She will buy freesias. \textbf{(52.38/35.00/58.35)}\\
+%		\hline
+%		\textbf{DialoBART}& \textbf{Linda} wants to buy flowers for her mum . \textbf{Linda} is on a flower market right now . She will buy freesias . \textbf{(57.14/35.00/58.35)} \\
+%		\hline
+%		\textbf{DialSent-PGG}& \textbf{Linda} is on a flower market right now. She wants to buy flowers for her mother. \textbf{Michael} advises her to buy freesias.\textbf{(63.63/38.10/60.34)}\\
+%		\bottomrule[1pt]
+%	\end{tabular}
+%	\caption{Another case from SAMSum.}
+%	\label{tab:case2}
+%\end{table}
+
+
+
+Another case from DialSumm between two speakers is in Table~\ref{tab:case3}. BART recognized ``him'' in the second utterance as ``\#Person1\#'' incorrectly. DialoBART regarded the man as ``\#Person1\#'s friends'' which isn't mentioned in the original dialogue.  Our model, DialSent-PGG generates a more accurate summary.
+%\footnote{The missing or redundancy of ``\#'' for DialSumm exists in generated summaries from all of the neural models.}. 
+
+\begin{table}[th!]
+	\small
+	\centering
+	\begin{tabular}{lp{5cm}}
+	\toprule[1pt]
+	{Dialogue} & \makecell[l]{\textbf{\#Person1\#}: Like a cat on hot bricks, as \\you might say. I don ' t believe you are\\ listening at all.\\ \textbf{\#Person2\#}: Sorry, I just worried about\\ him. You know, he should be here an \\hour ago. \\ \textbf{\#Person1\#}: Don ' t worry him, he has \\been grown up and I think he can take\\ himself very well. \\ \textbf{\#Person2\#}: But he still does not come\\ back. \\ \textbf{\#Person1\#}: Maybe he is on the way\\ home now.
+	} \\
+	
+	\hline
+	{Reference-1} & \textbf{\#Person2\#} is worried about one man, and \textbf{\#Person1\#} thinks that that man might be on the way home now. \\
+	\hline
+	{Reference-2} & \textbf{\#Person2\#} is worried about a man, but \textbf{\#Person1\#} thinks it would be fine.\\
+	\hline
+	{Reference -3} &\textbf{\#Person2\#} is worried about a man but \textbf{\#Person1\#} is not.\\
+	\hline
+	{BART} & \textit{ \textbf{\#Person2\#} is worried about \textbf{\#Person1\#} }because he hasn't come back from work. \textbf{(43.48/28.57/50.01)} \\
+	\hline
+	{DialoBART} &  \textbf{\#Person2\#} is worried about \textit{\textbf{\#Person1\#}'s friend }who hasn't come back. \textbf{(45.45/30.00/51.87)} \\
+	\hline
+	{DialSent-PGG} & \textbf{\#Person2\#} is worried about a boy who hasn't come back.\textbf{(47.62/42.11/53.90)}\\
+	\bottomrule[1pt]
+	\end{tabular}
+	\caption{A case from DialSumm.}
+\label{tab:case3}
+\end{table}
+
+
+
+
+
+

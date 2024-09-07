@@ -1,0 +1,209 @@
+\section{Approach}
+\label{sec:approach}
+In this section, we first introduce the general framework of ChatMatch, which is modeled as
+a sport tournament, then discuss some possible scoring functions that can be used by
+the virtual judges in these competitions.
+
+Our whole evaluation framework consists of competition and scoring at three different levels. The game level is at the bottom and is played between two players.Then comes the match level. The result of two games determines the outcome of a match. The tournament level is at the top and is composed of matches among different pairs of players. 
+
+\subsection{Competition Protocol}
+\label{ssec:competition}
+
+\subsection*{Tournament Rules}
+%\KZ{Give an overview of the how the tournament is run.}
+We adopt a system similar to the design of a double round-robin 
+sports tournaments, where all bots participating in the competition 
+converse directly with each other twice. For example, 
+if we have $n$ chatbots players in our tournament, 
+there will be $n\times ( n-1) $ games in total.
+
+\subsection*{Match Rules}
+%\KZ{Talk about how the matches are administered. Just the procedure only.}
+There will always be two players (the chatbots to be evaluated) 
+participating in one single match. Each match consists of two games.
+Each game is started by a different player. 
+If we have $n$ chatbots in our tournaments, there 
+will be ${n \choose 2}$ matches in total. 
+
+\subsection*{Game Rules}
+%\KZ{The procedure of the game. How each game is started and stopped.}
+Each game is started by a player whose first turn is provided by 
+the system. The choice of this utterance can be different 
+depending on the domain of the bots and the ability we want to 
+rank about the bots. For example, if we want to test a group of 
+bots' ability to chat about movies, we can set movie-related prompts at 
+start utterance. 
+
+During the process of a conversation, there might be different ways to 
+end the conversation. We can set a fixed number of exchanges 
+or a terminating condition such as whether a bot makes a fatal error
+or whether a certain score is reached.
+
+\subsection{Scoring}
+\label{ssec:scoring}
+\subsection*{Game-level Scoring}
+%\KZ{Define a few functions: one to catch repeating, one to chat contradiction and one to catch long term memory.}
+
+Here we define the rules for recording points in one game between two bots. 
+
+We implement the scoring at each turn based on three aspects of rules concerning non-repetitiveness, consistency, and the ability to bring up a previously stated concept. Finally, we sum up the scores for each bot for all the turns.
+
+The three functions for deducting and adding points are defined in \algoref{algo:rep}, \algoref{algo:inconsist} and \algoref{algo:bonus} respectively. 
+We also define the important notations that are used in the algorithms in
+\tabref{tab:functions}. 
+\begin{table}[th!]
+\centering
+\small
+\begin{tabular}{c|l}
+%\hline
+\toprule
+\textbf{Notation} & \textbf{Description} \\ \midrule
+$t$ & Current turn \\
+$H(t)$  &  a list of history turns prior to $t$ \\
+$Sim(x,y)$ & similarity between two turns $x$ and $y$ \\
+$\sigma_r$ & Threshold for detecting repetition \\
+$\sigma_c$ & Threshold for detecting consistency \\
+$r$ & Weight for repetition \\
+$c$ & Weight for inconsistency \\
+$b$ & Weight for bonus \\
+$d$ & Min distance between consecutive mentions \\
+IDF list & List of lemma in chatlog sorted by IDF\\
+$p$ & Percentage of important lemmas in IDF list\\
+$R(t)$ &  Repetition penalty for turn $t$ \\
+$C(t)$ &  Inconsistency penalty for turn $t$ \\ 
+$B(t)$ &  Memory bonus for turn $t$ \\
+$Rep(t)$ & A list of repeated turns for turn $t$ \\  
+\bottomrule
+\end{tabular}
+\caption{
+Functions and variables in algorithms.}
+\label{tab:functions}
+\end{table}
+
+
+
+
+\begin{algorithm}[ht]
+\small
+\caption{Repetition detection}
+\label{algo:rep}
+\hspace*{0.02in} {\bf Input:}
+ $t$, $H$, $Sim$, $\sigma_{r}$
+; \hspace*{0.02in} {\bf Output: } 
+ $R$;
+\begin{algorithmic}[1]
+\State //Starting to detect repetition
+\For {$u$ in $H(t)$}
+	\If {$Sim(t,u) \geq \sigma_{r}$}
+		\State Add $u$ to $Rep(t)$
+	\EndIf
+\EndFor
+    \If{$len(Rep(t))\geq 0$}
+        \If{$t$ is a question and We can find a question in $Rep(t)$}
+        \State $ R(t) \leftarrow  R(t) + 1$ 
+        \Else
+        \If {the previous turn of $t$ is not a repetitive question}
+        \State $R(t)) \leftarrow R(t) + 1$ 
+        \EndIf
+        \EndIf
+    \EndIf
+
+
+
+\end{algorithmic}
+\end{algorithm}
+
+
+\begin{algorithm}[ht]
+\small
+\caption{Inconsistency detection}
+\label{algo:inconsist}
+\hspace*{0.02in} {\bf Input:}
+$t$, $H$, $Sim$, $\sigma_{c}$
+; \hspace*{0.02in} {\bf Output:  } 
+ $C$;
+\begin{algorithmic}[1]
+\State // Inconsistency detection
+ \If {previous turn of $p$ is a repetitive question} 
+   \If{ the response $res$ to the question repeated by turn $p$ contradicts turn $i$ with $Sim(t, res) \leq \sigma_{c}$ }
+    \State $C(t) \leftarrow C(t) + 1$
+   \EndIf
+  \EndIf
+
+
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[ht]
+\small
+\caption{Memory ability bonus}
+\label{algo:bonus}
+\hspace*{0.02in} {\bf Input:}
+$t$, $p$, $d$
+; \hspace*{0.02in} {\bf Output:  } 
+$B$;
+\begin{algorithmic}[1]
+\State // Memory ability bonus detection \\
+$B(t) \leftarrow 0$
+\For {all tokens $tk$ in current turn $t$}
+ \If {$t$ - previous occurrence turn of $tk > d$ and $tk$ in the top $p\%$ of the IDF list of all tokens in the dialogue} 
+   \State $B(t) \leftarrow 1$
+  \EndIf
+ \EndFor
+
+
+\end{algorithmic}
+\end{algorithm}
+
+After finishing the calculation of the bonus and penalty scores for each turn, we obtain the scores of the two bots in a game with weighted sum according to \eqnref{eq:sum-up}
+
+\begin{equation}
+S(bot) = \sum_t - c\times C(t)  - r \times R(t) + b \times B(t)
+\label{eq:sum-up}
+\end{equation}
+$S$ denotes the total score gained by a bot for a game.
+
+We take \figref{fig:example} as an example to explain the scoring process. 
+At each turn $t$, we first check if there exists any repetitive question.  
+We can easily find turn 3 and turn 7 repeated turn 1 and turn 5 
+respectively. They will then be penalised one point for repetition. 
+Repetition is tolerable when we find that the last turn is already 
+marked as a repetitive question. For example, in \figref{fig:example}, 
+although turn 4 is considered as a repetition of turn 2,  we are not going to penalise it as turn 3 is a repetitive question. 
+
+The detection of inconsistency is always triggered after the detection of repeated questions. If so, we will penalise the current turn, as here in turn 8 of \figref{fig:example}.
+
+The decision for whether there is a repetition or an inconsistency is made based on calculating the similarity of the two turns. We use a similarity function to complete the calculations, which we will discuss in \secref{sec:experiment}. 
+
+In contrast to penalties for bad behaviours, we give a bonus to reward
+a bot if it is able to memorize the important concepts that have shown up 
+before in the conversation. We sort the concepts that have shown up in 
+chat history by their IDF scores. We believe that higher the IDF score is,  
+more important the concept is. For example, here in turn 9, $A$ 
+mentions concept word ``student'' presented by $B$ in turn 2. With this
+turn, $A$ will win a bonus mark.
+
+\subsubsection*{Match-level Scoring}
+
+ The whole process of match-level evaluation is defined as follows: 
+\begin{itemize}
+\item  We first sum up the scores of two bots gaining in two games.
+
+\item The bot that get the higher score among the two is considered to be the winner of 
+the match. 
+ 
+\item We introduce two types of scoring at match level: 
+micro-scoring and macro-scoring. Micro-score is defined as the 
+sum of the exact scores gained by one bot after a match of two games. 
+As for macro-score, we mimic the scoring rules of soccer tournament: 
+3 points for the winner of a match, 1 point for a tie and 
+zero point for the loser. 
+
+\end{itemize}
+%\KZ{At the match level, we need to consider different starting context for the bots? I think we should present a few options for the reader and say that we are limited to these.}
+
+\subsubsection*{Tournament-level Scoring}
+We count the points by simply summing up their scores gained in every match. If two bots score the same, we will determine their ranking based on their win-loss relationship in the match between them.  If they are tied, we propose a “overtime” for these two bots, one human judge may observe their performance and then make the decision of the game.
+
+
+

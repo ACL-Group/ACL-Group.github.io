@@ -1,0 +1,76 @@
+\section{EMO: Earth Mover Distance Optimization}
+In pursuit of a divergence measure that circumvents the adverse properties of forward cross-entropy, we draw our attention to the 
+Earth Mover's Distance~(EMD), a distance function that was originally studied in the context of optimal transport planning of goods and materials~\citep{kantorovich1960mathematical,villani2021topics} and then borrowed for generative modeling by ML community~\citep{wgan,wae}. In Section \ref{sec:emd}, we provide the formal definition of EMD and elucidate its adaptation for auto-regressive language modeling with a semantically informed cost function. In Section~\ref{sec:upperbound}, we tackle the challenge posed by the intractable infimum associated with EMD by developing its upper bound. Collectively, we introduce EMO, an approach dedicated to the training of auto-regressive language models through the optimization of the Earth Mover's Distance.
+
+
+\subsection{Adapting Earth Mover's Distance to auto-regressive language modeling}
+\label{sec:emd}
+Formally, given two probability distributions $P_1$ and $P_2$ over a metric space $\mathcal{X}$, the earth mover's distance between $P_1$ and $P_2$ is defined as the minimum accumulative cost of moving all probability mass of $P_1$ to $P_2$:
+\begin{equation}
+    \operatorname{EMD}(P_1, P_2)=\inf _{\gamma \in \Pi(P_1, P_2)} \mathbb{E}_{(x_1, x_2) \sim \gamma}[C(x_1, x_2)]
+    \label{eq:emd_1}
+\end{equation}
+where $\inf$ stands for infinitesimal, $\Pi(P_1,P_2)$ denotes the set of all joint distributions $\gamma (x_1,x_2)$ whose marginals are $P_1$ and $P_2$, respectly. $\gamma(x_1,x_2)$ is interpreted as the amount of probability mass transported from $P_1(x_1)$ to $P_2(x_2)$. $C(x_1,x_2)$ is a non-negative function that measures the cost of transporting a unit mass from $x_1$ to $x_2$. In the context of 
+auto-regressive language modeling, $P_1$ refers to the model distribution to be learned and $P_2$ refers to the data distribution, both representing the locally factorized probability distribution over the next token at time step $t$ given preceding tokens, i.e., $P_1:=Q_{\theta}(\cdot|x_{<t})$ and $P_2:=P(\cdot|x_{<t})$. Thus, Eq. \ref{eq:emd_1}  can be reformulated as:
+\begin{align}
+    \nonumber
+    \operatorname{EMD}(Q_{\theta}(\cdot|x_{<t}), P(\cdot|x_{<t}))&=\inf _{\gamma \in \Pi(Q_{\theta}(\cdot|x_{<t}), P(\cdot|x_{<t}))} \mathbb{E}_{(x_1, x_2) \sim \gamma}[C(x_1, x_2)] \\
+    &=\inf _{\gamma \in \Pi(Q_{\theta}(\cdot|x_{<t}), P(\cdot|x_{<t}))}\sum_{i=1}^{|V|}\sum_{j=1}^{|V|}\gamma(v_i,v_j)C(v_i,v_j)
+    \label{eq:emd_2}
+\end{align}
+where $V$ is the vocabulary of language model and $v_i$ indexs the $i$-th token in $V$. Once the cost function $C$ is defined, computing the above earth mover's distance amounts to solve the following constrained linear optimization problem:
+\begin{align}
+    \label{eq:emdlm}
+    \min_{\gamma}&\sum_{i=1}^{|V|}\sum_{j=1}^{|V|}\gamma(v_i, v_j)C(v_i, v_j) \\
+    \nonumber
+    s.t\quad \sum_{j=1}^{|V|}\gamma(v_i, v_j)&=P(v_i|x_{<t})\quad \forall i\in\{1,...,|V|\} \\
+    \nonumber
+    \sum_{i=1}^{|V|}\gamma(v_i, v_j)&=Q_{\theta}(v_j|x_{<t})\quad \forall j\in\{1,...,|V|\}
+\end{align}
+\paragraph{Semantically-Informed Transport Cost} The next step is to establish a definition of $C$ such that it reflects a meaningful distance between pairs of tokens $v_i$ and $v_j$. Intuitively, tokens that are more likely to be used interchangeably should have smaller distances, e.g., \textit{glad} and \textit{happy}. Conversely, tokens that are improbable to fit within each other's context, e.g., \textit{cat} and \textit{galaxy}, should be farther away. One
+such measure of token distance is naturally provided by their cosine distance in the contextual embedding space, i.e., $C(v_i, v_j)=1-\frac{e_i^{\top}e_j}{|e_i||e_j|}$, where $e_i$ is the $i$-th column of the language modeling head $\bm{E}$ of a LM $Q_{\phi}$ pre-trained via MLE. Because during training $e_i$ is optimized to be close to the contextual representation of all prefixes of which the next token is $v_i$, the cosine distance between $e_i$ and $e_j$ therefore serves as an effective proxy for quantifying the transport cost between $v_i$ and $v_j$. Once initialized, $\bm{E}$ will be jointly updated with other model parameters $\theta$ so that $C$ can capture the shift in the domain-specific distribution from the pre-training corpus.
+
+\subsection{A Tractable Upper Bound}
+The complexity of traditional EMD solvers~\citep{treeemd,n3logn} for computing Eq.\ref{eq:emdlm} is $O(|V|^3\log|V|)$, which becomes burdensome for recent LLMs whose vocabulary can contain several tens of thousands of tokens. Additionally, employing external solvers disrupts gradient propagation, making end-to-end training infeasible. To tackle these challenges, we present a tractable 
+upper bound of EMD that allows for efficient gradient-based optimization.
+
+We start by defining a transport plan $\tilde{\gamma}$ that directly leverages the data distribution $P(\cdot|x_{<t})$ and model distribution $Q_{\theta}(\cdot|x_{<t})$ meanwhile being valid by adhering to the constraints stated in Sec.~\ref{sec:emd}:
+\begin{align}
+    \tilde{\gamma}(v_i, v_j)&=Q_{\theta}(v_i)P(v_j)
+    \label{eq:plan}
+\end{align}
+Here we omit the prefix $x_{<t}$ for notational simplicity. Essentially, $\tilde{\gamma}$ represents the probability of a data-dependent transport plan that moves the probability mass of $v_i$ under $Q_{\theta}$ to other tokens according to the proportions specified by $P$. Since both $Q_{\theta}$ and $P$ add up to 1, $\tilde{\gamma}$ is therefore a legitimate but not necessarily optimal plan. Denoting the unknown optimal plan with minimal transport cost as $\gamma^{*}$, we have the following inequality holds:
+\begin{align}
+    \nonumber
+    \operatorname{EMD}(Q_{\theta}, P)&\leq\sum_{i=1}^{|V|}\sum_{j=1}^{|V|}\tilde{\gamma}(v_i, v_j)C(v_i, v_j) \\
+    &=\sum_{i=1}^{|V|}\sum_{j=1}^{|V|}Q_{\theta}(v_i)P(v_j)C(v_i, v_j) \label{eq:summation} \\
+    &=Q_{\theta}^{\top}\bm{C}P \label{eq:quadratic} \\
+    \nonumber
+    &=Q_{\theta}^{\top}(\bm{1}\bm{1}^{\top}-\bm{\hat{E}}^{\top}\bm{\hat{E}})P \\
+    &=1-(\bm{\hat{E}}Q_{\theta})^{\top}\bm{\hat{E}}P
+    \label{eq:emdfinal}
+\end{align}
+where $\bm{C}\in \mathbb{R}^{|V|\text{x}|V|}$ is the matrix notation of $C(v_i,v_j)$ used to transform the summation~(Eq.~\ref{eq:summation}) into quadratic form~(Eq.~\ref{eq:quadratic}), $\bm{1}$ is a all-one column vector, $\bm{\hat{E}}$ is the row-wise normalized version of $\bm{E}$, and $P$ is the one-hot next token distribution. Prior works on distribution matching using EMD~\cite{wgan,wgan_gp} commonly resort to the Kantorovich-Rubinstein duality~\citep{emd_duality} or entropic regularization~\citep{cuturi2013sinkhorn,emd2015}, which either conduct adversarial training of the generative model with an additional 1-Lipschitz critic network or adopt Sinkhorn-like iteration algorithm. In contrast, the upper bound we derived above only pertains to the training of $Q_{\theta}$, therefore being more stable and efficient for optimization. We term Eq.~\ref{eq:emdfinal} as DEMD and incorporate it in conjunction with MLE~(\ref{appendix:dynamic}) for auto-regressive language modeling.
+
+\paragraph{Generalized Form for Arbitrary $P$} When $P$ is dense, the optimal solution of Eq.~\ref{eq:emdfinal} is a one-hot distribution with all probability mass placed on the token with the smallest expected transport cost, rather than $P$. To tackle this, we derive the following generalized form for arbitrary $P$, which minimizes the absolute difference between the surrogate transport cost of $Q_{\theta}$ and $P$:
+\begin{align}
+    \widetilde{\text{DEMD}}(Q_{\theta},P)=|Q_{\theta}^{\top}-P^{\top}|\bm{C}P\geq|Q_{\theta}^{\top}\bm{C}P-P^{\top}\bm{C}P|
+\end{align}
+
+\subsection{Behavioral Differences Compared to MLE}
+Next, we delve into some properties of the proposed DEMD and provide insights on how it improves over MLE in terms of behavioral differences during optimization.
+To begin with, we first present DEMD's gradient with respect to model parameters $\theta$~(assuming a one-hot $P$):
+\begin{align}
+    \nabla_{\theta}\text{DEMD}(Q_{\theta}, P)&=\sum_{i=1}^{|V|}\nabla_{\theta}Q_{\theta}(v_i)(\sum_{j=1}^{|V|}P(v_j)C(v_i,v_j))=\sum_{i=1}^{|V|}\nabla_{\theta}Q_{\theta}(v_i)\mathbb{E}_{v_j\sim P}[C(v_i,v_j)]
+    \label{eq:demd_grad}
+\end{align}
+% \paragraph{Symmetry} It is easily observed that DEMD is symmetrical concerning $Q_{\theta}$ and $P$, i.e., $\text{DEMD}(Q_{\theta}, P)=\text{DEMD}(P, Q_{\theta})$. This is in contrast with MLE, where swapping $Q_{\theta}$ and $P$ leads to an ill-defined training objective. 
+\paragraph{Harmonizing Recall and Precision}
+MLE is shown to be recall-prioritizing in the sense that its gradient update only ensures the target token is assigned with high probability. As a result, MLE-induced model tends to be over-confident on the low-quality regions in human language. In contrast, at each time step, DEMD also takes into account the precision of $Q_{\theta}$ by explicitly penalizing low-quality tokens, i.e., those tokens will have large transport costs and thus large penalties. By effectively alleviating the overestimation of degenerated text, EMO better operationalize the harmonization of recall and precision compared to MLE.
+% It is easily observed that DEMD is symmetrical concerning $Q_{\theta}$ and $P$, i.e., $\text{DEMD}(Q_{\theta}, P)=\text{DEMD}(P, Q_{\theta})$. This is in contrast with MLE, where swapping $Q_{\theta}$ and $P$ leads to an ill-defined training objective. 
+\paragraph{Negative Diversity Awareness} The awareness of diverse supervisory signals of all tokens naturally arises from the recall-precision balancing property of DEMD. From Eq.~\ref{eq:demd_grad} we can see that, 
+% compared to forward cross-entropy in which only the gradient of model probability of target token $\nabla_{\theta}Q_{\theta}(x_t)$ is utilized, 
+the update of model parameters $\theta$ in DEMD comprises the sum of the gradients of the model's token probabilities across the entire vocabulary, weighted by their expected transport cost. Specifically, by employing gradient descent, tokens that deviate significantly from the data distribution~(resulting in higher transport costs) will be down-weighted more severely than tokens that are contextually similar to the data distribution. Thus, the model distribution $Q_{\theta}$ learns to allocate probability mass more accurately than MLE due to the availability of more informative training signals.
+\paragraph{Better Train-Test Consistency} One notable downside of forward cross-entropy is its train-test disparity nature~(Sec.~\ref{sec:train_test_mismatch}). 
+Namely, during the training phase, its objective involves an expectation that is computed with respect to the data distribution $P$, whereas during testing, samples are drawn from the model distribution $Q_{\theta}$ and evaluated by humans. By rewriting Eq.\ref{eq:summation} as $\mathbb{E}_{v_i\sim Q_{\theta}}[\sum_{j=1}^{|V|}P(v_j)C(v_i,v_j)]$, we can see that DEMD explicitly involves the optimization of the expected transport cost computed with respect to $Q_{\theta}$. Therefore, DEMD has a higher degree of train-test consistency compared to MLE.
+\label{sec:upperbound}

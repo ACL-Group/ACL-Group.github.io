@@ -1,0 +1,138 @@
+\subsection{Inference}
+\label{sec:infer}
+
+%\KZ{
+%{\bf OUTLINE}
+%\begin{itemize}
+%\item co-occurrence matrix
+%\item Overview of EnrichMatrix function
+%\item UpdateArticles, Scoring function
+%\item UpdateMatrix
+%\item How we handle general terms (boosting)
+%\end{itemize}
+%}
+
+To inference the parameters of the model, we use EM algorithm. EM algorithm aims to iteratively 
+maxinum the lower bound of the posterior log-likelyhood of the data.
+
+\subsubsection{Likelihood of Repository Data}
+For a corpus with $M$ documents, $U$ commits and $N$ words. We use $\N_{w_i^x}^{d_m}$ as the 
+number of identifier $w_i$ in file $d_m$ and $\N_{w_j^y}^{d_m}$ as the number of comment word in file $d_m$. 
+All words are generated independently no matter in code files or commit messages. 
+The likelyhood of the repository data should be the possibility of all words.
+\textcolor{red}{
+\begin{align} 
+\begin{split}
+&P(Data|\Phi)\\
+=&\prod _{ m }{\prod _{ i }{p(w_i^{(x)}|d_m,l,b_m,Dir)^{\N_{w_i^x}^{d_m}}}} {\prod _{ j }{p(w_j^{(y)}|d_m)^{\N_{w_j^y}^{d_m}}}} \\
+\times& \prod _{ u}\prod _{ n }{p(w_n|c_u,D,a)^{\N_{w_n}^{c_u}}}\\
+\end{split}					
+\end{align}
+}
+\subsubsection{Lower Bound of Likelihood}
+
+The inference the parameter of the model, we need to make the log-likelihood of observed data maxinum.
+\textcolor{red}{
+\begin{align} 
+\begin{split}
+&\log{P(Data|\Phi)}\\
+&=\sum _{ m }{\sum _{ i }{\N_{w_i^x}^{d_m} \log{\left( \eta p(w_i|d_m, b_m, Dir)+(1-\eta)p(w_i|l) \right)}}}\\
+&+\sum _{ m }{\sum _{ j }{\N_{w_j^y}^{d_m}  \log{p(w_j|d_m)}  }}\\
+&+\sum _{ u}{\sum _{ n }{\N_{w_n}^{c_u}\log{ \left((1-\lambda)p(w_n|c_u)+\lambda p(w_n|D,a)\right)}}}\\
+&=\sum _{ m }{\sum _{ i }{\N_{w_i^x}^{d_m} \log{\left( \eta (\mu p(w_i|d_m) + (1-\mu) p(w_i|b_m, Dir))+(1-\eta)p(w_i|l) \right)}}}\\
+&+\sum _{ m }{\sum _{ j }{\N_{w_j^y}^{d_m}  \log{p(w_j|d_m)}  }}\\
+&+\sum _{ u}{\sum _{ n }{\N_{w_n}^{c_u}\log{ \left((1-\lambda)p(w_n|c_u)+\lambda p(w_n|D,a)\right)}}}\\
+\end{split}	
+\end{align}
+}
+\vspace*{2pt}
+
+Apply Jensen's Inequality, we can get the lower bound of likelihood $\lb$ \equref{low}.
+In the reminder of this paper, we make 
+\[\N_{w_n}^{d_m}=\eta \mu \N_{w_i^x}^{d_m}+\N_{w_i^y}^{d_m}\]
+
+\begin{figure*}[!t]
+% ensure that we have normalsize text
+\normalsize
+% Store the current equation number.
+%\setcounter{MYtempeqncnt}{\value{equation}}
+% Set the equation number to one less than the one
+% desired for the first equation here.
+% The value here will have to changed if equations
+% are added or removed prior to the place these
+% equations are referenced in the main text.
+\setcounter{equation}{5}
+\textcolor{red}{
+\begin{align}
+\label{low}
+\begin{split}
+\lb &=\lambda {\sum _{ u }\sum _{ n }\N_{w_n}^{c_u}\sum _{m'}\xi_{u,m'}\sum _{k}p(z_k|w_n,d_{m'})\left(\log{p(w_n|z_k)}+\log p(z_k|d_{m'})\right) }+ (1-\lambda) \sum _{ u }\sum _{ n }\N_{w_n}^{c_u} \log{p(w_n|c_u)}\\
+&+\sum _{ m }\sum _{ i }{(\eta \mu \N_{w_i^{x}}^{d_m} + \N_{w_i^{y}}^{d_m})\sum _{k}p(z_k|w_i,d_m) \left( \log{ {p(w_i|z_k)}+\log{p(z_k|d_m)}} \right)} +(1-\eta)\sum _{ m }\sum _{ i }{\N_{w_i^x}^{d_m}\log{p(w_i|l)}}\\
+&+\eta (1-\mu) \sum _{ m }\sum _{ i }{\N_{w_i^{x}}^{d_m}\sum _{k}p(z_k|w_i,b_m,Dir) \left( \log{ {p(w_i|z_k)}+\log{p(z_k|b_m,Dir)}} \right)}\\
+\end{split}
+\end{align}
+}
+%\hrulefill
+% The spacer can be tweaked to stop underfull vboxes.
+%\vspace*{2pt}
+\caption{The lower bound of log-likelihood}
+\end{figure*}
+
+
+\subsubsection{Estimation of Model Parameters}
+There is only one latent parameter $z$ in our repository model, we obtain the inference
+result as follows.\\
+{\bf E step:}
+This step calculates the expectation of the hidden variables. Each hidden variable is the topic $z$ which
+is chosen for selecting the word $w_i$. Let $p(z_k|w_i,d_m)$ be the probability that
+a word is generated from the topic $z_k$ in the code file $d_i$. 
+The formula to compute $p(z_k|w_i,d_m)$ in the E-step is presented as the Bayes rules \equref{equ:estep}.
+\[
+\label{equ:estep}
+p(z_k|w_i,d_m) = \frac { p(w_i|z_k)p(z_k|d_m) }{ \sum _{k}{p(w_i|z_k)p(z_k|d_m)} }\]
+\textcolor{red}{
+\[
+\label{equ:estep2}
+p(z_k|w_i,b_m,Dir) = \frac { p(w_i|z_k)p(z_k|b_m,Dir) }{ \sum _{k}{p(w_i|z_k)p(z_k|b_m,Dir)} }\]
+}
+{\bf M step:}
+This step is to find the new $p(w_i|z_k)$ and $p(z_k|d_m)$ that can maximize the log-likelihood.
+To compute $p(w_n|z_k)$, \equref{equ:mstep1} shows the details.
+\textcolor{red}{
+\begin{align}
+\label{equ:mstep1}
+\begin{split}
+&p(w_n|z_k)=\\
+&\frac{\sum _{ m }{\N_{w_n}^{d_m}p(z_k|w_n,d_m)}+\lambda \sum _{ u}\N_{w_n}^{c_u}\sum _{m'}\xi_{u,m'}p(z_k|w_n,d_{m'} ) + \eta (1-\mu)\sum_{m}{\N_{w_i^x}^{d_m}}p(z_k|w_n,b_m,Dir)}{\sum _{n}(\sum _{ m }{\N_{w_n}^{d_m}p(z_k|w_n,d_m)}+\lambda \sum _{ u}\N_{w_n}^{c_u}\sum _{m'}\xi_{u,m'}p(z_k|w_n,d_{m'}) + \eta (1-\mu)\sum_{m}{\N_{w_i^x}^{d_m}}p(z_k|w_n,b_m,Dir))}\\
+\end{split}
+\end{align}
+}
+
+To compute $p(z_k|d_m)$, see \equref{equ:mstep2}.
+\begin{align}
+\label{equ:mstep2}
+\begin{split}
+&p(z_k|d_m) = \\
+&\frac{\sum _{i}{\N_{w_i}^{d_m}p(z_k|w_i,d_m)+\lambda \sum _{u} \sum _{n}{\N_{w_n}^{c_u}\xi  _{u,m}p(z_k|w_n,d_m)}}}{\sum _{k}\left(\sum _{i}{\N_{w_i}^{d_m}p(z_k|w_i,d_m)+\lambda \sum _{u} \sum _{n}{\N_{w_n}^{c_u}\xi  _{u,m}p(z_k|w_n,d_m)}}\right)}\\
+\end{split}
+\end{align}
+
+\textcolor{red}{
+To compute $p(z_k|b_m,Dir)$ see \equref{equ:mstep3}.
+\begin{align}
+\label{equ:mstep3}
+\begin{split}
+p(z_k|b_m, Dir)=\frac{\sum_{n}\N_{w_n^x}^{d_m} p(z_k|w_n,b_m,Dir)}{\sum_{k} \sum_{n}{\N_{w_n^x}^{d_m} p(z_k|w_n,b_m,Dir)}}
+\end{split}
+\end{align}
+}
+
+We iterate the E-Step and M-Step until we obtain the
+convergence of the log-likelihood in \equref{low}. Since our
+EM algorithm only guarantees to find a local maximum of
+the likelihood, we perform multiple trials and choose the
+best one among the local optima found.
+
+
+
+

@@ -1,0 +1,198 @@
+\section{Preliminary}\label{secpre}
+
+Additive tree models are a powerful branch of machine learning 
+but are often used as black boxes. Though they enjoy high accuracies, 
+it's hard to explain  their predictions from a feature based point of view. 
+Different ensemble strategies 
+bring out different models while sharing the tree structure as a basis. So the model interpretations for different addictive 
+tree models share some key spirits and can spread out from one to another with appropriate adaptation. In this section, 
+we first review a practical interpretation method for random forest (for the binary classification) and introduce the general definition of feature
+contribution to better illustrate the proposed model interpretation for GBDT. 
+%\KZ{I can't see the connection between random forest and GBDT here, except
+%both are using trees? Is this paper mainly improving the method 
+%for random forest? This should be made clearer in the intro.}
+
+\subsection{Interpretation for Random Forest}\label{secrf}
+%\KZ{This subsection can be cut down substantially? Is it really necessary to
+%include algo 1 and 2 and talk about them? If you cut algo 1 and 2, and their 
+%discussion, then u back to 12 pages.}
+Random forest is one of the most popular machine learning models due to its exordinary
+accuracy utilizing categorical or numerical features on regression 
+and classification problems. A random forest is a bunch of  
+decision trees that are generated respectively and vote together to get a final prediction. Every tree is trained on randomly sampled
+data and subsampling feature columns to introduce the diversity for better generalization, which is the key weakness of single
+decision tree models. Random forest is known as a typical bagging model and the bagging strategy works out by averaging the noises to get a lower variance model. 
+
+%The process to generate a  random forest from a given dataset is shown in algorithm %\ref{alg:dtalgo} and 
+%\ref{alg:trainrf}. The training process generates
+%a forest with $M$ trees based on dataset D and function $BuildTree$ builds up a decision tree based on loss function and model type.
+%While predicting a new instance $X_{i}$, each tree in $Forest$  first votes for one class and a final prediction is then concluded by the majority. 
+%Function $goLeft$ tells whether the instance falls into left branch of current decision subtree.  %Algorithm \ref{alg:dtalgo} is the utility for decision tree for both random forest and GBDT.
+%Trees grow gradually as described and there is a pair of splitting feature and splitting value at every branch of a single tree. They are chosen according
+%to pre-defined  $Gain$ which measures the improvement of a split. $getLeafWeight$ will return either a class or score  and the computation is determined by the model.
+
+An instance starts a path from the root node all the way down to a leaf node according
+to its real feature value. All the instances in the training data will fall into several nodes and different nodes have quite different label distributions of the 
+instances in them.  Every step after passing a node, the probability of being the positive class changes with the label distributions.
+All the features along the path contribute to the final prediction of a single tree.
+
+A practical way to evaluate feature contributions is explored\cite{palczewska2013interpreting}. The key idea is taking the distribution change values for the positive class as 
+the feature contribution. Concretely, it takes four procedures to work:
+\begin{enumerate}
+\item Computing the percentage of positive class of every node in a tree;
+\item Recording the percentage difference between every parent node and its children;
+\item Accumulating the contributions for every feature on each tree;
+\item Averaging the feature contribution among all the trees in the forest;
+\end{enumerate}
+
+The method consists of an offline preparation embedded in training (steps 1-2) 
+and an online computing with the prediction process (step 3-4). 
+It is easy to record the local contribution (or local increment) and related split feature to every edge on a tree. 
+%In the algorithm \ref{alg:trainrf},  the positive class 
+%percentage  in $D_{k,s}$ could be computed while entering function $BuildTree$. With an extra parameter $parent$, we can compute the 
+%percentage difference between this node and its parent. Next,  record this local contribution  in the node information
+%and pass this node  as a parent node when $BuildTree$ is called to build subtrees recursively. Finally, every 
+%node except the root of a tree retains a local contribution of the split feature in the parent node and the algorithm will store this additional
+% information in model file. As for the prediction, we only have to read the pre-computed local feature contribution of the nodes that a new
+ % instance passes through and aggregate them as the definition, which won't take much extra time.
+%\begin{algorithm}[htb]  
+%  \begin{algorithmic}[1]  
+%  \caption{Decision Tree}
+%   \label{alg:dtalgo}  
+%       \Function {BuildTree}{$D_{k,s}$}
+% 	\If {all samples in $D_{k,s}$ are in the same class or have the same features} 
+%	\State node = new Node()
+%	\State node.isLeaf = True
+%	\State node.score = getLeafWeight($D_{k,s}$)  
+%	\State \Return node
+%	\EndIf  
+%    	 \For{each feature $q\in S$}
+%		 \For{every split value $p\in split(q)$}
+%		 	 \State $D_{left}$, $D_{right}$ = splitData($D_{k,s}$, q, p)
+%			 \State compute the gain $G_{q,p}=$ Gain($D_{k,s}$, $D_{left}$, $D_{right}$)
+%     	 	\EndFor
+%     	 \EndFor
+%	 \State choose the split(p,q) =  $\argmax\limits_{q,p} G_{q,p}$
+%	 \State node = new Node()
+%	 \State node.isLeaf=False
+%	 \State node.split=(q, p)
+%	 \State node.left = \Call{BuildTree}{$D_{left}$}
+%	 \State node.right = \Call{BuildTree}{$D_{right}$}
+%	 \State \Return{node}  
+%    \EndFunction  
+%    \Function {TreePredict}{$X_{i}$,root}
+%     \If {True == root.isLeaf}
+%      \State \Return root.score
+%            \Else
+%     	\If {True == goLeft($X_{i}$,root.split)}
+%   	  \State \Return \Call{TreePredict}{$X_{i}$,root.left}
+%   	  \Else
+% 	    \State \Return \Call{TreePredict}{$X_{i}$,root.right}
+%  	   \EndIf
+%   \EndIf
+%     \EndFunction
+%   \end{algorithmic}  
+%\end{algorithm}  
+%
+%\begin{algorithm}[htb]  
+%  \begin{algorithmic}[1]  
+%  \caption{Random Forest}
+%   \label{alg:trainrf}  
+%   \Function {Train}{D,M}
+%   \State Init Forest = \{\}
+%    \For{$m=1,2,...,M$}
+%    \State Bootstrap samples: randomly select $k$ samples from $D$ as $D_{k}$
+%    \State select $s$ variables at random of  $D_{k}$ as $D_{k,s}$
+%    \State $T_{m} = $\Call{BuildTree}{$D_{k,s}$}
+%   \State Forest = Forest  $ \cup$ $  T_{m}$
+%    \EndFor 
+%    \State \Return Forest
+%     \EndFunction    
+%    \Function {PredictInstance}{$X_{i}$,Forest}
+%     \State Init class set C = \{\}
+%      \For{each $T_{m} \in Forest$}
+%      \State $C_{m}$  = \Call{TreePredict}{$X_{i},T_{m}$}
+%       \State C = C  $ \cup$ $  C_{m}$
+%	\EndFor
+%	\State choose the class  r with most predictions
+%	\State \Return r
+%    \EndFunction
+%   \end{algorithmic}  
+%\end{algorithm}  
+
+\subsection{Gradient Boosting Decision Tree}
+GBDT is another type of ensemble model that consists of a collection of 
+regression decision trees.
+However, the ensemble is based on gradient boosting which promotes the prediction gradually by reducing the residual.
+For every iteration, a new model is built up to fit the negative gradient of the loss function until it converges under an acceptable threshold. 
+The final prediction is the summation of all stagewise model predictions. Gradient boosting is a general framework and different models 
+are available to be embedded. GBDT introduces decision tree as the basic weak learner.  When square error is chosen as the 
+loss function, the residual between current prediction and target label is the negative gradient which is computational friendly.
+
+From the above definition, we can see the differences between random forest and GBDT, some of which are the main obstacles that prevent us from adapting 
+the model interpretation for random forest to GBDT:
+\begin{enumerate}
+\item Random forest aggregates trees by voting, while GBDT sums up the scores 
+from all the trees. This means that the trees in GBDT are not equal
+and the trees have to be trained in sequential order. 
+The interpretation should make proper adaptations to deal with this problem.
+\item Decision tree in GBDT outputs a score instead of a majority class type for classification problems. Though we can get the label 
+distribution changes as random forest interpretation, the output scores in GBDT should be wisely taken into consideration.
+\end{enumerate}
+
+\subsection{Problem Statement}
+Given a training dataset $D=\{x^{(i)},y^{(i)}\}_{i=1}^{N}$, where $N$ is the total number of training samples, $x=(x_{1},x_{2},...,x_{S})$ 
+implies a $S$ dimensional feature vector, $x^{(i)}$ is the feature vector for the 
+$i$-th sample and $y^{(i)}$  is the related label. We can 
+illustrate training process of GBDT as in algorithm \ref{alg:traingbdt}. $r_{mi}$ is the residual for sample $i$ in the m-th iteration.
+\begin{algorithm}[htb] 
+  \begin{algorithmic}[1]  
+  \caption{Gradient Boosting Decision Tree}
+   \label{alg:traingbdt}  
+   \Function {Train}{D,M}
+   \State Init $f_{0}(x)=0$
+    \For{$m=1,2,...,M$}
+    \State Compute  residual:
+    \State $r_{mi}=y_{i}-f_{m-1}(x_{i}),\: i=1,2,\ldots,N$
+   \State Train a regression decision tree from residual:
+   \State $T_{m} = $\Call{BuildTree}{$D$}
+   \State Cumulated prediction sum:
+   \State $f_{m}(x)=f_{m-1}(x)+T_{m}$
+    \EndFor 
+    \State Get finally boosting function:
+    \State $f{}_{M}=\sum\limits_{m=1}\limits^{M}T_{m}$
+    \State \Return $f{}_{M}$
+     \EndFunction    
+   \Function {PredictInstance}{$X_{i}$,$f{}_{M}$}
+      \State score  = $ \sum\limits_{m=1}\limits^{M} \Call{TreePredict}{X_{i},T_{m}}$
+	\State \Return score
+    \EndFunction
+   \end{algorithmic}  
+\end{algorithm}  
+
+Besides the basics of model, the feature contribution(FC) , as the key concept
+for local interpretation, is clarified below. We introduce the notation of FC 
+by denoting the model interpretation for random forest in section \ref{secrf} :
+\begin{equation}  \label{li}
+LI_{f}^{c}=
+\left\{  
+             \begin{array}{ll}  
+             \multirow{2}*{$Y_{mean}^{c}-Y_{mean}^{p}$} & \quad \quad {\rm if~ the ~split~ in~ the~ parent~ is ~ performed}\ \\  & \quad \quad {\rm over~ the~ feature~} f;   \\  
+             0, &  \quad\quad \rm{otherwise}
+             \end{array}  
+\right.  
+\end{equation}  
+
+$LI_{f}^{n}$ in equation \ref{li} is the Local Increment(LI) of feature $f$ for node $n$  defined before. For binary classification, $Y_{mean}^{n} $ 
+represents the percentage of the instances belonging to the positive class in node $n$.
+
+\begin{equation}  \label{fc1}
+FC{}_{i,m}^{f}=\sum_{c\in path(i)}LI_{f}^{c}
+\end{equation}  
+\begin{equation}  \label{fc2}
+FC_{i}^{f}=\frac{1}{M}\sum_{m=1}^{M}FC_{i,m}^{f}
+\end{equation}  
+On a single tree $m$, $FC{}_{i,m}^{f}$ in equation \ref{fc1} cumulates the feature contribution of feature $f$ for a specific instance $i$. 
+ Equation \ref{fc2} later average all the feature contribution for feature $f$ among all the trees.
+
+

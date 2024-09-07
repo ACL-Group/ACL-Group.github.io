@@ -1,0 +1,160 @@
+\section{Approach}
+\label{sec:app}
+
+We adopt the $\rho$-uncertainty privacy model
+\cite{Cao:2010:rho} which requires that the confidence of any sensitive
+association rules obtained from the data is less than or equal to $\rho$.
+A sensitive association
+rule is one whose consequent contains at least one sensitive item.
+To find a partial suppression method
+which incurs minimum information loss,
+it needs to check all combinations of items suppressed, which requires
+$O(2^N)$ time where $N$ is the total number of items in dataset. Problem of
+this sort has been shown to be an NP-hard problem
+\cite{atallah99:disclosure,Xu:2008:ATD}.
+In this paper, we present a heuristic approach
+to this problem.
+
+Our main intuition is, although the total number of unsafe
+sensitive association rules (whose confidence is above $\rho$) may
+be the worst case exponential in the original data,
+incremental ``invalidation'' of some of the
+rules through partial suppression of small number of affected items can
+dramatically decrease the number of these bad rules, which leads to quicker
+convergence to a solution.
+
+\subsection{Preliminaries}
+\begin{definition}
+\label{def:sup_conf} Support $sup_{T}(I)$ of an itemset $I$ is the number of
+records in $T$ including $I$. The confidence $conf_{T}(q,e)$ of
+association rule $q\rightarrow e$ is $sup_T(q \cup e)/sup_T(q)$.
+\end{definition}
+
+\begin{definition}
+\label{def:quasi_id} A \emph{quasi-identifier} (also \qid) $q$ is a set of
+items (including both sensitive and non-sensitive items) taken from any
+record.
+\end{definition}
+
+\begin{definition}
+\label{def:safety_rule} A sensitive association rule $q\rightarrow e$ is safe
+\wrt~$\rho$ if and only if $conf(q,e)\leq\rho$.
+\end{definition}
+
+\begin{definition}[Breach Probability]
+\label{def:probability} The \emph{breach probability} of a \qid $q$ is
+$\breach(q) = \max_{e\in item domain} conf(q,e)$
+\end{definition}
+
+\begin{definition}%[Safety of qid]
+\label{def:safety_qid} A \qid $q$ is safe \wrt~$\rho$ if and only if
+$\breach(q)\leq\rho$.
+\end{definition}
+
+\begin{definition}%[Safety of Table]
+\label{def:safety_table} A dataset $T$ is safe \wrt~$\rho$ if and only if $q$
+is safe \wrt~$\rho$ for any \qid $q$ appears in $T$.
+\end{definition}
+%The $\rho$-uncertainty privacy model\cite{Cao:2010:rho}
+%requires that all sensitive association rules are safe. By ensuring
+%confidences of all sensitive association rules with one consequent below
+%$\rho$, confidences of all sensitive association rules with more consequents
+%are also made below $\rho$. As a result, Definition \ref{def:safety_table}
+%can satisfy the $\rho$-uncertainty privacy model.
+
+
+\subsection{A Divide-and-Conquer Framework}
+\label{subsec:speedup}
+Since the complexity of verifying the privacy of a data set depends on
+the scale of the data (including total number of records,
+average record size, and the domain size), at the top level,
+we propose to partition the
+input data dynamically in a divide-and-conquer manner. Lemma
+\ref{CorrectnessOfPartitioning} below ensures that if each partition is
+partially suppressed to satisfy the $\rho$-uncertain model, then the
+whole data set also satisfies the model and is deemed safe. The average
+of this approach is that it not only linearizes the input but also
+gives rise to the parallel execution which provides
+further speed-up, which will be shown in Section \ref{sec:eval}.
+
+\begin{lemma}%[Correctness of partitioning]
+\label{CorrectnessOfPartitioning}
+  If $q$ is safe in both $T_1$ and $T_2$, then $q$ is safe in $T = T_1 \cup T_2$.
+\end{lemma}
+\begin{proof}
+For any item $a$,
+  \begin{align*}
+   q~\text{is safe in}~T_1 &\Rightarrow sup_{T_1}(q\cup\{a\}) \le \rho\cdot sup_{T_1}(q) \\
+   q~\text{is safe in}~T_2 &\Rightarrow sup_{T_2}(q\cup\{a\}) \le \rho\cdot sup_{T_2}(q)
+  \end{align*}
+  So \begin{align*}
+   sup_{T_1}(q\cup\{a\}) + sup_{T_2}(q\cup\{a\}) &\le \rho\cdot sup_{T_1}(q) + \rho\cdot sup_{T_2}(q)
+  \end{align*}
+  And \begin{align*}
+    sup_T(q\cup\{a\}) &= sup_{T_1}(q\cup\{a\}) + sup_{T_2}(q\cup\{a\}) \\
+    sup_T(q) &= sup_{T_1}(q) + sup_{T_2}(q)
+  \end{align*}
+  So $$ \frac{sup_T(q\cup\{a\})}{sup_T(q)} \le \rho~\Rightarrow q~\text{is safe in}~T .$$
+\end{proof}
+
+In this framework, we split the input data into two
+equally-sized chunks when the estimated cost of suppressing the input is
+greater than a threshold $\tmax$. Equation
+(\ref{eq:costfunc}) defines the cost of suppressing an input $T$.
+
+\begin{equation}\label{eq:costfunc}
+Cost(T)=\frac{|T|*2^{\frac{N}{|T|}}}{D}
+\end{equation}
+where $N$ is the total number of items in $T$. The function estimates the
+average number of association rules per item type. The larger this value is,
+the more sensitive association rules we should handle (assuming that
+the number of sensitive rules are positively related to the total number of
+rules).
+%The cost function is
+%used/useful? when average transaction size and table size are large.
+%We claim that in cases when $|T|$ is relatively small there is no need to
+%apply DnC.
+
+\subsection{Partial Suppressor}
+\label{subsec:partial_sup}
+\input{par_sup}
+
+%\subsection{Implementation Specifics}
+%\begin{definition}[Minimum suppression]
+%\label{minimum} Minimum suppression of item $t$ to make strong sensitive
+%association rule $q\rightarrow e$ safe, i.e. $conf(q,e)\leq\rho$:
+% \hspace{4mm}
+%\[MS(t, q\rightarrow e)=
+%\begin{cases}
+%sup(q\cup \{e\})-sup(q)\rho & t=e  \\
+%\frac{sup(q\cup \{e\})-sup(q)\rho}{1-\rho} & t\in q \\
+% \infty & otherwise
+%\end{cases} \]
+%\end{definition}
+%Specifically, it represents that we do not intend to suppress more items to
+%make $q\rightarrow e$ a safe one as it can make $conf(q,e)$ even smaller.
+%
+%\subsubsection{Pruning}
+%In first phase - \qid generation, we utilize a fixed size cache to remember
+%\qids which are not associated with any sensitive item any more, to prevent
+%generating \qids that are superset of them. It¡¯s a pruning technique we can
+%leverage since if a short \qid does not associated with sensitive items,
+%neither do its supersets.
+%
+%\subsubsection{Handle Long Records}
+%A record $R$ has as many as $2^{|R|}$ \qids. Suppose $\bmax = 10^6$, then a
+%single record of length $20$ can fill up $B$. However, long \qids are not
+%expected frequently in the dataset, and thus can be handled separately. Since
+%we can't possibly enumerate all the \qids within a long record, we do this in
+%batches (setting of batch size). Because the number of sensitive items are
+%limited in any record, sanitizing the first batch of \qids in a long record
+%may already cause the removal of all the sensitive items in that record.
+%
+%\subsubsection{Heuristic Approximation}
+%In second phase - \qid buffer sanitization, it is very time-consuming to
+%iterate over all strong sensitive association rules to find the `best` one
+%according to two optional heuristics, since the number of \qids are enormous
+%and each \qid can link to various sensitive items. While the iteration number
+%are also propositional to the number of \qids, so the cost is tremendous.
+%Therefore, we use an approximation way which randomly pick small amount of
+%\qids in the buffer, e.g 1,000, to find the locally `best` one to sanitize.

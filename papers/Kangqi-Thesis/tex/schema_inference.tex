@@ -1,0 +1,125 @@
+%# -*- coding: utf-8-unix -*-
+% !TEX program = xelatex
+% !TEX root = ../thesis.tex
+% !TEX encoding = UTF-8 Unicode
+
+\subsubsection{模式图概率推理}
+\label{sec:schema-inference}
+
+当关系$r$的候选图生成完成之后，下一步需要从中推理出最具有代表性的那些模式图。
+我们的目标是将关系的表示多义性表示为每个候选模式图$S$的条件概率$P(S|r)$，
+这样不同粒度的模式图之间可以直接比较。
+由于没有直接的\textless 关系，模式图 \textgreater 训练数据，
+我们对概率分布的学习方式依靠三元组数据作为驱动，
+将学习过程建模为知识库查询场景上的一个最优化问题：
+给定$r$的一个关系实例中的主语（或宾语）实体，寻找最为合适的模式图概率分布，
+使得依照此分布在给定实体周围进行知识库查询时，能尽可能返回对应的宾语（或主语）实体。
+
+
+%Since more general schemas may produce too many irrelevant querying results, while more specific schemas may not able to find the correct entity,
+为了能够在不同粒度的候选模式图之间得到平衡，
+我们使用最大化似然估计的方式定义目标函数，寻找最优的模式图概率分布，
+使得查询过程返回正确实体的概率最高。
+似然函数定义如下：
+\begin{equation}
+\label{eqn:likelihood-def}
+L(\vec{\theta}) = \prod\nolimits_{i} {P(obj_i | subj_i, \vec{\theta}) P(subj_i | obj_i, \vec{\theta})},
+\end{equation}
+其中，向量$\vec{\theta}$表示候选模式图的概率分布，即$\theta_j$对应条件概率$P(S_j|r)$，
+且满足$\sum\nolimits_{j} \theta_j = 1$。
+$subj_i, obj_i$分别表示关系$r$的第$i$个实例中的主语和宾语。
+
+
+接下来，我们通过两阶段的生成过程，对概率$P(obj | subj, \vec{\theta})$进行建模：
+%We compute $P(o | s, \vec{\theta})$ as a generative process:
+首先根据模式图上的多项分布，随机挑选出一个模式图$S \sim Multinomial(\vec{\theta})$，
+然后对模式图$S$进行查询（即在知识库上进行实例化），在所有主语为$subj$的实例图中，
+随机挑选其中的一个实例图，将其宾语实体返回。
+%也许这里可以画一个示例图
+第一个阶段中，模式图的选取与主语$subj$条件独立，
+第二个阶段由于固定了模式图，因而与$\vec{\theta}$也条件独立。
+考虑这些条件独立之后，$P(obj | subj, \vec{\theta})$的生成过程定义如下：
+\begin{equation}
+\label{eqn:score-def}
+\begin{aligned}
+P(obj | subj, \vec{\theta})	& = \sum\nolimits_{j} {P(S_j | subj, \vec{\theta}) P(obj | subj, S_j, \vec{\theta})} \\
+					        & = \sum\nolimits_{j} {\theta_j P(obj | subj, S_j)},
+%P(o_i | s_i ; \theta) = \sum\nolimits_{j} {\theta_j P(o_i | s_i, sc_j)}.
+\end{aligned}
+\end{equation}
+
+概率$P(obj | subj, S_j)$的值对应模式图$S_j$在知识库上的查询结果：
+令$q(subj, S_j)$代表模式图$S_j$的实例图中，所有主语实体为$subj$的对应宾语集合，
+以均匀分布从中挑选一个实体$obj$，公式展开如下：
+\begin{equation}
+P(obj | subj, S_j) = \left\{
+  \begin{aligned}
+  & 1 / \left| q(subj, S_j) \right| & ~ & obj \in q(subj, S_j) \\
+  & \alpha & ~ & \rm{otherwise} \\
+  \end{aligned}
+\right.
+\end{equation}
+公式中的$\alpha$为平滑参数，在目标宾语无法通过$S_j$得到时，
+我们将概率定位很小的数值，防止整个似然函数值变为0。
+观察可知，对于过于宽泛的模式图$S_j$，$q(subj, S_j)$集合数量很大，
+从中随机选择到目标宾语的概率会因此降低；
+而对于过于具体的模式图，会使得较多的实体对无法被支持，因此同样会对似然带来降低。
+由此可见，基于两阶段生成的概率建模方式，可以实现宽泛与具体模式图之间的平衡，
+找到最适合的语义结构。
+此外，$P(subj | obj, \vec{\theta})$的定义为\eqnref{eqn:score-def}的对称版，
+代表着给定宾语实体，查询得到目标主语的概率。
+
+综上，我们将模式图推理问题转化为了基于最大似然估计的最优化任务，
+并利用梯度下降算法对模型参数$\vec{\theta}$进行更新，使目标函数$L(\vec{\theta})$值最大。
+具体使用的梯度下降算法为RMSProp\cite{tieleman2012lecture}。
+%The algorithm converges after 500 iterations on average.
+
+%In this section, we model the probability distribution of schemas for each relation.
+%Previously during the candidate schema generation, a set of candidate schemas have been generated from training instances of each relation. The candidate schemas are different from each other, and each of them represents one scenario the corresponding relation can be applied with different possibilities.
+%% an example here?
+%
+%Thus it's natural that we need to give a probability distribution of all candidate schemas for each relation in order to better describe the semantic meaning of that relation when we put it into real tasks like knowledge base completion.
+%
+%First, we introduce some notations: %(12 lines)
+%\begin{itemize}
+%  \itemsep0em
+%  \item $In(r)$: the set of input instances of relation $r$;
+%  \item $subj_i(r), obj_i(r)$: the $i^{th}$ subject entity and object entity in the input instances of $r$, where $i \in [1, |In(r)|]$;
+%  \item $s_j(r)$: the $j^{th}$ schema generated for relation $r$;
+%  \item $obj_s(e_1), sub_s(e_2)$: given a schema $s$, 1) the set of all object entities of a subject entity $e_1$ in KB and 2) the set of all subject entities of an object entity $e_2$ in KB;
+%  %\item $obj_r(e_1), sub_r(e_2)$: all distinct object (or subject) entities of $e_1$ (or $e_2$) in the input instances;
+%%  \item $NS_r(e_1), NS_r(e_1)$: all distinct $e_2$ (or $e_1$) where $\langle e_1, e_2 \rangle$ is in negative instances,
+%  %\item $obj_{sr}(e_1) = obj_s(e_1) \cap obj_r(e_1)$;
+%  %\item $sub_{sr}(e_2) = sub_s(e_2) \cap sub_r(e_2)$.
+%\end{itemize}
+%Our goal is to model the probability of schema $j$ given relation $r$: $p(s_j|r)$.
+%In the mean time, we have to maximize the following likelihood objective function for all the input instances:
+%\begin{equation}
+%\small
+%\prod\limits_{i=1}^{|In(r)|}{p(obj_i(r)|r, subj_i(r))
+%\cdot p(subj_i(r)|r, obj_i(r))}
+%\end{equation}
+%\normalsize
+%And we have:
+%\begin{equation}
+%\small
+%p(obj_i(r)|r, subj_i(r)) = \sum\limits_{j}{p(s_j|r)\cdot p(obj_i(r)|s_j,subj_i(r))}
+%\end{equation}
+%
+%Similarly, we can get $p(subj_i(r)|r, obj_i(r))$.
+%Then we use gradient descent to adjust $p(s_j|r)$ to maximize the objective function.
+%And we query KB to calculate the following probability:
+%\begin{equation}
+%\small
+%  p(obj_i(r)|s_j,subj_i(r)) \\
+%   = \left\{
+%  	\begin{aligned}
+%	\! 1 / \left| obj_{s_j}(subj_i(r)) \right|  & ~ &  obj_i(r) \! \in \! obj_{s_j}(subj_i(r))  \\
+%	\! 0 & ~ & obj_i(r) \! \notin \! obj_{s_j}(subj_i(r))    \\
+%	\end{aligned}
+%  \right..
+%\end{equation}
+%\normalsize
+%
+%
+

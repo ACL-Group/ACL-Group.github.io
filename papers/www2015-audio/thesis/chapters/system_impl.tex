@@ -1,0 +1,75 @@
+\chapter{System Implementation}
+\label{cha:sys}
+The main idea of our work is to discover some audio event we concerned in an audio stream, and then infer the scene of audio from those events. In this chapter, we will introduce how we implement our system, and discuss some implementation details. 
+
+Detailedly speaking, our work is consisting of many parts. Firstly, we need to build an audible event set. At the same time, we calculate the probability of each event happening in each audio scene automatically. In Section \ref{kb}, we will introduce a way to extract those information from a large corpus of text using knowledge base.
+
+According to the audible events set, some audio clips are download from Internet as our training data. Some automatic tagging methods are applied to these clips. After training event models, we can use some method to calculate a estimation score for each event when an audio is given. The method will be introduced in Section \ref{score}.
+
+\section{Text analyzing using knowledge base}
+\label{kb}
+\subsection{Audible events collection}
+As we mentioned before, we first need to build our audible events set. The audible events set defines what audible events we concern about, so we should try our best to make sure it is complete and strict. We use the same way in our previous work \cite{LML}. We conclude the main steps here:
+\begin{enumerate}
+\item We use the sound types lists in some audio search engines, together with hyponyms of some concept in WordNet and Probase, to be our initial audio events set. More specifically, we use all the instance under 4 concepts ``sound'', ``noise'', ``animal'', ``sound effect'' in Probase, and we use all the hyponyms of ``sound'' and ``noise'' in WordNet.
+\item We lemmatize each item in the audio events set. Also, we combine some events, such as ``police dog'' and ``dog''. Also, we combine events which are in the same synset. After this, we find some of the word from Probase is not really audible, thus we filter out those low frequency words.
+\item After filtering, we find the number of audible events is small. There we expand the set by adding confident siblings of items we already have in Probase and WordNet and filtering by sound search engines. In other words, we add a event only if there are audio clips of this event in sound search engines.
+\end{enumerate}
+\subsection{Building probabilistic model}
+In this section, we will introduce a method to build a probabilistic model between events and scenes automatically. We use drama scripts as our training data since they have two advantages. In drama scripts, the events are usually well-described. Besides this, since drama scripts are well formatted, usually there is a sentence to indicate the switch of scene, like ``CUTS TO: OFFICE'' or ``Scene: Park''. We can use these sentences to extract information we need. Here are the steps:
+\begin{enumerate}
+\item Cut the text in drama scripts into scenes, according to sentences which have certain pattern indicating the context switch.
+\item Filter out all the conversations, since we think the content of conversations are often unrelated to the scene.
+\item Lemmatize the text of scenes and get all the POS tagging as well as dependency, and then delete name entities which are recognized by Stanford NLP NER.
+\item Extract verb, noun as well as direct object (verb-noun pair) lists respectively, and add the result to corresponding scene lists.
+\item For each context, we calculate the {\em term frequency} for each item in each scene, use the equation \ref{eq:tf}. We delete those items which is not likely to be a typical event of any scene, \ie
+\begin{equation}
+\forall j (tf_{ij} < 10^{-3}).
+\end{equation}
+\item We find some events are very common, they can happed in many scenes. We think these events are meaningless, thus we calculate the variance of events of 10 scenes, and delete those events which variance is less than $10^{-3}$.
+\item Finally, we use the normalized term frequency to build our probabilistic model, according to equation \ref{eq:model}.
+\end{enumerate}
+\section{Audio analyzing and scene recognition}
+\label{score}
+\subsection{Event model training}
+The samples downloaded from Internet for a event are various. For example, samples for animal may contain both ``dog'' samples and ``cat'' samples, but they are totally different. Therefore, it is not a good way to use a single model to describe all kinds of them. We need to find a way to split them.
+
+Our idea is to cluster similar samples of a event together, and train audio models for each cluster. In this case, the ``dog'' samples and the ``cat'' samples in last example can be split into different clusters. Thus, we can train them separately.
+
+Since our training samples are not clean, first we need to find a way to ignore noise and background sound. According to section \ref{sec:datapre}, we only care about those parts with high energy. These parts are likely to be audio events. Hence, we calculate the {\em average short time energy} frame by frame as follows:
+\begin{equation}
+\overline{E} = \frac{1}{N}\sum_{i=0}^{N-1}x^2(i),
+\label{eq:en}
+\end{equation}
+where $N$ is the number of sample point in a frame, set to $512$ in our system, and $x(i)$ is the value of $i^{th}$ sample point. We only retain the frames with higher energy than average. After combining those frames, we can get some audio segments.
+
+As we mentioned in section \ref{sec:datapre}, we discard those short segments less than $100ms$. Also, for those long segments, we cut them into $500ms$ short segments.
+
+After segmentation, we need to find a way to cluster these segments. There are lots of previous work focus on this problem \cite{4587600}. We choose to temporarily train a GMM for each segment and use KL divergence as a measure for clustering. Since the integral in \ref{eq:kl} is not easy to calculate by program, we use the following estimation instead for two segments $A$ and $B$:
+\begin{equation}
+KL(A||B) = \frac{1}{n}\sum_{i=0}^{n-1}(\ln p(\mathbf{a_i}|\mathbf{\Theta_A}) - \ln p(\mathbf{a_i}|\mathbf{\Theta_B)}),
+\end{equation}
+where $n$ is the number of frames of sample $A$, $\mathbf{a_i}$ is the $i^{th}$ frame of $A$, and $\mathbf{\Theta_A}$ and $\mathbf{\Theta_B}$ are GMM parameters of segment $A$ and $B$, respectively.
+
+We regard different cluster as different event (some of them may have same label, in last example, {\em dog} and {\em cat} are in different clusters, but they still have the same label {\em animal}), and we train a GMM use EM algorithm for each event, use ZRC and MFCC features. ZRC is calculated as follows:
+\begin{equation}
+\overline{Z} = \frac{1}{2(N - 1)}\sum_{i=0}^{N-2}(|sgn(x(i)) - sgn(x(i + 1))),
+\end{equation}
+where
+\begin{equation}
+sgn(x) = \left\{\begin{array}{ll} 1 & x\geq 0\\ -1 & x < 0\end{array}\right.,
+\end{equation}
+and $N$ and $x(i)$ are the same meaning as equation \ref{eq:en}.
+\subsection{Scene inference}
+To recognize an audio clips, we do the same segmentation as training samples , which is proposed in last section. Since we have GMM models for audio events, we can use the output of GMM to be our score of each piece for each segment, that is:
+\begin{equation}
+s(piece_i|event_{rank_j}) = p(piece_i|\Theta_{event_{rank_j}}).
+\end{equation}
+
+In order to reduce the complexity of calculation, we only take the $K$ most similar events for each piece of test audio. In our system we set $K$ to 10. To calculate score, we firstly normalized the $s(piece_i|event_{rank_j})$ to get the probability estimation $p(piece_i|event_{rank_j})$ by:
+\begin{equation}
+p(piece_i|event_{rank_j}) = \frac{s(piece_i|event_{rank_j})}{\sum_{j=0}^{K-1}s(piece_i|event_{rank_j})} (0\leq j < K).
+\end{equation}
+
+Then the final score can be calculated using equation \ref{sc}. After calculating the score of scenes, we sort the score to give the result of audio scene recognition. The result will be analyzed in chapter \ref{cha:exp}.
+

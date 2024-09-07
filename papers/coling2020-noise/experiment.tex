@@ -1,0 +1,411 @@
+\section{Experiments}
+\label{sec:experiments}
+%\KZ{Generally speaking, your use of terminology can be too liberal sometimes. This makes
+%it very hard to understand your paper. You must be CONSISTENT!!}
+
+In this section, we present the datasets and baseline models first. Then we introduce our setup 
+and finally analyze the experimental results.
+
+\subsection{Datasets}
+\label{sec:dataset}
+
+\subsubsection{Superficial Patterns}
+\label{sec:patterns}
+We choose three datasets, MNLI, SNLI and FEVER, for experiment since 
+errors have been identified and analyzed in these dataset~\cite{naik2018stress,mccoy2019right,schuster2019towards,nie2019adversarial} and 
+we can easily detect the superficial patterns from the errors. 
+As shown in~\tabref{tab:cues}, the errors can be roughly divided into 2 aspects: 
+%\YZ{These two aspects are not clear.}
+First aspect contains various superficial patterns like negation, word overlap, length mismatch 
+grammaticality. Second aspect of errors is related to higher comprehension and reasoning capacity, like 
+models are insensitive to antonym and numbers. 
+Similar to MNLI, %but \YZ{The MNLI without fine-grained partition?}
+SNLI and FEVER tasks also suffer 
+from superficial patterns like unbalance distribution of n-gram~\cite{bowman2015large} and
+cross-n-gram tokens (negation preference is also caused by unbalance distribution). 
+In these superficial patterns, length mismatch and 
+grammaticality are easier to detect and revise. Thus, we pay more attention on 
+how to fight against the spurious features taken by unbalanced tokens and word overlap. 
+Another evidence for the existence of spurious features is hypothesis-only classifiers
+achieves mostly above 60\%, far above the majority
+baseline (33.3\%).
+
+
+\begin{table}[]
+\centering
+\scriptsize
+\setlength{\tabcolsep}{0.23mm}{
+\begin{tabular}{|l|c|l|l|l|c|}
+\hline
+\multicolumn{2}{|c|}{Superficial pattern}                          & \multicolumn{1}{c|}{Definition}                                                                             & \multicolumn{1}{c|}{Premise}        & \multicolumn{1}{c|}{Hypothesis}        & Error Type \\ \hline
+\multirow{3}{*}{Overlap} & \multicolumn{1}{l|}{Lexical overlap} &\tabincell{l}{Assume that a premise entails all \\hypotheses constructed from words \\in the premise.}                         & The doctor was paid by the actor.   & The doctor paid the actor.             & C$\rightarrow$E        \\ \cline{2-6} 
+                         & \multicolumn{1}{l|}{Subsequence}     & \tabincell{l}{Assume that a premise entails all \\of its contiguous subsequences.  }                                         & The doctor near the actor danced.   & The actor danced.                      & N$\rightarrow$E        \\ \cline{2-6} 
+                         & \multicolumn{1}{l|}{Constituent}     & \tabincell{l}{Assume that a premise entails all \\complete subtrees in its parse tree. }                                     & If the artist slept, the actor ran. & The artist slept.                      & N$\rightarrow$E        \\ \hline
+Negation                 & -                                    & \tabincell{l}{Strong negation words (“no”, “not”) \\cause the model to predict contradiction.}                           & The doctor was paid by the actor.   & The doctor did not like the actor.     & N$\rightarrow$C        \\ \hline
+Antonym                  & -                                    & \tabincell{l}{Premise-hypothesis pairs containing \\antonyms are  not detected as \\contradiction by the model.}               & The doctor liked the actor.         & The doctor hated the actor.            & C$\rightarrow$E        \\ \hline
+Numerical Reasoning      & -                                    & \tabincell{l}{Model is unable to perform reasoning \\involving numbers or quantifiers for \\correct relation prediction.}      & The actor paid the doctor \$300.    & The doctor was paid no more than \$350 & E$\rightarrow$C        \\ \hline
+Length Mismatch          & -                                    & \tabincell{l}{The premise is much longer than \\the hypothesis and this information \\is used to distract models. }            & The doctor danced...(50 words).     & The doctor slept.                      & C$\rightarrow$E        \\ \hline
+Grammaticality           & -                                    & \tabincell{l}{The premise or the hypothesis \\is ill-formed because of spelling \\errors or incorrect subject-verb \\agreement.} & The doctor rean the actor sang.     & The doctor danced.                     & N$\rightarrow$C        \\ \hline
+\end{tabular}}
+	\caption{The definition and examples of superficial patterns which are found in MNLI. 
+	The Error Type is from the gold label to predicted label. E=entailment, C=Contradiction and N=Neutral}
+	\label{tab:cues}
+\end{table}
+
+\subsubsection{Adversarial Test data}
+To evaluate models on a benchmark without spurious features, 
+we choose to use adversarial test data which
+ evaluates the models' performance at semantic level, independent shallow superficial patterns. 
+Models are trained on the given datasets and tested on 
+the adversarial test data with zero-shot to
+ elucidate capabilities and limitation of models.
+ 
+For MNLI, we consider Stress Test~\cite{naik2018stress} 
+and HANs~\cite{mccoy2019right} as adversarial 
+test datasets. Stress Test is an evaluation method that helps to examine whether the
+models can predict the right relation at semantic level. 
+%They \YZ{'They' denotes stress test? Maybe 'It'?} 
+It creates a test
+set that is constructed following a variety of different rules,
+including competence test set (antonym, numerical reasoning),
+distraction test set (with three strategies: word overlap,
+negation, and length mismatch). 
+HANs focus on overlap issues and 
+generates test samples with 3 logic rules. 
+We use Adversarial-NLI~\cite{nie2019adversarial} as the test set for SNLI. 
+This test set is collected by an iterative, adversarial human-and-model-in-the-loop 
+solution relying on different models and context situations. 
+Round 1 (R1) test data generation uses a BERT-Large model~\cite{devlin2018bert} 
+trained on the dataset including SNLI and MNLI.
+Round 2 (R2) test data generation uses a more powerful RoBERTa model. 
+Round 3 (R3) test data generation selects a more diverse set of contexts
+in order to explore robustness under domain transfer. 
+
+For FEVER, we use~\cite{schuster2019towards}'s 
+adversarial test dataset which manually produces a synthetic pair that 
+holds the same claim but 
+%relation (e.g.
+%\textit{supports} or \textit{refutes}) but expressing a different fact
+ %\YZ{One pair holds multiple relations?} which means a certain claim 
+%corresponding to
+two different evidences corresponding to two different labels.
+This dataset can guarantee that if only pay attention to claim (hypothesis-only), we 
+cannot always choose the right alternatives.
+
+\subsection{Baseline Models}
+%\YZ{You use present tense to introduce existing models at this section but use past tense at last section. Are R1 and others existing methods?}
+\textbf{BERT} is a popular attention model, which applies the bidirectional training of Transformer~\cite{vaswani2017attention}. 
+%a popular attention model, to language modeling. 
+%\YZ{BERT is a popular attention model, which applies ...}
+It is trained on BooksCorpus~\cite{zhu2015aligning} and English Wikipedia in two unsupervised
+tasks, i.e., Masked LM (MLM) and Next Sentence Prediction (NSP). During fine-tuning, the final
+hidden vector corresponding to the first input token ([CLS]) is used as the aggregate representation
+followed by an extra fully connected layer to compute the score.
+
+\textbf{RoBERTa} is an improved pre-training procedure of BERT. 
+RoBERTa removes the Next Sentence Prediction (NSP) task from 
+BERT is pre-training model and introduces dynamic masking so that the 
+masked token changes during training. 
+Larger batch-training sizes are more useful in the training procedure.
+
+For these two pre-training models, we use the code of PyTorch-Transformers of Hugging Face to implement them on SNLI, MNLI and FEVER. We take batch size as 64 and fine-tune for 3 epochs. The maximum input sequence length for all
+models is 128. In this paper, we use the basic version of above models. 
+
+\subsection{Experimental Result}
+We apply our three kinds of augmentation data on three tasks: SNLI, MNLI and FEVER. 
+The number of balance noise examples
+%\KZ{Never mentioned this term before: balance instances, maybe call it ``noise data''?} 
+is fixed which have been introduced in~\secref{sec:approach}. 
+%\KZ{these terminologies (the modifiers) are too complicated and mouthful. You need to define them clearly first in approach
+%and then use them in later sections: }
+For hypothesis-only and overlap noise examples, 
+we try different proportions for training models. 
+In multi-classification tasks, each class has a set of samples with a certain label. 
+We take the number of samples in minimum labeled set 
+as the unit for noise data augmentation. 
+For example, the training data for FEVER consists of 80,035 supported samples, 29,775 refuted samples
+and 35,639 not enough information samples. 
+The FEVER unit denotes 29,775 samples, which is consistent with minimum labeled set.
+%\KZ{Still don't get it: The unit number (100\%)} for noise data augmentation
+%(\KZ{What is this? 100\%}) number of 
+%is defined as
+%the smallest number of examples with a certain label among all labeled examples. 
+%For example, the training data for FEVER is consist of 80,035 \textit{supported} examples, 
+%29,775 \textit{refuted} examples and 35,639 \textit{not enough information} examples. 
+%The unit FEVER is 29,775.
+We trained the models with original dataset augmented by four different cases (i.e. when
+0\%/50\%/100\%/200\%/300\% of a unit).
+To show the effectiveness of our noise data augmentation methods, 
+each model will test both on original test (or validation 
+dataset) and adversarial dataset. 
+
+
+\subsubsection{Original Results}
+
+The performance of all tested models on the three datasets 
+is presented in \tabref{tab:original}.
+The performance of RoBerta  and BERT training with noise data 
+is consistent with the original ones and even slightly improved. 
+BERT with 100\% hypothesis-only noise data get 0.75 point improvement on MNLI 
+and increase 0.41 point with 300\% overlap noise data on SNLI. 
+RoBERTa achieves 88.32\% accuracy on FEVER which is about 0.5\% point 
+higher than original dataset training. Though these improvement is small, it at least shows 
+these noise augmentation methods are harmless for the pretrained models.
+
+%astText is better than random guess, showing that word correlation could be
+%used to help improve performance to some extent. It is difficult for Bi-LSTM to converge on this
+%dataset. Transformer-based pre-training models have relatively good performance, close to the performance
+%of graduate students. However, we find that these models only perform well on EASY set
+%with around 70% accuracy, showing these models have an outstanding ability to capture the biases
+%of the dataset, but they perform poorly on HARD set with only around 30% accuracy. In contrast,
+%humans can still keep good performance on HARD set. We notice the difference in testing accuracy
+%performed by graduate students on EASY and HARD set, but this could be due to the small number
+%of students participated in the experiments. Therefore, we say humans perform relatively consistent
+%on both biased and non-biased dataset
+
+\begin{table}[]
+	\centering
+	\scriptsize
+\begin{tabular}{|c|c|c|c|c|c|c|c|c|c|c|c|c|c|}
+\hline
+\multirow{2}{*}{Dataset} & \multirow{2}{*}{Model}   & \multirow{2}{*}{Test data} & \multirow{2}{*}{Original} & \multirow{2}{*}{O-HO} & \multirow{2}{*}{Balance Noise} & \multicolumn{4}{c|}{Hypothesis-only Noise}                        & \multicolumn{4}{c|}{Overlap Noise}                                \\ \cline{7-14} 
+                         &                          &                            &                           &                              &                                & 50\%           & 100\%          & 200\%          & 300\%          & 50\%           & 100\%          & 200\%          & 300\%          \\ \hline
+\multirow{4}{*}{MNLI}    & \multirow{2}{*}{BERT}    & Matched                    & 83.42                     & 60                           & \textbf{83.65}                 & \textbf{83.84} & \textbf{84.16} & 83.37          & \textbf{83.83} & \textbf{83.79} & \textbf{83.69} & \textbf{83.99} & \textbf{83.87} \\ \cline{3-14} 
+                         &                          & Mismatched                 & 84.06                     & 58.84                        & 83.69                          & 83.93          & \textbf{84.14} & 84.05          & \textbf{84.11} & 83.82          & \textbf{84.28} & \textbf{84.2}  & \textbf{84.12} \\ \cline{2-14} 
+                         & \multirow{2}{*}{RoBERTa} & Matched                    & 87.47                     & 61.16                        & 87.36                          & 87.32          & 87.15          & 87.28          & 87.2           & 87.38          & 87.45          & \textbf{87.56} & 87.41          \\ \cline{3-14} 
+                         &                          & Mismatched                 & \textbf{87.59}            & 60.03                        & 87.23                          & 87.17          & 87.11          & 87.36          & 87.08          & 87.31          & 87.15          & 87.29          & 87.21          \\ \hline
+\multirow{2}{*}{SNLI}    & BERT                     & Test                       & 90.42                     & 70.89                        & \textbf{90.48}                 & \textbf{90.73} & \textbf{90.48} & \textbf{90.52} & \textbf{90.54} & \textbf{90.65} & \textbf{90.44} & \textbf{90.46} & \textbf{90.83} \\ \cline{2-14} 
+                         & RoBERTa                  & Test                       & 91.61                     & 70.82                        & 91.03                          & 91.59          & \textbf{91.72} & 91.43          & 91.52          & \textbf{91.63} & 91.34          & 91.46          & 91.09          \\ \hline
+\multirow{2}{*}{FEVER}   & BERT                     & Dev                        & 85.86                     & 68.87                        & 85.78                          & \textbf{86.25} & \textbf{86.21} & \textbf{86.29} & 85.47          & \textbf{86.19} & \textbf{86.38} & 85.74          & 85.74          \\ \cline{2-14} 
+                         & RoBERTa                  & Dev                        & 87.83                     & 67.88                        & 87.36                          & \textbf{88.03} & 87.65          & 87.45          & 87.18          & \textbf{88.32} & 87.61          & 87.75          & 87.37          \\ \hline
+\end{tabular}
+	\caption{Train models with three datasets and different noise data then test 
+	on original test data or validation data(dev). O-HO=original hypothesis-only}
+	\label{tab:original}
+\end{table}
+
+
+
+
+\subsubsection{Adversarial Test Results}
+
+\textbf{HANs} 
+
+By looking into the Ratio rows of~\tabref{tab:HANS}, we can observe
+that different noise augmentation methods with different proportions 
+have diverse effects on models.
+\textit{Entailed} passive examples include the instances with \textit{entailment} 
+relation, versus \textit{non-entailed}. 
+We can see models trained on original MNLI dataset are more likely 
+to choose \textit{entailment} relation on \textit{entailed} and \textit{non-entailed} examples. 
+They are confused on this new test data which was designed for overlap problems 
+with about 17\% on RoBERTa and 30\% on BERT accuracy drop 
+(overall score on HANs compared with original test data) . 
+Any noise data augmentation method have consistent performance with 
+original ones on \textit{entailed} approaching 100\% accuracy. 
+For the performance on \textit{non-entailed} examples which has wide gap 
+with entailed examples, the results of BERT training with noise data all have 
+improvement on these examples. The main contribution comes from the 
+the better performance on \textit{lexical overlap}. It is predictive because 
+we design noise data with lexical disturb which doesn't include subsequence or 
+constituent information. The overall score exceed 20\% improvement with balance noise, 
+50\%, 100\%, 200\%  hypothesis-only noise and 100\% overlap noise. The results indicate 
+our noise data augmentation methods can help BERT learn more semantic knowledge 
+and more robust which cannot be easily mislead by overlap spurious features.
+
+RoBERTa has relatively better reasoning ability in this area with original training data. 
+The performance gap on \textit{entailed} and \textit{non-entailed} examples are smaller. 
+However there is still space for improvement with noise augmentation data. 
+The lexical overlap score can also raise above 10\% by adding 300\% hypothesis-only noise data 
+or 50\% overlap noise data. Training with 50\% overlap noise data can get 
+the best performance on overall test in HANs with 5\% up-grading (The improvement 
+score are based on ratio). 
+
+
+
+
+
+\begin{table}[]
+\centering
+\scriptsize
+\begin{tabular}{|c|c|c|c|c|c|c|c|c|c|c|c|c|}
+\hline
+\multirow{2}{*}{Model}    & \multicolumn{2}{c|}{\multirow{2}{*}{Test Type}} & \multirow{2}{*}{Original} & \multirow{2}{*}{Balance Noise} & \multicolumn{4}{c|}{Hypothesis Noise} & \multicolumn{4}{c|}{Overlap Noise} \\ \cline{6-13} 
+                          & \multicolumn{2}{c|}{}                           &                           &                                & 50\%    & 100\%   & 200\%   & 300\%   & 50\%    & 100\%  & 200\%  & 300\%  \\ \hline
+\multirow{14}{*}{BERT}    & \multirow{6}{*}{Entailed}     & Lexical Overlap & 97.34                     & \bf 98.56                          & \bf 98.66   & \bf 99.38   & 95.82   & \bf 98.48   & \bf 99.3    &\bf 98.36  & \bf 98.54  & \bf 97.74  \\ \cline{3-13} 
+                          &                               & Ratio           & 100\%                     & \bf 101\%                          & \bf 101\%   & \bf 102\%   & 98\%    & \bf 101\%   & \bf 102\%   &\bf 101\%  & \bf 101\%  & 100\%  \\ \cline{3-13} 
+                          &                               & Subsequence     & 99.34                     & 99.2                           & \bf 99.94   & \bf 99.82   & 99.22   & \bf 99.9    & \bf 99.92   & \bf 99.38  & \bf 99.52  & \bf 99.78  \\ \cline{3-13} 
+                          &                               & Ratio           & 100\%                     & 100\%                          & \bf 101\%   & 100\%   & 100\%   & \bf 101\%   & \bf 101\%   & 100\%  & 100\%  & 100\%  \\ \cline{3-13} 
+                          &                               & Constituent     & 99.28                     & 98.96                          & \bf 99.46   & 98.78   & 98      & \bf 99.4    & 98.32   & 98.44  & 98.8   & 98.64  \\ \cline{3-13} 
+                          &                               & Ratio           & 100\%                     & 100\%                          & 100\%   & 99\%    & 99\%    & 100\%   & 99\%    & 99\%   & 100\%  & 99\%   \\ \cline{2-13} 
+                          & \multirow{6}{*}{Non-Entailed} & Lexical Overlap & 28.12                     & \bf 52.26                          & \bf 46.66   & \bf 42.42   & \bf 55.52   & 25.52   & \bf 29.66   &\bf 51.06  & \bf 36.22  & \bf 42.18  \\ \cline{3-13} 
+                          &                               & Ratio           & 100\%                     & \bf 186\%                          & \bf 166\%   & \bf 151\%   & \bf 197\%   & 91\%    & \bf 105\%   & \bf 182\%  & \bf 129\%  & \bf 150\%  \\ \cline{3-13} 
+                          &                               & Subsequence     & 8.88                      & \bf 10.74                          & 5.68    & 7.00    & \bf 12.00   & 5.92    & 5.86    & \bf 9.42   & 5.46   & 6.46   \\ \cline{3-13} 
+                          &                               & Ratio           & 100\%                     & \bf 121\%                          & 64\%    & 79\%    & \bf 135\%   & 67\%    & 66\%    & \bf 106\%  & 61\%   & 73\%   \\ \cline{3-13} 
+                          &                               & Constituent     & 6.08                      & 6.00                           & 4.20    & \bf 11.60   & \bf 17.82   & \bf 11.95   & 5.50    & 3.86   & 5.16   & \bf 9.22   \\ \cline{3-13} 
+                          &                               & Ratio           & 100\%                     & 99\%                           & 69\%    & \bf 191\%   & \bf 293\%   & \bf 197\%   & 90\%    & 63\%   & 85\%   & \bf 152\%  \\ \cline{2-13} 
+                          & \multirow{2}{*}{Overall}      & -               & 56.51                     & \bf 68.04                          & \bf 67.97   & \bf 67.95   & \bf 70.52   & \bf 59.60   & \bf 59.47   & \bf 68.76  & \bf 64.40  & \bf 66.55  \\ \cline{3-13} 
+                          &                               & Ratio           & 100\%                     & \bf 120\%                          & \bf 120\%   & \bf 120\%   & \bf 125\%   & \bf 105\%   & \bf 105\%   & \bf 122\%  & \bf 114\%  & \bf 118\%  \\ \hline
+\multirow{14}{*}{RoBERTa} & \multirow{6}{*}{Entailed}     & Lexical Overlap & 98.84                     & 98.28                          & 98.62   & 98.22   & \bf 99.16   & 98.44   & 98.44   & 97.9   & \bf 99.08  & 97.7   \\ \cline{3-13} 
+                          &                               & Ratio           & 100\%                     & 99\%                           & 100\%   & 99\%    & 100\%   & 100\%   & 100\%   & 99\%   & 100\%  & 99\%   \\ \cline{3-13} 
+                          &                               & Subsequence     & 99.96                     & 99.96                          & \bf 100     & \bf 99.98   & 99.88   & 99.64   & 99.74   & 99.82  & \bf 99.98  & 99.86  \\ \cline{3-13} 
+                          &                               & Ratio           & 100\%                     & 100\%                          & 100\%   & 100\%   & 100\%   & 100\%   & 100\%   & 100\%  & 100\%  & 100\%  \\ \cline{3-13} 
+                          &                               & Constituent     & 99                        & 99                             & 98.9    & \bf 99.5    & \bf 99.4    & 98.16   & 98.86   & \bf 99.36  & \bf 99.24  & 98.96  \\ \cline{3-13} 
+                          &                               & Ratio           & 100\%                     & 100\%                          & 100\%   & \bf 101\%   & 100\%   & 99\%    & 100\%   & 100\%  & 100\%  & 100\%  \\ \cline{2-13} 
+                          & \multirow{6}{*}{Non-Entailed} & Lexical Overlap & 67.18                     & \bf 72.40                          & \bf 72.52   & \bf 71.60   & 65.40   & \bf 78.10   & \bf 75.38   & \bf 70.52  & 64.12  & \bf 73.34  \\ \cline{3-13} 
+                          &                               & Ratio           & 100\%                     & \bf 108\%                          & \bf 108\%   & \bf 107\%   & 97\%    & \bf 116\%   & \bf 112\%   & \bf 105\%  & 95\%   & \bf 109\%  \\ \cline{3-13} 
+                          &                               & Subsequence     & 32.92                     & 30.84                          & 28.22   & 21.84   & 28.08   & \bf 33.04   & 31.02   & 25.70  & 27.12  & 30.72  \\ \cline{3-13} 
+                          &                               & Ratio           & 100\%                     & 94\%                           & 86\%    & 66\%    & 85\%    & 100\%   & 94\%    & 78\%   & 82\%   & 93\%   \\ \cline{3-13} 
+                          &                               & Constituent     & 31.00                     & \bf 35.76                          & \bf 42.38   & 23.18   & \bf 32.68   & 28.60   & \bf 45.04   & \bf 33.70  & \bf 33.80  & \bf 32.7   \\ \cline{3-13} 
+                          &                               & Ratio           & 100\%                     & \bf 115\%                          & \bf 137\%   & 75\%    & \bf 105\%   & 92\%    & \bf 145\%   & \bf 109\%  & \bf 109\%  & \bf 105\%  \\ \cline{2-13} 
+                          & \multirow{2}{*}{Overall}      & -               & 71.48                     & \bf 72.71                          & \bf 73.44   & 69.05   & 70.77   & \bf 72.66   & \bf 74.75   & 71.17  & 70.56  & \bf 72.21  \\ \cline{3-13} 
+                          &                               & Ratio           & 100\%                     & \bf 102\%                          & \bf 103\%   & 97\%    & 99\%    & \bf 102\%   & \bf 105\%   & 100\%  & 99\%   & \bf 101\%  \\ \hline
+\end{tabular}
+\caption{Train models with MNLI dataset and different noise data then test on HANs. 
+Ratio denotes the ratio of results over the case on original training data.}
+	\label{tab:HANS}
+\end{table}
+
+
+\noindent\textbf{Stress Test} 
+
+To know
+if these methods can weaken spurious features in original dataset 
+and make retrained models
+more robust to better capacity, we also test the retrained models on Stress Test, 
+which consists of 6 aspects corresponding to MNLI error 
+types in error analysis. In~\tabref{tab:mnli-stress}, we show the fine-grained results 
+on each aspect. Similar to the performance on HANs, BERT have a larger drop when 
+tests on harder adversarial test data. The main weakness are \textit{Antonym}, 
+\textit{Negation}, \textit{ Word Overlap} and \textit{Numerical Reasoning}. 
+We can find that any noise augmentation method can improve the performance of 
+\textit{ Word Overlap} which indicates our methods can avoid this kind of superficial
+patterns and may focus on other higher level features. BERT training with 
+300\% hypothesis-only noise data raise about 1.5\% on \textit{Negation} and 2.6\% 
+on \textit{Numerical Reasoning}. 50\% overlap noise data also take 1\% improvement 
+on  \textit{Numerical Reasoning} and 3\% on \textit{ Word Overlap}. Balance noise 
+seems not benefit more except for \textit{ Word Overlap}. All noise types cannot 
+improve the result on \textit{Antonym} of BERT.
+Just as we discuss in~\secref{sec:patterns}, even though we design noise data 
+to weaken the influence of superficial patterns for models, we may not be able 
+to improve the models on every aspect. This is left as future work.
+
+The result for RoBERTa in~\tabref{tab:mnli-stress} is mostly consistent with BERT but the 
+most suitable noise data quantity is different. 200\% hypothesis-only noise and 200\% overlap noise 
+take a better performance. The result on \textit{Antonym} is also improved. It may be caused by the difference of 
+models.
+
+\begin{table}[]
+	\centering
+	\scriptsize
+\begin{tabular}{|c|l|c|c|c|c|c|c|c|c|c|c|}
+\hline
+\multirow{2}{*}{Model}                          & \multirow{2}{*}{Stress Test} & \multirow{2}{*}{Original} & \multirow{2}{*}{Balance Noise} & \multicolumn{4}{c|}{Hypothesis-only Noise}                        & \multicolumn{4}{c|}{Overlap Noise}                                \\ \cline{5-12} 
+                                                &                              &                           &                                & 50\%           & 100\%          & 200\%          & 300\%          & 50\%           & 100\%          & 200\%          & 300\%          \\ \hline
+\multirow{11}{*}{BERT}                          & Antonym                      & \textbf{54.77}            & 53.1                  & 52.78 & 53.49 & 52.97& 54.51 & 53.61 & 51.51          & 54.51 & 54.26 \\ \cline{2-12} 
+                                                & Antonym(mm)                  & \textbf{50.11}            & 47.23                 & 46.31 & 45.79 & 46.25 & 47.29 & 46.94 & 44.46          & 47.58 & 49.13 \\ \cline{2-12} 
+                                                & Negation                     & 55.1                      & \textbf{55.45}                 & \textbf{56.23} & \textbf{55.4}  & \textbf{55.74} & \textbf{57.3}  & \textbf{55.38} & \textbf{55.21} & \textbf{55.65} & \textbf{55.44} \\ \cline{2-12} 
+                                                & Negation(mm)                 & 55.64                     & \textbf{55.88}                 & \textbf{56.37} & \textbf{55.89} & 55.59 & \textbf{57.1}  & 55.32 &55.64 & \textbf{55.94} & \textbf{55.87} \\ \cline{2-12} 
+                                                & Length Mismatch              & 80.86                     & 80.34                 & \textbf{81.23} & 80.65          & 80.83          & \textbf{81.19} & \textbf{80.89} & 80.82          & 80.86 & \textbf{81.09} \\ \cline{2-12} 
+                                                & Length Mismatch(mm)          & 81.86                     & 80.92                          & \textbf{81.89} & 81.61 & 81.7  & \textbf{81.87} & \textbf{81.99} & \textbf{82.04} & \textbf{82.12} & \textbf{82.21} \\ \cline{2-12} 
+                                                & Spelling Error               & 78.17                     & \textbf{78.3}                  & \textbf{78.21} & \textbf{78.32} & 77.59          & \textbf{78.5}  & \textbf{78.25} & \textbf{78.5}  & \textbf{78.45} & 77.6           \\ \cline{2-12} 
+                                                & Spelling Error(mm)           & 78.43                     & \textbf{78.49}                 & 78.35 & 78.07 & 77.8           & 78.29          & \textbf{78.7}  & \textbf{78.58} & \textbf{78.72} & 77.74          \\ \cline{2-12} 
+                                                & Word Overlap                 & 59                        & \textbf{59.93}                 & \textbf{59.9}  & \textbf{59.56} & 57.95 & \textbf{61.79} & \textbf{62.18} & 58.65 & \textbf{60.04} & \textbf{61.72} \\ \cline{2-12} 
+                                                & Word Overlap(mm)             & 58.16                     & \textbf{59.6}                  & \textbf{59.63} & \textbf{59.76} & 57.23 & \textbf{61.31} & \textbf{61.52} & \textbf{58.81} & \textbf{59.6}  & \textbf{61.7}  \\ \cline{2-12} 
+                                                & Numerical Reasoning          & 32.91                     & 30.12                 & 32.29          & \textbf{35.12} & \textbf{35.07} & \textbf{35.49} & \textbf{33.87} & 32.2  & 32.53 & 29.1           \\ \hline
+\multicolumn{1}{|l|}{\multirow{11}{*}{RoBERTa}} & Antonym                      & 65.02                     & \textbf{67.07}                 & \textbf{68.1}  & \textbf{66.82} & \textbf{68.8}  & \textbf{66.23} & \textbf{67.71} & 64.64          & \textbf{69.25} & \textbf{69.7}  \\ \cline{2-12} 
+\multicolumn{1}{|l|}{}                          & Antonym(mm)                  & 60.61                     & \textbf{62.8}                  & \textbf{62.86} & \textbf{61.3}  & \textbf{63.73} & \textbf{61.65} & \textbf{62}    & 59.34          & \textbf{64.07} & \textbf{64.19} \\ \cline{2-12} 
+\multicolumn{1}{|l|}{}                          & Negation                     & 55.54                     & \textbf{55.61}                 & \textbf{56.72} & \textbf{56.92} & \textbf{56.42} & \textbf{56.61} & \textbf{56.7}  & \textbf{56.59} & \textbf{56.8}  & \textbf{58.05} \\ \cline{2-12} 
+\multicolumn{1}{|l|}{}                          & Negation(mm)                 & 55.5                      & \textbf{55.89}                 & \textbf{56.92} & \textbf{56.77} & \textbf{57.05} & \textbf{56.77} & \textbf{57.03} & \textbf{56.88} & \textbf{56.95} & \textbf{58.23} \\ \cline{2-12} 
+\multicolumn{1}{|l|}{}                          & Length Mismatch              & 85.31                     & \textbf{85.36}                 & 85.19          & 85.05          & 84.93          & 85.05          & 85.04          & 84.89          & 85.11          & 85.22          \\ \cline{2-12} 
+\multicolumn{1}{|l|}{}                          & Length Mismatch(mm)          & 85.3                      & 85.27                          & 85.23          & \textbf{85.67} & \textbf{85.54} & 85.22          & 85.23          & \textbf{85.4}  & \textbf{85.31} & \textbf{85.59} \\ \cline{2-12} 
+\multicolumn{1}{|l|}{}                          & Spelling Error               & 83.07                     & 82.8                           & \textbf{83.17} & 83.43          & 82.95          & \textbf{83.14} & 83.06 & 83.06          & \textbf{83.31} & 82.8           \\ \cline{2-12} 
+\multicolumn{1}{|l|}{}                          & Spelling Error(mm)           & 83.09                     & 83.06                          & \textbf{83.29} & \textbf{83.62} & 82.91          & 83.07          & 83.09          & \textbf{83.25} & \textbf{83.38} & 82.87          \\ \cline{2-12} 
+\multicolumn{1}{|l|}{}                          & Word Overlap                 & 61.96                     & \textbf{62.63}                 & \textbf{64.01} & \textbf{62.41} & \textbf{64.46} & \textbf{63.82} & \textbf{63.03} & \textbf{63.14} & \textbf{64.29} & \textbf{63.92} \\ \cline{2-12} 
+\multicolumn{1}{|l|}{}                          & Word Overlap(mm)             & 60.05                     & \textbf{60.71}                 & \textbf{62}    & \textbf{61.18} & \textbf{62.52} & \textbf{61.74} & \textbf{61}    & \textbf{61.82} & \textbf{62.53} & \textbf{61.59} \\ \cline{2-12} 
+\multicolumn{1}{|l|}{}                          & Numerical Reasoning          & 56.92                     & 56.51                 & 54.88          & 56.41          & \textbf{57.47} & 52.7           & 54.57          & \textbf{57.06} & \textbf{58.46} & 49.47          \\ \hline
+\end{tabular}
+	\caption{Train on MNLI and noise augmentation data then test on Stress Test}
+	\label{tab:mnli-stress}
+\end{table}
+
+\noindent\textbf{Diagnostic NLI Test} 
+
+We perform a zero-shot evaluation of the two models. Adversarial NLI allows to test for transfer
+capabilities on three test datasets (R1, R2 and R3).
+On each of the benchmarks above, the model trained on the noise augmentation 
+data outperforms
+the model trained on the original data on challenging examples in the HANs benchmark and 
+most aspects in Stress Test, which
+targets models purely relying on lexical and syntactic cues. 
+%Our methods perform better
+Similarly, we retrain models with SNLI and noise data and test 
+on the instances in NLI-Diagnostics that require logical reasoning and 
+commonsense knowledge rather than specific aspects. 
+In~\tabref{tab:snli-fever-stress}, we can find that BERT only have a 
+relatively small improvement on overall test for performing badly on R3. 
+RoBERTa training with 300\% hypothesis noise data can get 1.7\% 
+improvement and 1.3\% improvement with 200\% overlap noise data. 
+This result cannot identify our methods are useless, but we may can only 
+improve the models on some easy aspect, like overlap. 
+
+\noindent\textbf{Generated FEVER Test} 
+
+We show the result of BERT and RoBERTa models which retrain on FEVER and 
+augmentation noise data and test on Generated FEVER Test in~\tabref{tab:snli-fever-stress}. 
+%We also compare with a re-weight  BERT model, which propose to balance the distribution by
+ %re-weighting the weight of each instance. However it doesn't perform well on the new test dataset. 
+ RoBERTa training with 100\% overlap noise data can get the best result. BERT get 1.7\% and 1.3\% 
+ improvement on 200\% hypothesis-only noise data and 200\% overlap noise data respectively.
+ 
+\begin{table}[]
+\centering
+	\scriptsize
+\begin{tabular}{|c|c|c|c|c|c|c|c|c|c|c|c|c|}
+\hline
+\multirow{2}{*}{Dataset} & \multirow{2}{*}{Model}   & \multirow{2}{*}{Test} & \multirow{2}{*}{Original} & \multirow{2}{*}{Balance Noise} & \multicolumn{4}{c|}{Hypothesis-only Noise}                        & \multicolumn{4}{c|}{Overlap Noise}                                \\ \cline{6-13} 
+                         &                          &                       &                           &                                & 50\%           & 100\%          & 200\%          & 300\%          & 50\%           & 100\%          & 200\%          & 300\%          \\ \hline
+\multirow{8}{*}{SNLI}    & \multirow{4}{*}{BERT}    & R1                    & 26.3                      & 25.2                           & \textbf{27.6}  & \textbf{27.9}  & \textbf{27.6}  & \textbf{26.6}  & 26             & 26.1           & \textbf{27.3}  & \textbf{26.8}  \\ \cline{3-13} 
+                         &                          & R2                    & 29.1                      & \textbf{29.5}                  & 29             & \textbf{29.9}  & \textbf{29.9}  & 28.7           & \textbf{29.3}  & \textbf{29.5}  & \textbf{30.8}  & \textbf{29.9}  \\ \cline{3-13} 
+                         &                          & R3                    & \textbf{33.42}            & 31.92                          & 31.75          & 32             & 31.42          & 32.42          & 32.67          & 32.58          & 32.25          & \textbf{33.42} \\ \cline{3-13} 
+                         &                          & Overall               & 29.85                     & 29.06                          & 29.59          & \textbf{30.06} & 29.75          & 29.48          & 29.58          & 29.54          & \textbf{30.23} & \textbf{30.18} \\ \cline{2-13} 
+                         & \multirow{4}{*}{RoBERTa} & R1                    & 33.2                      & 31.6                           & \textbf{33.8}  & \textbf{33.9}  & 33.2           & \textbf{34.1}  & 32.1           & 32.2           & \textbf{33.9}  & 31.1           \\ \cline{3-13} 
+                         &                          & R2                    & 28.4                      & \textbf{32.6}                  & \textbf{30.8}  & \textbf{30.2}  & \textbf{28.9}  & \textbf{32.6}  & \textbf{31.5}  & \textbf{31.6}  & \textbf{31.1}  & \textbf{31.7}  \\ \cline{3-13} 
+                         &                          & R3                    & 31.58                     & \textbf{32.25}                 & 30             & \textbf{31.75} & 31.08          & 31.5           & 31.5           & \textbf{31.91} & \textbf{32.17} & 30.41          \\ \cline{3-13} 
+                         &                          & Overall               & 31.09                     & \textbf{32.13}                 & \textbf{31.52} & \textbf{32.01} & \textbf{31.14} & \textbf{32.77} & \textbf{31.71} & \textbf{31.91} & \textbf{32.40} & 31.06          \\ \hline
+\multirow{2}{*}{FEVER}   & BERT                     & G\_dev                & 65.06                     & 64.75                          & \textbf{65.59} & 64.64          & \textbf{66.84} & 63.28          & \textbf{65.69} & \textbf{65.69} & \textbf{66.32} & \textbf{66.21} \\ \cline{2-13} 
+                         & RoBERTa                  & G\_dev                & 69.46                     & \textbf{69.56}                 & 69.14          & 69.04          & 69.45          & 68.41          & 69.14          & \textbf{69.97} & 69.14          & \textbf{69.56} \\ \cline{1-13} 
+                        % & Reweight BERT            & G\_dev                & 61.6                      & -                              & -              & -              & -              & -              & -              & -              & -              & -             \\ \hline
+\end{tabular}
+	\caption{Model results on Diagnostic NLI Test and Generated FEVER Test}
+	\label{tab:snli-fever-stress}
+\end{table}
+
+\subsection{Discussion}
+
+\textbf{Is there a best type of noise that can be used for all models and datasets?} 
+No. For datasets with related superficial patterns,
+we generate corresponding noise. If there isn't any superficial patterns, we 
+may not have to use the noise data augmentation methods. 
+Thus the noise data 
+type depend on the type of spurious patterns in the datasets.
+%problems in a dataset, we may need to use more noise data to weaken the 
+%influence of patterns. 
+
+\noindent\textbf{Is the noise proportion fixed for all models and datasets?} 
+No. The proportion of noises to be added depends on models. 
+Because different models have varying reasoning capability and 
+take advantage of spurious features to different extent. 
+If a model pays more attention on spurious features 
+and has the ability to learn more complex features, more noise data can be applied. 
+If a model pays more attention on spurious features but does not have the 
+ability to learn more semantic features, 
+like some simple models such as FastText~\cite{joulin2017bag}, 
+the noise data may make it performance worse. If 
+a model is robust enough, it may not need any noise data.  
+Thus we should make the proportion a hyper-parameter when the model is trained.
+
+
+%\noindent\textbf{Does noise data augmentation works for all models?} 
+
+

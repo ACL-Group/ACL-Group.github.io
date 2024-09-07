@@ -1,0 +1,468 @@
+\section{Experiment}
+\label{sec:experiment}
+In this section,
+we first present the experimental setups for different tasks. Then, we show the quantitative and qualitative results together with comprehensive analysis and case studies.
+
+\subsection{Experimental Setups}
+\label{sec:implementation}
+We evaluate the newly proposed ICL strategy on five commonly-researched natural language generation tasks: reading comprehension, dialogue summarization, style transfer, question generation and news summarization. Details on the task description, the strong baseline, the corresponding dataset, evaluation metrics and key hyper-parameters for each task are presented as follows.% and in Appendix~\ref{sec:pkgs}.
+
+\begin{table*}[th]
+	\scriptsize
+	\centering
+	\begin{tabular}{lp{1.1cm}p{0.9cm}rrrcccc}
+		\hline
+		Task & Dataset & Model & \#Train & \#Val & \#Test & Input & Output & Avg & Std\\
+		\hline
+		Reading Comprehension & DREAM &BART& 6,116 & 2,040 & 2,041 & ``Q:''+ question + dialogue & answer & 5.59 & 2.61\\
+		Dialogue Summarization & SAMSum &BART& 14,732 & 818 & 819 & dialogue & summary  & 24.99 & 13.06\\
+		\multirow{2}{*}{Style Transfer} & \multirow{2}{*}{Shakespeare} &{STRAP}&  \multirow{2}{*}{36,790} &  \multirow{2}{*}{2,436} &  \multirow{2}{*}{2,924} & {original}  & {modern}  &  \multirow{2}{*}{11.63} & \multirow{2}{*}{8.19} \\
+		&&(GPT-2) &  & && /modern& /original & & \\
+		Question Generation & SQuAD1.1 &UniLM& 75,722 & 10,570 & 11,877 & passage + [SEP] + answer & question & 13.09 & 4.27 \\
+		News Summarization & CNNDM &BART& 287,227& 13,368& 11,490 & document & summary & 70.97 & 29.59\\ 
+		\hline
+	\end{tabular}
+	\caption{A summary of tasks and datasets. \#Train, \#Val and \#Test refers to the number of samples in the corresponding dataset. Avg and Std are the statistics for the number of output tokens. ``+'' is the concatenation operation.}
+	\label{tab:taskdata}
+\end{table*}
+
+%\KZ{Can we put the following details into the above table? They take too much space.}
+\textbf{Reading comprehension} is the task that answering questions about a piece of text. We use the DREAM dataset~\cite{sun2019dream} where questions are about corresponding dialogues and the answer is a complete sentence in natural language. We neglect the negative choices in the original dataset and formulate it as a NLG task. We adopt the pre-trained language model BART~\footnote{\url{https://huggingface.co/facebook/bart-large}}~\cite{lewis2020bart} as the baseline, where the input is a concatenation of a question and the corresponding dialogue made up of speakers and utterances. 
+%We experiment with  transformers %\footnote{\url{https://github.com/huggingface/transformers}}
+%based on the publically available ``facebook/bart-large'' checkpoint \footnote{\url{https://huggingface.co/facebook/bart-large}}.
+%The preceding BART model is also adopted as the baseline, whereas the input is a concatenation of question and a dialogue.
+The generated answers are evaluated by BLEU scores%\footnote{The BLEU-1/2/3/4 scores are computed according the Google's implementation%(\url{https://github.com/tensorflow/nmt/blob/master/nmt/scripts/bleu.py}).}
+~\cite{papineni2002bleu} widely used for QA systems, together with Meteor and Rouge-L F1~\footnote{Both Meteor and BertScore are calculated by SummEval~\cite{fabbri2021summeval}. %(\url{https://github.com/Yale-LILY/SummEval})
+The latter one is based on the default bert-base-uncased model.}. 
+We evaluate the model on the validation set after each training epoch and the early-stop patience will be added 1 if there is no improvement 
+in the perplexity of the validation set. The training process terminates when the early-stop patience equals or is larger than 3.  During the inference, the minimum and maximum output length are set to 5 and 100 respectively, with no\_repeat\_ngram\_size=3, length\_penalty=1.0 and num\_beams=4.
+
+
+
+\textbf{Dialogue summarization} is to generate a concise summary covering the salient information in the input dialogue. The preceding model BART has shown to be a strong baseline for this task, where only the dialogue is concatenated into a single sequence as the input. We experiment with  %transformers\footnote{\url{https://github.com/huggingface/transformers}} based on the publically available ``facebook/bart-large'' checkpoint \footnote{\url{https://huggingface.co/facebook/bart-large}} and 
+SAMSum dataset
+%\footnote{\url{https://arxiv.org/src/1911.12237v2/anc/corpus.7z}}
+~\cite{gliwa2019samsum} for daily-chat dialogues. 
+The generated summaries are evaluated by comparing with the reference through evaluation metrics, including Rouge-1/2/L F1 scores %\footnote{\url{https://github.com/pltrdy/files2rouge}}
+~\cite{lin2004rouge}, Meteor~\cite{banerjee2005meteor} and BertScore F1. %\footnote{Both Meteor and BertScore are calculated by SummEval. %(\url{https://github.com/Yale-LILY/SummEval})
+%The latter one is based on the default bert-base-uncased model.}. 
+The parameters are the same as reading comprehension, except that the early-stop is activated if there is no improvement according to the Rouge-2 F1 score. 
+
+
+% The answer is either a span of words in the original text or a complete sentence in natural language.
+\textbf{Style transfer} preserves the semantic meaning of a given sentence while modifying its style, such as positive to negative, formal to informal, etc.
+We adopt the Shakespeare author imitation dataset~\cite{xu2012paraphrasing}, containing William Shakespeare's original plays and corresponding modernized versions. Krishna et al.~\shortcite{krishna2020reformulating} proposed to do unsupervised style transfer by training paraphrase models based on the GPT-2 language model~\cite{radford2019language}. We re-implemented their approach STRAP %\footnote{\url{https://github.com/martiansideofthemoon/style-transfer-paraphrase}} 
+and evaluated it with the provided script. Evaluation metrics include
+transfer accuracy(ACC), semantic similarity(SIM), Fluency(FL) and two aggregation metrics, i.e., geometric averaging(GM) and their newly introduced $J(\cdot)$ metric. %The hyper-parameter $hp$ equaling 0.0, 0.6 or 0.9  in Table~\ref{tab:end2endst} is the sampling parameter for trades off between ACC and SIM in their approach. 
+In the training stage, we evaluate the model after updating every 500 steps. The perplexity on the validation set is used to activate the early-stop which equals 3. The inference is done as default.
+ 
+\textbf{Question generation}~\cite{zhou2017neural} aims at generating a question given an input document and its corresponding answer span. SQuAD 1.1~\cite{rajpurkar2016squad} is generally used for evaluation. We adopt the data split as in \cite{du2017learning} and fine-tune the pre-trained UniLM~\cite{dong2019unified} as the strong baseline. %according to their official implementation%\footnote{\url{https://github.com/microsoft/unilm/tree/master/unilm-v1}}
+Generated questions are evaluated by metrics including BLEU-1/2/3/4, Meteor and Rouge-L with the provided scripts. The model is evaluated every 1000 steps and the early-stop equaling 5 is associated with the perplexity on the validation set. Other parameters are unchanged following the official guideline.
+
+\textbf{News summarization} differs from dialogue summarization where the input is a document instead of a dialogue. We adopt the same strong baseline BART and evaluation metrics as dialogue summarization. Experiments are done with CNNDM dataset~\cite{HermannKGEKSB15} consisting of news articles and multi-sentence summaries. The model is evaluated every 3000 steps and the early-stop equaling 3 is associated with the Rouge-2 on the validation set. During the inference, the minimum and maximum output length is set to 45 and 140 respectively, with no\_repeat\_ngram\_size=3, length\_penalty=2.0 and num\_beams=4 \footnote{Inference parameters are borrowed from \url{https://github.com/pytorch/fairseq/blob/main/examples/bart/summarize.py}.}.
+%\footnote{\url{https://github.com/pytorch/fairseq/blob/main/examples/bart/README.summarization.md}}
+
+The summary of each task is listed in Table~\ref{tab:taskdata} and the specific packages we adopted are summarized in Appendix~\ref{sec:pkgs}. 
+For fair comparisons, we re-implement baselines following the above instructions on our machine. Then, we further arm them with different in-sample curriculum settings:
+\begin{itemize}
+	\item \textbf{TCL-SG}: the token-wise curriculum learning algorithm(TCL) with sub-sequence generation(SG) criterion proposed by \citet{liang-etal-2021-token-wise} with their best soft setting. The hyper-parameters are set as $\gamma_0=0.7$ and $\alpha_0=25$ following the original paper.
+	\item \textbf{TCL-SC}: we modified the TCL-SG by incorporating our sequence completion(SC) criterion in \secref{sec:approach} with the hard setting~\footnote{The soft setting will hurt our ordering criterion according to preliminary studies in Appendix~\ref{sec:preliminary}.} where $\lambda_0=0.1$ following the original paper.
+	\item \textbf{ICL-SG}: we implemented the SG criterion by using our ICL algorithm in \secref{sec:approach} which calculating the loss with $1\leq t \leq c$ in \eqref{eq:icl}.
+	\item \textbf{ICL-SC}: our proposed approach. Both TCL-SC and ICL-SG can be regarded as ablations for it. The settings of newly introduce $p_{start}$ and $s$ are specified and discussed latter.
+	%in following sub-sections. 
+\end{itemize}
+%following the ICL strategy according to the Algorithm~\ref{alg:picl}. 
+All of our experiments are done on a single RTX 3090 with 24G GPU memory. The results are averaged over three runs. We open-source all of codes and results at \url{http://anonymous.com}.
+%\KZ{If no timings are involved, I suggest u go with the lower spec GPU only.}
+%and the result are averaged over three runs.
+
+
+ 
+\subsection{Automatic Evaluations on Different Tasks}
+\label{sec:taskperformances}
+
+%We compare our approach with the vanilla models mentioned above and the approach from~\citet{liang-etal-2021-token-wise} as baselines.
+The performances on different NLG tasks are shown in Table~\ref{tab:end2end}. 
+These tasks not only focus on solving different problems, but also has a various amount of training data as well
+as output lengths according to
+Table~\ref{tab:taskdata}.
+Besides, the basic models are also different, including BART, GPT-2 and UniLM. 
+Our approach \textbf{ICL-SC achieves significant improvements over the strong baselines} among different tasks on most evaluation metrics, which shows that our method not only works well, but also has strong generalization abilities.
+It should be noted that GM and J are two comprehensive evaluation metrics for style transfer, with our approach topping the ranks with significant improvements.
+
+
+\begin{table}[th]
+	\small
+	\centering
+	\begin{subtable}{\linewidth}
+		\scriptsize
+		\centering
+		\begin{tabular}{lcccccc}
+			\hline
+			{Method} & {B1} & {B2} & {B3} & {B4} & {Met} & {RL}\\
+			\hline
+			w/o CL &  32.03 & 16.01 & 8.77 & \textbf{4.80} & 19.84 & 38.89\\
+			TCL-SG &  32.35 & 16.38 & 8.86 & 4.69 & 19.95 & 39.27 \\
+			\hline
+			TCL-SC & 33.44 & 16.90 & 8.93 & 4.66 & 20.45 & 40.55\\
+			ICL-SG & 32.80 & 16.32 & 8.88 & 4.75 & 19.96 & 39.72 \\
+			ICL-SC &  \underline{\textbf{33.99}} & \underline{\textbf{17.43}} & \underline{\textbf{9.18 }}& 4.64 & \underline{\textbf{20.60}}& \underline{\textbf{40.78}}\\
+			\hline
+		\end{tabular}
+		\caption{Reading Comprehension}
+		\label{tab:end2endrc}
+	\end{subtable}
+	\\[5pt]
+	\begin{subtable}{\linewidth}
+		\scriptsize
+		\centering
+		\begin{tabular}{lccccc}
+			\hline
+			{Method} & {R1} & {R2} & {RL} & {Met} & {BertS} \\
+			\hline
+			w/o CL & 51.88 & 27.30 & 42.77 & 24.75 & 71.38 \\
+			TCL-SG & 52.43 & 27.65 & 43.56 & 25.17 & 71.86 \\
+			\hline
+			TCL-SC & 52.69 & \textbf{28.28 }& 43.89 & 25.08 & 71.95 \\
+			ICL-SG & 52.95 & 28.07 & \textbf{43.91} & 25.67 & 72.01 \\
+			ICL-SC & \underline{\textbf{53.07}} & \underline{28.23} & {43.83} & \underline{\textbf{26.12}}& {\textbf{72.17}} \\
+			
+			\hline
+		\end{tabular}
+		\caption{Dialogue Summarization}
+		\label{tab:end2endds}
+	\end{subtable}
+	\\[5pt]
+	\begin{subtable}{\linewidth}
+		\scriptsize
+		\centering
+		\begin{tabular}{lccccc}
+			
+			\hline
+			{Method} &  {ACC} & {SIM} & {FL} & {GM} & {J}\\
+			\hline
+			w/o CL & 70.49 & 55.70 & 85.98 & 69.63 &33.72 \\
+			TCL-SG & \textbf{76.09} & 53.79 & 82.97 & 69.76 & 34.02 \\
+			\hline
+			TCL-SC& 73.27 & 54.84 & 85.49 & 70.03 & 34.56\\
+			ICL-SG & 74.60 & 55.75 & 84.89 & \textbf{70.68} & 35.64\\
+			ICL-SC & 73.72 & \textbf{55.91} & \textbf{86.30} & \underline{{70.60}} & \underline{\textbf{35.81}} \\
+			\hline
+		\end{tabular}
+		\caption{Style Transfer.}
+		\label{tab:end2endst}
+	\end{subtable}
+	\\[5pt]
+	\begin{subtable}{\linewidth}
+		\scriptsize
+		\centering
+		\begin{tabular}{lcccccc}
+			\hline
+			{Method} & {B1} & {B2} & {B3} & {B4} & {Met} & {RL}\\
+			\hline
+			w/o CL & {50.36} & 35.81 & 27.46 & 21.62 & 24.56 & 50.88 \\
+			TCL-SG &{50.47} & 35.96 & 27.57 & 21.69 & 24.66 & 50.76\\
+			\hline
+			TCL-SC & 50.48 & 36.04 & 27.67 & 21.79 & 24.70 & 51.17\\
+			ICL-SG & 50.89 & 36.28 & 27.83 & 21.92 & 24.82 & 51.16\\
+			ICL-SC &  \underline{\textbf{51.02}} & \underline{\textbf{36.39}} & \underline{\textbf{27.90}} & \textbf{21.96} & \textbf{24.90} & \underline{\textbf{51.29}} \\
+			\hline
+		\end{tabular}
+		\caption{Question Generation}
+		\label{tab:end2endqg}
+	\end{subtable}
+	\\[5pt]
+	\begin{subtable}{\linewidth}
+		\scriptsize
+		\centering
+		\begin{tabular}{lccccc}
+			\hline
+			{Method} & {R1} & {R2} & {RL} & {Met} & {BertS}\\
+			\hline
+			%BART &  \\
+			w/o CL &  43.07 & 20.01 & 35.94 & \textbf{21.44} & 63.72 \\
+			TCL-SG & 43.03 & 20.19 & 36.22 & 19.58 & 63.84 \\
+			\hline
+			TCL-SC & 43.63 & 20.69 & 36.70 & 19.84 & 64.18 \\
+			ICL-SG & \textbf{43.76} & \textbf{20.81} & \textbf{36.88} & 19.69 & \textbf{64.31}\\
+			ICL-SC & \underline{{43.60}} & \underline{{20.66}} & \underline{{36.73}} & 19.64 & \underline{{64.20}}\\
+			\hline
+		\end{tabular}
+		\caption{News Summarization}
+		\label{tab:end2endns}
+	\end{subtable}
+	\caption{Results on different NLG tasks. w/o CL and TCL-SG are two previous strong baselines. 
+Both TCL-SC and ICL-SG are variations of our final approach ICL-SC. Scores underlined of ICL-SC 
+are statistically significantly better than both baselines in the first two lines with $p<0.05$ 
+according to the t-test. }	
+	\label{tab:end2end}
+\end{table}
+%SC>SG
+To disentangle factors of learning curriculum and training algorithms, we conduct variations of ICL-SC for detailed comparisons to TCL-SG. More observations are as follows. 
+
+\textbf{$\ast$-SC outperforms $\ast$-SG} for both training algorithms, showing that our proposed sequence completion curriculum is a more effective way of doing curriculum learning within a single sample. 
+The only exception is that ICL-SG performs better than ICL-SC for news summarization in \tabref{tab:end2endns}. The reason is that multi-sentence summaries in CNNDM are more extractive and cover different salient information in each sentence. Human agreement on salient information is relatively low as shown in \tabref{tab:humaneval}. Consequently, the prefix of a summary can also be a reasonable and more concise 
+reference summary with one or more complete sentences. The nature of $\ast$-SG happens to take advantage
+of this property.
+
+%ICL>TCL 
+\textbf{ICL-$\ast$ is better than TCL-$\ast$} with better performance and less computational costs. For TCL training algorithm adopted in \citet{liang-etal-2021-token-wise}, it separates the whole training process into curriculum and ordinary training. The curriculum length is an important hyper-parameter that is required to be estimated by finishing the training of the baseline model and computing the number of steps it takes to reach approximately 70\% of final scores. It intensively aggravates the computational costs in real applications. Besides, this estimation rule can not generalize well to different tasks (More in Appendix~\ref{sec:preliminary}). We choose to set curriculum steps to 2 or 3 epochs, approximately to the same amount of samples with different difficulty levels in ICL-SC. Taking dialogue summarization as an example, TCL-SG takes around 15.67 epochs (6 for the curriculum step estimation, 3 for curriculum and 6.67 for ordinary training) while our ICL-SC takes only 11.67 epochs to get the final results. In a word, our ICL-$\ast$ do the curriculum and ordinary training in a unified manner, requiring less computational costs in total.
+Moreover, ICL-$\ast$ moves to the next difficulty level after the model has fully been trained on that judging by the performance on the validation set, which is more similar to the education process in real life and also leads to better results.
+
+
+%We explain the some specific results as follows:
+
+%(1) Our training strategy boosts the performances of the original STRAT with different $hp$ in the style transfer task. GM and J are two comprehensive evaluation metrics, with our approach topping the ranks with significant improvements.
+
+%(2) TCL generally performs poorly on tasks
+%with more training data. For example, it failed on question generation without any improvements over the vanilla model under the same parameter setting, while ICL still 
+%logs gains. This is mainly due to two reasons.
+%First, because the nature of TCL is data augmentation which is more effective in low-resource settings,
+%when training data is abundant, it becomes less useful. 
+%Second, the way they calculate the loss as sub-sequence generation better suites paraphrasing tasks, such as machine translation tested in their paper, as the order of 
+%the corresponding tokens between input and output 
+%are almost the same. Learning such forward mapping can 
+%be regarded as a kind of ``easy-to-hard'' 
+%in these limited scenarios.
+%However, this doesn't hold true for other tasks, 
+%such as summarization and question generation. 
+%Therefore, we didn't further test it on CNNDM since
+%CNNDM has the large amount of training data among
+%the five.
+
+%(3) For news summarization, Rouge-1 scores (precision, recall) for the baseline and our method on CNNDM are (38.16, 52.72) and (40.84, 49.23) correspondingly. Our method made substantial improvements on the precision with a compromise on the recall. 
+%The meteor score based on the unigram precision and recall emphasizes more on the recall than the Rouge-1 F1. As a result, it drops while Rouge-1 F1 increases. Overall, our method still outperforms BART on this task, especially on F1 scores of Rouge-2 and Rouge-L.
+
+
+
+
+
+
+\subsection{Human Evaluations}
+
+To further prove the improvement of our approach, we hired three proficient English speakers for human evaluation. 100 samples from the test set of each task are randomly selected, ignoring the ones with totally same generations among three models, including the vanilla model, TCL-SG and ICL-SC. The original input, reference output and three generations are shown to annotators together, while the order of the three generations is unknown and different among samples. 3-point Likert Scale is adopted for scoring each generation~\cite{gliwa2019samsum}, where [5, 3, 1] represent 
+excellent, moderate and disappointing results 
+respectively. The average scores and annotator agreements 
+are in 
+Table~\ref{tab:humaneval}.
+
+The Fleiss Kappa on the first four tasks indicates moderate agreements. It shows the promising improvement of ICL-SC over the vanilla model and TCL-SG, which is consistent with the conclusion based on automatic metrics. The poor agreement on news summarization reflects the 
+diverse concerns of summarization from different 
+annotators. 
+
+The drop of TCL-SG over the baseline on style transfer is apparent. Although TCL-SG achieves significant improvements in accuracy, the generated contents with less semantic similarities and poor fluency are not preferred by annotators. Examples will be discussed in \secref{sec:casestudies}.
+%Although the agreement on style transfer is fair, 
+%our annotators without Shakespeare background 
+%tend to give low scores to all outputs.
+%Therefore, the absolute improvement is 
+%only $0.04$ compared to both baselines.
+%This mainly due to the indistinguishable styles between
+%Shakespeare’s plays with are quite different from modern languages. 
+%Without more specific instructions, different salient information are preferred 
+%Without more specific instructions,
+%they tend to focus more on the content coverage and hav
+%instead 
+%of checking the detailed facts. 
+%This is also 
+%consistent with the higher Meteor scores of the 
+%vanilla model over ICL.
+
+\begin{table}
+	\scriptsize
+	\centering
+	\begin{tabular}{l|ccc|c}
+		\hline
+		{Tasks} & {w/o CL} & {TCL-SG} & {ICL-SC} & {Agree}  \\
+		\hline
+		Reading Comprehension  &3.42 & 3.39 &3.94 &0.64 \\
+		Dialog Summarization &3.01 &3.51 &3.6 &0.41 \\
+		Style Transfer &2.85 &2.67 & 3.02&0.43 \\
+		Question Generation &3.77 & 3.81 &3.93 &0.40 \\
+		News Summarization & 3.13 &3.04 &3.43 &0.23 \\
+	%	\hline
+	%	overall & & & &\\
+		\hline
+	\end{tabular}
+	\caption{Human evaluations. The agreement (Agree) is calculated by Fleiss Kappa.}
+	\label{tab:humaneval}
+\end{table}
+
+
+ 
+\subsection{Case Studies}
+\label{sec:casestudies}
+
+We show some cases from different tasks in Table~\ref{tab:cases}.% and analysis as follows.
+\begin{table}[h!]
+	\scriptsize
+	\centering
+	\begin{subtable}{\linewidth}
+		\scriptsize
+		\centering
+		\begin{tabular}{p{0.9cm}p{5.9cm}}
+			\toprule[1pt]
+			{Dialogue} & \makecell[l]{%W: ...\\%Do you know that John's health took a turn for the worse?\\
+				%M: ......\\
+				%M: But he used to be as strong as a horse.\\
+				%W: You will never know when your health will fail all of a \\\quad sudden.\\
+				%M: It's one of the misfortunes in life, isn't it?\\
+				%W: It sure is.\\
+				M: ... So \textbf{health is more valuable than anything else}. No\\\quad  matter how much money we have, ...\\% you can not buy good health\\\quad with it. \\
+				W: ... \textbf{honors can never} \textbf{equal good health either.}\\
+				M: ... we should try our best to keep us as healthy as possible.\\
+			} \\
+			\hline
+			Question & Which of the following did the man think the most important?\\
+			\hline
+			Reference & Good health.\\
+			\hline
+			w/o CL & \textbf{\textit{Honors}}. \\
+			\hline
+			TCL-SG & \textbf{\textit{Honors}} and health. \\
+			\hline
+			ICL-SC & Health.\\
+			\bottomrule[1pt]
+		\end{tabular}
+		\caption{Reading comprehension}
+		\label{tab:caserc}
+	\end{subtable}
+	\\[3pt]
+	\begin{subtable}{\linewidth}
+		\scriptsize
+		\centering
+		\begin{tabular}{p{0.9cm}p{5.9cm}}
+			\toprule[1pt]
+			{Dialogue} & \makecell[l]{Mike: <file\_photo> \textbf{woke up} like this :/\\
+				%Mike: \textbf{woke up} like this :/\\
+				Emma: omg what is this??? \textbf{allergy}?\\
+				%Emma: \textbf{allergy}?\\
+				Mike: no idea... probably... but \textbf{no idea} to what :/} \\
+			%Mike: but \textbf{no idea} to what :/} \\
+			\hline	
+			{Reference} & Mike suspects he might have had an allergic reaction to something.\\
+			\hline
+			
+			w/o CL & Mike \textbf{woke up} like \textit{\textbf{this}}.\\
+			\hline
+			TCL-SG & Mike has an \textbf{allergic reaction}.\\
+			\hline
+			ICL-SC & Mike \textbf{woke up} with an \textbf{allergic reaction}.\\
+			\bottomrule[1pt]
+		\end{tabular}
+		\caption{Dialogue summarization}
+		\label{tab:caseds}
+	\end{subtable}
+	\\[3pt]
+	\begin{subtable}{\linewidth}
+		\scriptsize
+		\centering
+		\begin{tabular}{p{0.9cm}p{5.9cm}}
+			\toprule[1pt]
+			{Modern} & \makecell[l]{Excuse me , sir , do you know how to read ?} \\
+			\hline	
+			{Original} &I pray , sir , can you read ?\\
+			\hline	
+			w/o CL &I \textbf{pray you} , can you read ?\\
+			\hline
+			TCL-SG & I \textbf{prithee} , \textit{\textbf{read ?}}\\
+			\hline
+			ICL-SC & I \textbf{prithee} , \textbf{sir} , can you read ?\\
+			\midrule[1pt]
+			{Original} & \makecell[l]{My \textbf{dismal} scene I needs must act alone .} \\
+			\hline	
+			{Modern} & In my \textbf{desperate} situation , I have to act alone .\\
+			\hline
+			w/o CL &I have to act alone in my \textbf{gloomy} scene .\\
+			\hline
+			TCL-SG &\textbf{\textit{ It's my own fault , my own fault , that I'm the one who's in a d}}\\
+			\hline
+			ICL-SC & I have to act alone in my \textbf{gloomy} scene .\\
+			\bottomrule[1pt]
+		\end{tabular}
+		\caption{Style Transfer}
+		\label{tab:casest}
+	\end{subtable}
+	\\[3pt]
+	\begin{subtable}{\linewidth}
+		\scriptsize
+		\centering
+		\begin{tabular}{p{0.9cm}p{5.9cm}}
+			\toprule[1pt]
+			{Document} & {Plymouth is home to Plymouth Argyle F.C., who play in \textbf{the fourth tier of English football league known as Football League Two.} ...}\\
+			% It links itself with the group of English non-conformists that left Plymouth for the New World in 1620: its nickname is \"The Pilgrims\". The city also has four Non-League football clubs; Plymouth Parkway F.C. who play at Bolitho Park, Elburton Villa F.C. who play at Haye Road, Vospers Oak Villa F.C. who play at Weston Mill and Plymstock United F.C. who play at Deans Cross. All four clubs play in the South West Peninsula League.} \\
+			\hline	
+			Answer & Football League Two\\
+			\hline
+			{Reference} & What level of the football league does Plymouth Argyle F.C. operate in?\\
+			\hline
+			w/o CL & What is the fourth tier of English football league ?\\
+			\hline
+			TCL-SG & What is \textit{\textbf{the fourth tier of English football }}?\\
+			\hline
+			ICL-SC & What is the fourth tier of English football league called ? \\
+			\bottomrule[1pt]
+		\end{tabular}
+		\caption{Question Generation}
+		\label{tab:caseqg}
+	\end{subtable}
+	\\[3pt]
+	\begin{subtable}{\linewidth}
+		\scriptsize
+		\centering
+		\begin{tabular}{p{0.9cm}p{5.9cm}}
+			\toprule[1pt]
+			{Document} & {a man has been arrested ... an imam found dead in his car . || abdul hadi arwani was found slumped in the back seat of his black volkswagen passat on tuesday morning in wembley , north west london . || the 48-year-old syrian national was an outspoken critic of the assad regime and ` actively ' campaigned against extremist , his family have since revealed . || on monday morning scotland yard confirmed that a 46-year-old had been arrested in brent , north west london , on suspicion of conspiracy to murder || ... || he is being questioned ... while officers ... for witnesses || ... || counter-terrorism investigators were drafted ...}\\
+			\hline
+			{Reference} & abdul hadi arwani was found dead in his car on tuesday in wembley . counter terrorism police were drafted in to lead investigation into death . a 46-year-old man has been arrested on suspicion of conspiracy to murder .\\
+			\hline
+			w/o CL & abdul  ...  london. The 48 ... revealed. A man ... car.\\
+			\hline
+			TCL-SG & abdul ... london. the 48... revealed. on monday ... arrested on suspicion of conspiracy to murder. he ... witnesses.\\
+			\hline
+			ICL-SC & abdul ... back seat of his car in wembley. the syrian national was ... assad regime. a 46-year-old man has been arrested on suspicion of conspiracy to murder. he ... witnesses. \\
+			\bottomrule[1pt]
+		\end{tabular}
+		\caption{News Summarization}
+		\label{tab:casens}
+	\end{subtable}
+	\caption{Case studies. 
+		%Due to the space limitation, case studies for question generation and news summarization are in Appendix~\ref{}. 
+		The \textbf{keywords} are in bold. And \textbf{\textit{doubtful generations}} are italic. ``||'' marks sentence boundaries. Unimportant and the same contents are folded with ``...''. }
+	\label{tab:cases}
+\end{table}
+
+In the first case from reading comprehension, our ICL-SC reasoned correctly while the baseline model raised a wrong answer. TCL-SG also answered incorrectly by merging both keywords. 
+Such ability is not suitable for generating a precise answer.
+In contrast, ICL-SC successfully incorporated more salient information in a single sentence for dialogue summarization, which performs better than both baselines. The vanilla model did poorly on coreference resolution among dialogue utterances and generated ``this'' without a clear referent. 
+ICL-SC also generated a more accurate question in Table~\ref{tab:caseqg} compared with strong baselines, although it's not the same as the reference.
+
+For transferring style from modern to Shakespeare's style, the model generated results are all acceptable while ICL-SC performs slightly better for being more polite. Both TCL-SG and ICL-SC even generated the more professional word ``prithee'' which is widely used in Shakespeare's time. A bad case is shown in the second case of Table~\ref{tab:casest}. ICL-SC didn't make any improvement over the baseline. TCL-SG even generated words out of control.
+
+Generated summaries in Table~\ref{tab:casens} cover different parts of information in the original document. The vanilla output is just a reordering of the first three sentences.
+ICL-SC did better by omitting too detailed content comparing to the two baselines. 
+
+In a word, the results show that ICL-SC can capture the characteristics of different tasks and do better language modeling.
+
+
+
+
+
+
+%Following Liu et al.\shortcite{liu2021competence}'s work, we asked annotators to comparing the performance between our generated results and baselines by choosing from ``Better, Tie, Worse''. 
+%The counts for each choice are shown in Table~\cite{}, where the Fleiss Kappa among annotators is ??.
+
+%Analysis
+
+
+
+
+
+%\subsection{Analysis on Variable Generation Lengths}
+
+%Teacher forcing, which predicts each token given the reference summary tokens during training and given the previous generated tokens during inference, leads to the exposure bias problem for NLG tasks.
+%Since ICL starts the training process by predicting the last few tokens of outputs and gradually calculates the loss based on more tokens when the model is stronger, we hypothesis that it can alleviate the exposure bias for training Seq2Seq models to some extent.
+%As stated in~\cite{pang2020text}, the output quality tends to degrade as the output length increase with the exposure bias.
+%So, we divided the test set of each task according to the length of the generated output into 4 buckets and randomly picked 20 samples in each buckets for both the corresponding baselines and our approach. Each generation is annotated by 5 point Likert Scale, where 1 is the worst and 5 is the best. 
+
+%The trends of performances on variable generation lengths are in Figure~\ref{}.
+

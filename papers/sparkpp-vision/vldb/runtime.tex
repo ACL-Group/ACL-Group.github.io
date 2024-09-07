@@ -1,0 +1,39 @@
+\subsection{Runtime system}
+\label{sec:runtime}
+
+\begin{itemize}
+\item Data partition
+
+\item Operations in inference algorithms.
+\end{itemize}
+
+\cut{%%%%%%%%%%%
+Data in Spark are represented as resilient distributed datasets \cite{Zaharia:2012:RDD:2228298.2228301} and Spark provides the GraphX that supports parallel graph computations. For large models, the number of nodes in the factor graph could be huge so it is natural to represent the factor graphs using GraphX. Moreover, many inference algorithms can be expressed as message passing algorithms \cite{koller2009probabilistic} which can be efficiently implemented in GraphX. We will explore the efficient implementation of these inference algorithms and use them as the default inference algorithm.
+
+Alternatively, we can perform inference by drawing samples from the posterior distribution using the Metropolis-Hastings algorithm adapted from \cite{wingate2011lightweight}.
+First, all variables are initialized with some value that satisfy the given observations of variables. 
+In each step, a new random value is proposed for a randomly selected random variable based on its current value and parameters. 
+The whole execution trace is adjusted accordingly so that the execution trace is consistent with the update. 
+Whether the proposed update is accepted or rejected depends an acceptance rate computed using the following formula:
+\begin{equation*}
+	\alpha_{X \rightarrow X'} = \min\{{1, \frac{P(X')Q(X'\rightarrow X)}{P(X)Q(X \rightarrow X')}\}}
+\end{equation*}
+where $X$ and $X'$ are the old and new execution trace, $P(\cdot)$ is the forward probability of the execution trace 
+and $Q(X \rightarrow X')$ is the probability that a proposal is made to update from $X$ to $X'$.
+
+It essentially constructs a Markov chain in the space of all valid execution traces. 
+The samples drawn from the chain will converge to the posterior distribution determined by
+the model and the observed value for by accepting the proposed update with probability $\alpha_{X \rightarrow X'}$.
+Thus detailed balance condition is satisfied, which ensures the chain will converge to the distribution
+with probability function $P(\cdot)$. Note that we only need to use the forward probability of the execution trace since
+any trace that does not satisfy the observation is invalid, i.e. not in the space of the Markov
+chain. The forward probability is essentially the unnormalized posterior probability. The formula
+is unchanged by dividing the numerator and denominator with the same normalizing constant.
+
+Forward probability can be easily calculated by the product of the probabilities of value of all the random
+variables. For large models, it is very costly to compute but with Spark we can implement it in terms of
+efficient MapReduce operations.
+
+In addition to the built-in algorithms, user can define customized algorithms by implementing the abstract algorithm interface in the runtime system. By switching to customized algorithms, inference on specific models can be made more efficient and useful. For example, user can implement the parallel Gibbs sampling \cite{wang2009plda} for Latent Dirichlet Allocation \cite{blei2003latent} using the Spark MapReduce operation. The runtime saves users' labor by providing a ready-to-use class definition of the model and users only need to implement the infer method. The implementation of infer involves no more than a few lines of map reduce operations on the factors.
+
+}%%%%%%%%%%%%%%%

@@ -1,0 +1,125 @@
+\section{Task Formulation}
+In this paper, we focus on the task of multi-hop multiple-choice machine reading comprehension. Given a query \textit{q} in the form of (\textit{s}, \textit{r}, ?\textit{o}) which represent subject, relation and unknown object respectively, a set of supporting documents \textit{S} and a set of candidates $Cand$, the task is to select the correct answer $\textit{a}\in Cand$ to the query.
+
+Under this setting, subject \textit{s} and object \textit{o} in query are both words or short phrases and can be reversed by taking the inverse of \textit{r}, which is also a predicative word or short phrase. In \figref{fig:example}, \textit{s} refers to  \textit{margaret of france}, \textit{r} refers to \textit{noble\_ family} and \textit{house of valois} is the unknown \textit{o} to be predicted. In the following sections, we use $S_i$ to denote $i$-th supporting document, $q$ the concatenation of \textit{s} and \textit{r}, and $Cand_i$ the $i$-th candidate.
+
+\section{Methodology}
+In this section, we elaborate on different modules of the proposed graph-based interpretable multi-hop RC model. \figref{fig:overview} shows the overall model diagram. It consists of four modules: (1) a RF graph construction module to transform each sample into a semantic relational graph, (2) a context encoding module to build context-aware initial representation for each node, (3) a collaborative graph representation learning module to refine the latent representation of the graph, and (4) a path decoding module as an explicit way to recover reasoning path based on the output of previous module. 
+\subsection{RF Graph Construction}
+\label{sec:RF}
+\begin{figure*}[t]
+	\centering
+	\scalebox{1.8}{\includegraphics[width=1.0\columnwidth]{figure/overview_n.eps}}
+	\caption{The overview of the proposed system. {\color{brown}{Brown}}, {\color{green}{green}}, {\color{orange}{orange}}, {\color{blue}{blue}} colors represent node type (4)-(1) defined in \secref{sec:RF}, respectively. Each colored circle corresponds to a span of text in documents.} \label{fig:overview}
+\end{figure*}
+Prior work has shown the effectiveness of representing multiple supporting documents as a relational graph, on which the nodes are defined as various semantic unit~(e.g., entity, document) and are connected by edges denoting pair-wise relation. In practice, human often carry out multi-hop RC by memorizing and comprehending both inner-concept and cross-concept information. Taking \figref{fig:example} as an example, one has to leverage the cross-concept relation between \textit{Margret of France} and \textit{Francis I}, \textit{Francis I} and \textit{House of Valois}, along with the inner-concept information flow of \textit{Francis I} to correctly answer the question. Inspired by this observation, we propose Reasoning Flow(RF) graph which is formally defined as follows.
+Let a RF graph be denoted as $\mathcal{G}=\{\mathcal{V}, \mathcal{E}\}$, where $\mathcal{V}$ stands for nodes and $\mathcal{E}$ represents edges between nodes. In RF graph we consider four types of nodes: (1) mentions of subject, (2) mentions of all candidates, (3) arguments of a structured triple extracted using OpenIE~\cite{Gardner2017AllenNLP} system and (4) named entities that are not covered by aforementioned node types. Note that for nodes of type (3) and (4), we omit them if they appear outside of a sentence-level context window of size $3$ centered around the mention of candidate.
+
+For edge connections $\mathcal{E}$, we define the following types of edges between pairs of nodes to encode multi-granularity levels of relation:
+\begin{enumerate}
+  \item a bidirectional edge between two nodes if they are mentions of the same candidate or argument(identified via lexical matching) and they occur within the same document.
+  \item a bidirectional edge between two nodes if they are mentions of the same candidate or argument(identified via coreference resolution system~\cite{Gardner2017AllenNLP}) and they occur within the same document.
+  \item a bidirectional edge between two nodes if they are mentions of the same candidate or argument(identified via lexical matching) and they are from different documents.
+  \item an unidirectional edge from source node to target node, where the target node is the first-appear node in one document and the source node is any node from another document.
+  \item an unidirectional edge connecting subject node to object node with specific predicate as edge label, where (subject, predicate, object) triple is taken from (3)-th type of node.
+  \item a bidirectional edge between two nodes if they appear within a sentence-level context window of size $3$ and there is no other edge type identified.
+\end{enumerate}
+
+Edge type $1$-$3$ are responsible for enabling inner-concept information flow. Edge type $4$ is useful in scenarios where the model is uncertain about which entity to choose in the next hop. Edge type $5$ captures fine-grained relation between pairs of nodes, which also plays a critical role on the interpretability of induced reasoning path. A constructed RF graph is shown in \figref{fig:rf}.
+
+\begin{figure}[th]
+	\centering
+	\scalebox{0.7}{\includegraphics[width=1.0\columnwidth]{figure/rf_n.eps}}
+	\caption{A constructed RF graph based on example from \figref{fig:example}. Numbers represent different types of edges as described in \secref{sec:RF}. We omit other type of nodes for good visualization.} \label{fig:rf}
+\end{figure}
+
+\subsection{Context Encoding}
+To represent both nodes in RF graph and query, we first convert all supporting documents and query to sequence of vectors using a pretrained embedding look-up table $Embed(\cdot)$. A Bi-GRU~\cite{DBLP:journals/corr/ChungGCB14} is then employed to produce hidden states of each token in documents. We use another Bi-GRU to encode query into hidden states of same dimension:
+\begin{align}
+	\bm{H}_s^i &= \text{Bi-GRU}(Embed(S_i)) \\
+	\bm{H}_q &= \text{Bi-GRU}(Embed(q))
+\end{align}
+where $\bm{H}_s^i\in \mathbb{R}^{l_s^i\times d}$ and $\bm{H}_q\in \mathbb{R}^{l_q\times d}$ are the hidden state matrices of $i$-th supporting document and query, $l_s^i$ and $l_q$ are the corresponding number of tokens in $i$-th document and query, respectively. $d$ is the output dimension of GRU. For $Embed(\cdot)$, we concatenate both character n-gram embedding and GLoVe embedding~\cite{pennington2014glove} to represent multi-level features of each token.
+
+Given the encoded embedding matrix $\bm{H}_s^i$ of $i$-th document and node $j$ within it, we extract hidden representation $\bm{H}_j\in \mathbb{R}^{l_j\times d}$ of node $j$ by truncating $\bm{H}_s^i$ according to the position indices of that node via $\bm{H}_j = \bm{H}_s^i[start_j:end_j, :]$,
+where $[:]$ is the slicing operation. $\bm{H}_j$ is then fed into a bi-attention module~\cite{Zhong2019} together with $\bm{H}_q$ to build query-aware contextual representation $\bm{e_j}\in \mathbb{R}^{2d}$ for each node $j$:
+\begin{align}
+	\bm{e_j} = \text{Bi-Attention}(\bm{H}_j, \bm{H}_q)
+\end{align}
+we refer interested readers to \cite{Zhong2019} for details about bi-attention.
+
+\subsection{Collaborative Graph Representation Learning}
+Up to now we have represented each node $j$ as a fixed dimensional vector 
+$\bm{e_j}$ without incorporating structural information present in RF graph. 
+We then define how information propagates over RF graph by alternate execution 
+of relational message passing and coarse-to-fine path induction.
+%\KZ{I'm not sure ``collaborative'' is the right word to use... iterative, concurrent, alternating?}
+
+\subsubsection{Relational Message Passing}
+To encode various structural information, we extend the original multi-relational version of GCN~\cite{DBLP:journals/corr/KipfW16} to accommodate both coarse-grained and fine-grained pair-wise relation. Our relational message passing formulation is as follows:
+\begin{align}
+	\hat{\bm{z}}_j^l &= \sum_{r\in \mathcal{R}\setminus r_5}\frac{1}{|\mathcal{N}_j^r|}\sum_{k\in \mathcal{N}_j^r}(\bm{W}_r\bm{h}_k^l+\bm{b}_r) \\
+	\tilde{\bm{z}}_j^l &= \frac{1}{|\mathcal{N}_j^{r_5}|}\sum_{k\in \mathcal{N}_j^{r_5}}\text{G}(j,k)\odot(\bm{W}_{r_5}\bm{h}_k^l)  \\ 
+	\bm{z}_j &= (\bm{W}_s\bm{h}_j^l+\bm{b}_s) + \hat{\bm{z}}_j^l + \tilde{\bm{z}}_j^l
+\end{align}
+where $\mathcal{R}$ is the set of all edge types, $\mathcal{N}_j^r$ is the neighbors of node $j$ with edge type r and $\bm{h}_k^l$ is the node representation of node $k$ in layer $l$~($\bm{h}_k^0$ initialized with $\bm{e}_k$).
+$|\cdot|$ denotes the size of a set. $\odot$ is element-wise product. $\bm{W}_r$ and $\bm{b}_r$ are relation-specific parameters. G is a gating function designed to take information of different predicates into account, which defined as follow:
+\begin{align}
+	\bm{u}_{j,k} &= \text{MLP}(\bm{H}_s^i[start_p:end_p,:]) \\
+	\text{G}(j,k) &=\text{Sigmoid}(\bm{W}_g\bm{u}_{j,k}+\bm{b}_g) 
+\end{align}
+where both node $j$ and $k$ appear in $i$-th document. The aggregated information $\bm{z}_j$ of node $j$ is further passed to another gating layer to mitigate the smoothing problem when the number of layers in GNN is large:
+\begin{align}
+	\bm{g}_j^l &= \text{Sigmoid}(\text{MLP}([\bm{z}_j^l;\bm{h}_j^l]) \\
+	\bm{h}_j^{l+1} &= \text{tanh}(\bm{z}_j^l)\odot \bm{g}_j^l + \bm{h}_j^l\odot (1-\bm{g}_j^l)
+\end{align}
+All MLPs use ReLU as activation. After L times relational message passing, the updated node representation is denoted as $\bm{h}_j^L$.
+
+\subsubsection{Coarse-to-Fine Path Induction}
+Here we present our novel path induction module, which represents path finding as learning hop-wise connectivity matrix based on output of relational message passing.
+%\KZ{Why do we care if it's coarse or fine? It's just a graph now?}
+%\KZ{I don't understand what's the purpose of this module.}
+Let $\bm{A}\in \mathbb{R}^{n\times n}$ denote the initial unnormalized adjacency matrix derived from RF graph and $\bm{H}^l\in \mathbb{R}^{n\times 2d}$ the stacked node representations after $l$ times message passing, where n is the number of nodes. Starting from $\bm{H}^0$ to $\bm{H}^L$, our path induction module computes two $l$-hop query-aware connectivity matrices $\bm{C}_{f}^l$ and $\bm{C}_c^{l+1}$ after each relational message passing based on $\bm{H}^{l}$, $\bm{H}_q$, and $\bm{C}_c^{l}$:
+\begin{align}
+	\bm{C}_c^0 &= \bm{A}\\
+	\bm{h}_q &= \text{MLP}(\text{Meanpool}(\bm{H}_q)) \\ 
+	\bm{H}_{source}^l &= \text{ReLU}(\bm{H}^l\bm{W}_{source}^l+\bm{b}_{source}^l)\\
+	\bm{H}_{dest}^l &= \text{ReLU}(\bm{H}^l\bm{W}_{dest}^l+\bm{b}_{dest}^l)\\
+	\hat{\bm{C}_f^l} &=  \bm{H}_{source}^l \text{Diag}(\bm{h}_q) (\bm{H}_{dest}^l)^\top
+\end{align}
+where $\bm{H}^l$ is first transformed into source and destination space to compute the unregulated connectivity matrix $\hat{\bm{C}_f^l}$. To inject topological structure of RF graph, $\hat{\bm{C}_f^l}$ is further masked by coarse connectivity matrix $\bm{C}_c^{l}$ via $\bm{C}_{f}^l=\text{Softmax}(\text{M}(\hat{\bm{C}_f^l}, \bm{C}_c^{l}))$, where $\text{M}(\hat{\bm{C}_f^l}, \bm{C}_c^{l})[i,j]=\hat{\bm{C}_f^l}[i,j]*\bm{C}_c^{l}[i,j]$ if $\bm{C}_c^{l}[i,j]$ is greater than 0 and $-\infty$ otherwise. A row-wise softmax is applied to renormalized the masked matrix to [0,1]. To extend $l$ hop refined $\bm{C}_f^l$ to $l+1$ hop coarse $\bm{C}_c^{l+1}$, we take $\bm{C}_f^0$ as base 1-hop transition matrix and perform path extension as follows:
+\begin{align}
+	\tilde{\bm{C}}_c^{l+1} &= \bm{C}_f^l\cdot (\bm{C}_f^0)^\top\\
+	\hat{\bm{C}}_c^{l+1} &=
+	\begin{cases} 
+\tilde{\bm{C}}_c^{l+1}[i,j],  & \text{if } \tilde{\bm{C}}_c^{l+1}[i,j]>0\\
+-\infty, & \text{otherwise}
+\end{cases} \\
+	\bm{C}_c^{l+1} &= \text{Softmax}(\hat{\bm{C}}_c^{l+1})
+\end{align}
+$\bm{C}_c^{l+1}$ will then be used in the computation of next hop. Intuitively, the output of message passing $\bm{H}^l$ plays the role of enabling computing query-aware connectivity score between pairs of nodes that are at least $l+1$ hops away.
+
+While relational message passing calculate structure-aware representation for each node, we complementarily apply another R-GCN layer in which $\{\bm{C}_f^1,...,\bm{C}_f^L\}$ serve as customized adjacency matrices for different \textit{hop} relation, the resulting stacked node representation is $\bm{H}_{hop}$.
+\subsection{Multi-task Learning Objective}
+During training, we jointly optimize all modules by minimizing the answer prediction loss and path induction loss in a multi-task setting. The answer prediction loss is defined as the cross-entropy loss over candidate score and ground truth:
+\begin{align}
+	S_{ans} &= \text{Acc}_{max}(\text{MLP}([\bm{H}^L;\bm{H}_{hop};\bm{H}^L-\bm{H}_{hop}])) \\
+	\mathcal{L}_{ans} &= CrossEntropy(S_{ans}, a)
+\end{align}
+where $\text{Acc}_{max}$ is an operation that takes the maximum over scores of nodes that belong to the same candidate and output $S_{ans}\in \mathbb{R}^{|Cand|\times 1}$.
+
+To encourage inducing meaningful reason path, we introduce a path induction loss as a regularization term:
+\begin{align}
+	S_{path} &= \text{Acc}_{max}(\text{Max}([\bm{C}_f^1[I(s),:];..;\bm{C}_f^L[I(s),:])) \\
+	\mathcal{L}_{path} &= CrossEntropy(S_{path}, a)
+\end{align}
+where [;] is concatenation operation, $I(s)$ denotes the node index of subject\footnote{In some cases there might be multiple mentions of subject and we randomly choose one during training.} and $\text{Max}$ is the operation that takes hop-wise maximum to accommodate queries requiring various reasoning hops. The final training objective is defined as $\mathcal{L} = \mathcal{L}_{ans}+\alpha \mathcal{L}_{path}$, $\alpha$ is the balancing hyperparameter.
+
+\subsection{Path Decoding}
+%\KZ{What's the purpose of decoding path?}
+To be able to interpret how the predicted answer is derived, in inference phase, the set of connectivity matrices $\{\bm{C}_f^0,...,\bm{C}_f^L\}$ are combined to recover top-K reasoning paths that connect subject to the predicted answer through intermediate nodes. Formally, given the predicted candidate $Cand^*$ and its maximally scored mention with node index $I(Cand^*)$, we first identify the number of hops required to reach the answer by $l^*=argmax_{1\leq l\leq L}\bm{C}_{f}^{l}[I(s),I(Cand^*)]$.
+
+%\KZ{The use of $topk_i$ is a bit strange. Consider rephrase the following
+%sentence.}
+Similar to beam search, path decoding then proceeds by iteratively retrieving the indices of top-K intermediate nodes $\{N_1^l,..,N_k^l,..,N_K^l\}$ with largest $\bm{C}_f^l[I(s), I(N_k^l)]*\bm{C}_f^0[I(N_k^l), I(N^{l+1}])$ at each remaining $l^*-1$ hop, where $N^{l+1}$ is the node retrieved at $(l+1)$-th hop. Edge between two consecutively retrieved nodes is taken from RF graph to denote their relation. The output of path decoding forms a ranked list of reasoning paths $\{P_1,...,P_K\}$ where each $P_i$ is of length $l^*$.
+																					

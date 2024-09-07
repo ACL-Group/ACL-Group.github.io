@@ -1,0 +1,198 @@
+\section {Evaluation}
+\label{sec:eval}
+
+In this section, we first show our experimental setup, then evaluate the performance of our proposed baseline methods and the state-of-the-art general classification method on the sentence-level \lnear~relation classification task. 
+Then, we will evaluate the quality of the new \lnear~triples we extracted with our proposed method.
+
+\subsection{Experimental Setup}
+\label{sec:experiment}
+\noindent
+\textbf{State-of-the-art General Relation Classification}\\
+The state-of-the-art relation classification model 
+(DRNN)~\cite{xu2016improved} leverages
+a four-channel input, stacked deep recurrent neural network model 
+to represent the original sentence with original words, POS-tags, 
+WordNet Supersenses and grammatical relations/dependency roles separately. 
+%A major differences between it and our proposed LSTM-based methods is that 
+%i) it only uses the information of the shortest dependency path between the two objects; 
+%ii) 
+%it does not take out the two objects out of the original sentence;  \BL{frank work on this plz}
+
+\noindent
+\textbf{Hyperparameters Tuning Details}\\
+For our proposed feature-based baseline methods, 
+we trained our word embeddings on the Gutenberg corpus with window 
+size of 5 and dimensionality of 100. 
+The pre-trained GloVe~\cite{pennington2014glove} word embeddings 
+is also 100-dimensional.
+We use grid searching method to tuning the hyperparameters of the 
+SVM classifier. The candidate parameters are shown in~\tabref{tab:grid}, 
+we do 5-fold cross-validation under each candidate situation and 
+choose the one with the highest precision.
+
+\begin{table}[th]
+	\centering 
+	\begin{tabular}{|c|c|c|}
+		\hline
+		\textbf{kernel} & \textbf{C} & \textbf{gamma} \\ \hline \hline
+		linear & 1,10,{100},1000 & N/A  \\\hline
+		\textbf{rbf} & 1,10,\textbf{100},1000 & $10^{-4}$,{$\mathbf{10^{-3}}$},$10^{-2}$ \\\hline
+	\end{tabular}
+\caption{Candidate Hyperparameters of the SVM Model for Grid Searching; The bold settings are the best.}
+\label{tab:grid}
+\end{table}
+
+As for our LSTM-based methods, we initialize the weight of embedding 
+layer for input tokens and positions with uniform distribution, 
+except for the lemma words, which are initialized with the weight from 
+the pre-trained embeddings. The dimensionality of input token embedding layer and position embedding layer are 100 and 5 respectively. For the original two physical object words, we also use the widely-used 100-dimension pre-trained GloVe word embeddings, the same as aforementioned SVM setting. 
+We set both the input dropout rate as well as the recurrent state update dropout probability as 0.5 and the number of training epochs as 40, use the validation accuracy as monitor metric and early stop with the patience of 5 epochs.
+
+We used the released code of the DRNN baseline, 
+but with their original hyper-parameter settings, 
+it was unable to properly train their model on our dataset. 
+The possible reason is from the differences between our corpus and 
+their target corpus. 
+%\KZ{What do you mean by large gap? semantic gap in the corpus?}
+Thus we manually tuned the learning rate to 0.2 down from 0.3 for 
+best possible results.
+
+\subsection{Results and Discussion}
+We first report the co-location classification results from the two baseline
+methods along with some feature ablation test results, then show the
+performance of our ranking model in \lnear\ relation extraction, by comparing
+the five different ways to computing the confidence score and demonstrating
+some of the top \lnear~ relations we have discovered.
+
+\noindent
+\textbf{Object Co-location Relation Classification}\\
+For this binary classification problem, we evaluate above baseline methods  
+quantitatively with classification accuracy, as well as the
+precision, recall and F1-Score respectively for the \lnear\ class.
+The results are shown in~\tabref{tab:aprf}.
+``Random'' classifier classify the instances into two classes with equal probability, while ``Majority'' classifier considers all the instances to be positive.
+%\KZ{Add random (randomly select \lnear~ or not) and majority class (this
+%one I'm not sure what it means).}
+For feature-based SVM, we also do feature ablation on holding out each of the six feature types. 
+``LSTM+Word'' uses the original words as the input tokens, while ``LSTM+POS'' uses the POS tag sequence as the input tokens. ``LSTM+Norm'' uses the tokens of our proposed sentence normalization. 
+
+From the table, we find that the SVM model without the Global Features performs best, which indicates that such number-of-POS-tag features benefit more in shortest dependency paths than on the whole sentence.
+The ablation tests also show that word-based features are less effective
+than structure-based features, such as SDP, BPW.
+We also found that the bag-of-words features (BW) are the most important one.
+For neural network models, we find that DRNN performs best (0.658) in terms of 
+precision but not very much higher than LSTM+Norm (0.654). 
+The experiment also shows that LSTM+Word enjoys the highest recall score.
+In terms of the overall performance, LSTM+Norm is the best one. 
+It is because that our proposed the normalization representation reduces the vocabulary size without losing important syntactical and semantic information, while DRNN and LSTM+Word have too many parameters to tune. LSTM+POS indeed reduce the vocabulary size, but it loses too much information. 
+Also, the objects with \lnear\ relation are highly dependent on the preposition modifying them which are in its sub-tree other than the shortest dependency tree. 
+Thus, DRNN cannot capture the information from the nodes in the sub-tree of the two objects in the dependency parse tree, which are considered by the LSTM+Norm. For the rest of the
+experiments, we will use LSTM+Norm as the classifier of our choice.
+
+\begin{table}[th]
+	\centering
+	\begin{tabular}{|c|c|c|c|c|}
+	\hline
+	\textbf{Model}	& \textbf{Acc} & \textbf{Pre} & \textbf{Rec} & \textbf{F1} \\		\hline \hline
+	Random &	0.500 & 0.551 & 0.500 & 0.524  \\		\hline
+	Majority &	0.551 & 0.551 & 1.000 & 0.710 \\		\hline
+	 \hline
+	SVM(all) &	0.584 & 0.606 & 0.702  & 0.650  \\		\hline
+	SVM(w/o. BW) &0.577	&0.579	&0.675&	0.623	\\ \hline
+	SVM(w/o. BPW) & 0.556 &	0.567&	0.681&	0.619	\\ \hline
+	SVM(w/o. BAP)	& 0.563 &  0.573& \textbf{0.811}  & 0.672 \\		\hline
+	SVM(w/o. GF)	&  \textbf{0.605} & \textbf{0.616} &0.751  & \textbf{0.677} \\		\hline
+	SVM(w/o. SDP)	& 0.579 & 0.597 & 0.728  & 0.656\\		\hline
+	SVM(w/o. SS)	&  0.584 &  0.605 &  0.708 & 	0.652	\\ \hline
+	\hline
+	DRNN	&  0.635 &  \textbf{0.658} &  0.702 & 	0.679	\\ \hline
+	LSTM$+$Word 	&   0.637 & 0.635 & \textbf{0.800}   & 	 0.708	\\ \hline
+	LSTM$+$POS	& 0.641 & 0.650  &  0.751 & 0.697	\\ \hline
+	LSTM$+$Norm	&  \textbf{0.653 }&  0.654 & { 0.784} & 	\textbf{0.713}	\\ \hline
+	\end{tabular}
+	\caption{Performance of the baseline methods (with ablation) 
+	on co-location classification task.}
+	\label{tab:aprf}
+\end{table}
+
+\noindent
+\textbf{\lnear\ Relationship Extraction}\\
+Once we have classified the sentences using LSTM+Norm, we can extract \lnear\
+relation using the four scoring functions in \secref{sec:mine}.
+%We present the quantitative evaluation of our extraction methods in 
+We first present the quantitative results. 
+We use each of the scoring functions to 
+rank the 500 commonsense \lnear\ object pairs described in \secref{lsd}. 
+Here we use Mean Average Precision(MAP) and Precision at $K$ as metric 
+to evaluate the ranking results, which are shown in~\tabref{tab:3m}.
+From the result, we can conclude that accumulative scores ($f_1$ and $f_3$)
+generally do better. We have not compared with the \lnear\ pairs in
+ConceptNet because it contains very limited number of pairs (49 in total).
+%is always better when it concerns $m$, the number of the sentences mentioning \textless$e_i$,$e_j$\textgreater.
+%To evaluate the performance of the scoring result 
+\begin{table}[th!]
+\centering
+\begin{tabular}{|c|c|c|c|c|c|}
+\hline
+$\mathbf{f}$	& \textbf{MAP} & \textbf{P@50} & \textbf{P@100}  &  \textbf{P@200}& \textbf{P@300}\\ \hline \hline
+	$f_0$ & 0.42 & 0.40 & 0.44 & 0.42 & 0.38 \\ \hline
+	$f_1$	& 0.58  & {\bf 0.70} & 0.60& 0.53 & {\bf 0.44}\\\hline
+	$f_2$	& 0.48 & 0.56 & 0.52  & 0.49 & 0.42\\\hline
+	$f_3$	& {\bf 0.59} & 0.68& {\bf 0.63} & {\bf 0.55} & {\bf 0.44}\\\hline
+	$f_4$	& 0.56 & 0.40 & 0.48 & 0.50 & 0.42\\\hline
+	\end{tabular}
+\caption{Ranking performances of the four scoring methods.}
+\label{tab:3m}
+\end{table}
+
+Qualitatively, we show 15 object pairs with some of the highest $f_3$ scores
+in \tabref{tbl:toppairs}.
+%\begin{table}[]
+%	\small
+%	\centering
+%	\caption{My caption}
+%	\label{my-label}
+%	\begin{tabular}{|l|c|c|c|}
+%		\hline
+%		$f_1$ &  $f_2$ &  $f_3$& $f_4$ \\ \hline
+%		door$\leftrightarrow$room& table$\leftrightarrow$apartment  & &\\ \hline
+%		door$\leftrightarrow$house &ladder$\leftrightarrow$boat & &  \\ \hline
+%		door$\leftrightarrow$window & ladder$\leftrightarrow$ship & &\\ \hline
+%		table$\leftrightarrow$chair & ladder$\leftrightarrow$tree & &\\ \hline
+%		boy$\leftrightarrow$girl& cliff$\leftrightarrow$cave  & &\\ \hline
+%	\end{tabular}
+%\end{table}
+%\begin{table}[]
+%	\small
+%	\centering
+%	\caption{My caption}
+%	\label{my-label}
+%	\begin{tabular}{|C{0.3cm}|L{6cm}|}
+%		\hline
+%		$f_1$ & door$\leftrightarrow$room,  door$\leftrightarrow$house, door$\leftrightarrow$window, table$\leftrightarrow$chair, boy$\leftrightarrow$girl\\\hline 
+%		$f_2$ & table$\leftrightarrow$apartment, ladder$\leftrightarrow$boat, ladder$\leftrightarrow$ship, ladder$\leftrightarrow$tree, cliff$\leftrightarrow$cave\\\hline 
+%		$f_3$ & door$\leftrightarrow$room, door$\leftrightarrow$house, boy$\leftrightarrow$girl, door$\leftrightarrow$window, table$\leftrightarrow$chair\\\hline 
+%		$f_4$ & door$\leftrightarrow$room, door$\leftrightarrow$window, table$\leftrightarrow$chair, window$\leftrightarrow$room, bed$\leftrightarrow$room \\ \hline 
+%	\end{tabular}
+%\end{table}
+
+\begin{table}[th]
+	\centering
+	\begin{tabular}{|ccc|}
+		\hline
+		(door, room)  & (boy, girl)     & (cup, tea)      \\
+		(ship, sea)   & (house, garden) & (arm, leg)      \\
+		(fire, wood)  & (house, fire)   & (horse, saddle) \\
+		(fire, smoke) & (door, hall)    & (door, street)  \\
+		(book, table) & (fruit, tree)   & (table, chair)  \\ \hline
+	\end{tabular}
+	\caption{Top object pairs returned by $f_3$}
+	\label{tbl:toppairs}
+\end{table}
+
+Setting a threshold of 40.0 for $f_3$, which is minimum non-zero
+$f_3$ score for all true object pairs in the \lnear\ object pairs 
+data set (500 pairs), we obtain a total of 2,067 \lnear\ relations, with
+a precision of 68\% by human inspection.
+
+

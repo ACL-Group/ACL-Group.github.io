@@ -1,0 +1,238 @@
+\section{Relation Triple Construction}
+\label{sec:triple}
+
+In this section, we introduce triple construction algorithms for
+converting tagging sequences into relation triples.
+Refer to \figref{fig:intro}, the tag of each word contains 
+both named entity and relation type information.
+Given a specific relation type $r$, we extract all
+different $e_1$ and $e_2$ entities associated with $r$ from a tagging sequence,
+and the algorithm recognizes all entities to be paired, and produce ($e_1$, $r$, $e_2$) results.
+This construction step is not trivial,
+because the input sequence could be long and contain multiple entities.
+%which is not a trivial step, because the input sequences could be long,
+%and many entities can be extracted within one sentence.
+
+In this case, we attempt a group of construction algorithms.
+The framework of these algorithms is described in \algoref{algo:construct}.
+Given a tag sequence and a relation type $r$,
+the algorithm first collects all associated entities $e_1$ and $e_2$ into lists $E_1$ and $E_2$,
+then picks one $e_1$ and $e_2$ from the list by greedy strategy,
+combining a new triple ($e_1$, $r$, $e_2$),
+and removes the two entities from the corresponding list.
+The picking process runs repeatly, until no more entity pairs can be combined.
+In the following part of the section, We present \textit{random} picking algorithm,
+the \textit{$e_1$-First} and \textit{$e_2$-First} algorithm which focus on dominating entities of a triple,
+the \textit{Distance-First} and \textit{Order-First} algorithm
+leveraging distance and sequential features between the extracted entities.
+In which, Order-First was proposed by Zheng et al.~\shortcite{Zheng2017}.
+%The last one was proposed by \cite{Zheng2017}.
+
+%Given the RE tagging sequence, triple construction algorithm
+%detects tagged entities belonging to each target relation type $r$,
+%and pick the most possible combinations ($e_1$, $e_2$) from them.
+%The combination strategy is not trivial, since there may be
+%serveral $e_1$s and $e_2$s sharing the same relation type.
+%We present 4 different construction algorithms,
+%$e_1$-First, $e_2$-First, Distance-First, and Order-First.
+%%to construct relation triple from RE tag sequence.
+%The last one was proposed by \cite{Zheng2017}.
+
+
+
+
+%Given relation tag sequence, all the predicted $e_1$ and $e_2$ can be abtained
+%easily without ambiguity. There may be several $e_1$s and
+%$e_2$s which share same relation type. Triple constraction algorithm is
+%responsible to choose the most possible entity pair ($e_1$, $e_2$) under same
+%relation type.
+
+
+\begin{algorithm}%[H]
+  \small
+  \caption{Framework of Triple Construction Algorithm}
+  \label{algo:construct}
+  \SetKwInOut{Input}{input}
+  \SetKwInOut{Output}{output}
+    
+  \Input{Relation tag sequence $TS$ of one sentence}
+  \Output{Relation triples $RT$}
+  
+    \BlankLine
+    \For{each mentioned $r$}{
+      $E_1 \leftarrow$ all $e_1$ belonging to $r$ from $TS$ \;
+      $E_2 \leftarrow$ all $e_2$ belonging to $r$ from $TS$ \;
+      \While{both $E_1$ and $E_2$ are not empty}{
+        $e_1, e_2 \leftarrow$ $greedy\_picking$($E_1, E_2$) \;  
+        %$e_1 \leftarrow$ random sample an $e_1$ from $E_1$ \;
+        %$e_2 \leftarrow$ random sample an $e_2$ from $E_2$ \;
+        add ($e_1$, $r$, $e_2$) to $RT$ \;
+        remove $e_1$ from $E_1$ \;
+        remove $e_2$ from $E_2$ \;
+      }
+    }
+\end{algorithm}
+
+
+
+\subsection*{Random Construction Algorithm}
+The random strategy is regarded as the baseline of all construction algorithms.
+For each pass, the algorithm randomly picks one $e_1$ from $E_1$, and one $e_2$ from $E_2$,
+then construct the ($e_1$, $r$, $e_2$) triple.
+
+%In a sentence, for all $e_1$s and $e_2$s sharing the same relation type $r$,
+%we randomly choose an $e_1$ and an $e_2$ to construct a triple ($e_1$, $r$,
+%$e_2$). This algorithm can be treat as the baseline of all construction algorithms.
+
+
+%\begin{algorithm}%[H]
+%  \small
+%    \caption{Random}
+%    \label{algo:rand}
+%    \SetKwInOut{Input}{input}
+%    \SetKwInOut{Output}{output}
+%    
+%    \Input{Triple tag sequence $TS$ of one sentence}
+%    \Output{Relation triples $RT$}
+%  
+%    \BlankLine
+%    \For{each mentioned $r$}{
+%      $E_1 \leftarrow$ all $e_1$ belonging to $r$ from $TS$ \;
+%      $E_2 \leftarrow$ all $e_2$ belonging to $r$ from $TS$ \;
+%      \While{both $E_1$ and $E_2$ are not empty}{
+%        $e_1 \leftarrow$ random sample an $e_1$ from $E_1$ \;
+%        $e_2 \leftarrow$ random sample an $e_2$ from $E_2$ \;
+%        add ($e_1$, $r$, $e_2$) to $RT$ \;
+%        remove $e_1$ from $E_1$ \;
+%        remove $e_2$ from $E_2$ \;
+%      }
+%    }
+%\end{algorithm}
+
+
+
+\subsection*{$e_1$-First and $e_2$-First Construction Algorithms}
+%Given a relation type $r$, let $E_1$ and $E_2$ denote the
+%set of entities $e_1$ and $e_2$ to be paired, belonging to $r$.
+%As described in \algoref{algo:e1},
+$e_1$-First algorithm regards $e_1$ as the dominating entity of a triple.
+For each pass, the algorithm picks the leftmost $e_1$ from $E_1$,
+and then pick the nearest
+\footnote{The distance of two entities is defined as the number of words
+between them in the tagging sequence.}
+$e_2$ in $E_2$.
+%pairing with the nearest $e_2$ in $E_2$,
+%then remove both $e_1$ and $e_2$ from the corresponding sets.
+%The picking process runs iteratively, until no more entity pairs can be combined.
+%
+%$e_1$-First treats $e_1$ of a triple as the dominating entity. For
+%a tag sequence, $e_1$-First algorithm goes through it
+%from left to right, for each predicted $e_1$ with type $r$, find the
+%nearest $e_2$ with the same type $r$. This entity pair will be constructed as a
+%triple \{$e_1$, $r$, $e_2$\}. See Algorithm \ref{algo:e1} for details.
+%
+%\begin{algorithm}%[H]
+%  \small
+%  \caption{$e_1$-First}
+%  \label{algo:e1}
+%  \SetKwInOut{Input}{input}
+%  \SetKwInOut{Output}{output}
+%    
+%  \Input{Triple tag sequence $TS$ of one sentence}
+%  \Output{Relation triples $RT$}
+%  
+%  \BlankLine
+%  
+%  \For{each mentioned $r$}{
+%    $E_1 \leftarrow$ all $e_1$ belonging to $r$ from $TS$ \;
+%    $E_2 \leftarrow$ all $e_2$ belonging to $r$ from $TS$ \;
+%    \For{each $e_1$ in $E_1$}{
+%      find the $e_2$ in $E_2$ which is nearest to $e_1$ \;
+%      remove $e_2$ from $E_2$ \;
+%    }
+%  }
+%\end{algorithm}
+$e_2$-First algorithm is the exact opposite of $e_1$-First, 
+where the algorithm always pick the leftmost $e_2$, and pair it with the nearest $e_1$.
+%where $e_2$ of a triple is the dominating entity. For each $e_2$, it is paired with the
+%nearest $e_1$ which shares same relation type with $e_2$.
+
+\subsection*{Distance-First Construction Algorithm}
+%Similar with $e_1/e_2$-First algorithms, Distance-First algorithm
+%collects $E_1$ and $E_2$, then iteratively select entity pairs from them.
+%The main difference is that, 
+Different from previous algorithms, Distance-First algorithm treats $e_1$ and $e_2$ equally.
+For each pass, the algorithm picks the nearest ($e_1$, $e_2$) pair from $E_1 \times E_2$ combinations.
+%it always pick the nearest ($e_1$, $e_2$) pair
+%and combine them into a new relation triple.
+%Details are shown in \algoref{algo:dist}.
+
+%It goes through the relation tag sequence several times, for each pass it
+%chooses the nearest entity pair and construct a triple. Then these used entities
+%will delete before next pass.
+
+%\begin{algorithm}%[H]
+%  \small
+%  \caption{Distance-First} \label{algo:dist}
+%  \SetKwInOut{Input}{input}
+%  \SetKwInOut{Output}{output}
+%  
+%  \Input{Triple tag sequence $TS$ of one sentence}
+%  \Output{Relation triples $RT$}
+%  
+%  \BlankLine
+%  \For{each mentioned $r$}{
+%    $E_1 \leftarrow$ all $e_1$ belonging to $r$ from $TS$ \;
+%    $E_2 \leftarrow$ all $e_2$ belonging to $r$ from $TS$ \;
+%    \While{both $E_1$ and $E_2$ are not empty}{
+%      find the nearest ($e_1$, $e_2$) $\in E_1 \times E_2$ \;
+%      add ($e_1$, $r$, $e_2$) to $RT$ \;
+%      remove $e_1$ from $E_1$ \;
+%      remove $e_2$ from $E_2$ \;
+%    }
+%  }
+%\end{algorithm}
+
+\subsection*{Order-First Construction Algorithm}
+In Order-First algorithm
+\footnote{The code released by Zheng shows their algorithm concretely:
+https://github.com/zsctju/triplets-extraction},
+$e_1$ and $e_2$ are also equally treated.
+For each pass, the algorithm simply picks the leftmost $e_1$ and $e_2$ from both entity lists.
+In other words, the order of both $e_1$ and $e_2$ dominate the construction results.
+
+%The algorithm first sort $E_1$ and $E_2$ by the position of entities,
+%and simply align ($e_1$, $e_2$) pairs in sequential order.
+%From left to right, the first $e_1$ with
+%type $r$ will pair with the first encountered $e_2$ with the same type.
+%The second $e_1$ will pair with second $e_2$ with the same type and so on.
+%In other words, the order of both $e_1$s and $e_2$s dominate the construction results.
+%More details are in Algorithm \ref{algo:order}. 
+
+%\begin{algorithm}%[H]
+%  \small
+%    \caption{Order-First}
+%    \label{algo:order}
+%    \SetKwInOut{Input}{input}
+%    \SetKwInOut{Output}{output}
+%    
+%    \Input{Triple tag sequence $TS$ of one sentence}
+%    \Output{Relation triples $RT$}
+%  
+%    \BlankLine
+%    \For{each mentioned $r$}{
+%      $E_1 \leftarrow$ all $e_1$ belonging to $r$ from $TS$ \;
+%      $E_2 \leftarrow$ all $e_2$ belonging to $r$ from $TS$ \;
+%      \While{both $E_1$ and $E_2$ are not empty}{
+%        $e_1 \leftarrow$ head entity in $E_1$ \;
+%        $e_2 \leftarrow$ head entity in $E_2$ \;
+%        add ($e_1$, $r$, $e_2$) to $RT$ \;
+%        remove $e_1$ from $E_1$ \;
+%        remove $e_2$ from $E_2$ \;
+%      }
+%    }
+%\end{algorithm}
+
+
+
+

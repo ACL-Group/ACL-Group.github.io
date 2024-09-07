@@ -1,0 +1,96 @@
+\section{Approach}
+\label{sec:approach}
+We first give some preliminary definitions, then present our base model, before
+presenting our framework to incorporate implicit positive and negative feedback.
+
+\label{sec:method}
+\subsection{Preliminaries}
+In the typical session-based setting, given the prefix sequence of the session, denoted as $S_u=(n_1, n_2,...,n_t)$, 
+where $n_i$ is the article id, our goal is 
+to predict $n_{t+1}$ article that the target user $u$ is most likely to click next. 
+Following \citet{liu2018stamp}, an $N\times d_n$ 
+item embedding matrix, where $d_n$ is the embedding dimensionality and $N$ is the number of
+all candidate items, provides article $n_i$'s embedding vector 
+as $\mathbf{x}_i$. Then methods like RNN~\cite{hidasi2018recurrent}, GNN~\cite{wu2019session, pan2020star}, 
+or attention-based approaches~\cite{kang_self-attentive_2018, liu2018stamp} can be used to 
+encode the session vector $\mathbf{s}_u$ from the sequence 
+${(\mathbf{x}_1, \mathbf{x}_2, ..., \mathbf{x}_t)}$, which represents the user's history preferences.
+Meanwhile, the same item embedding matrix can be also regarded as $N$ encoded candidates $[\mathbf{x}_1, \mathbf{x}_2,.., \mathbf{x}_N]$.
+For $u$, the cosine similarity score $\hat{y_i}^u$ between the session representation and the article $i$ is calculated by the inner product of the session vector and the candidate news vector:
+\begin{equation}
+    \hat{y_i}^u = \mathbf{x}_i^T\mathbf{s}_u, 
+\end{equation}
+$\hat{y_i}^u$ is normalized by softmax to be the probability of article $i$ being clicked next in the session. 
+The cross-entropy is usually used to compute loss:
+\begin{equation}
+    \mathcal{L}_1 = - \frac{1}{|S|}\sum_{S_u \in S}\sum_{i=1}^K ( y_i^u \log(\hat{y_i}^u) + (1-y_i^u)\log(1-\hat{y_i}^u)),
+\end{equation}
+where $S$ is the whole training sessions, $y_i^u=1$ if $i$ is indeed the next-clicked articles in $S_u$ and $y_i^u=0$ otherwise.
+
+\subsection{Content-aware Recommendation (CAR)}
+In order to recommend new and emerging articles,
+our starting point is a basic content-aware recommendation model. 
+We use pre-trained word embeddings like Word2Vec to encode the content, specifically, we average the $d_c$-dimensional word vectors in news title to represent the 
+topic-oriented content of articles. Once we get the content vector $\mathbf{x_c}_i$ of 
+article $n_i$, we concatenate $\mathbf{x_c}_i$ and $\mathbf{x_n}_i$ to represent 
+the article as $\mathbf{x_{nc}}_i$. 
+To model the varying user preference to the articles in the same session, we adopt a simple attention network, using the weighted sum of the input vector sequence to encode the whole session.
+
+We define $\alpha_i$, the attention weight of $i$-th articles $n_i$ in session $S_u$ as:
+\begin{equation}
+    \alpha_i = W_0 \times \sigma (W_1 \times \mathbf{x_{nc}}_i +  b_1),
+\end{equation}
+where $W_0\in \mathbb{R}^{1 \times d_n}, W_1 \in \mathbb{R}^{d_n\times (d_n+d_c)}$ 
+are weighting parameters, $\mathbf{x_{nc}}_i$ is the article vector, 
+and $b_1\in \mathbb{R}^{d_n}$ is a bias. $\alpha_i$ will be normalized by softmax.
+
+Finally, $\mathbf{s}_u$ of session $S_u$ is defined as the weighted sum:
+\begin{equation}
+    \label{eq:final_repre}
+    \mathbf{x_s} = \sum_{i=1}^{|S_u|} \alpha_i \mathbf{x_{nc}}_i.
+\end{equation}
+
+\subsection{Utilize Positive Feedback}
+\label{sec:positive feedback}
+Our implicit positive feedback takes the form of the \textit{active time} interval that 
+a user spent on each article after clicking on it. If the user spends a short time 
+in an article, it's probably because the user is fooled by the title but actually doesn't like 
+the article~\cite{lu_quality_2019}. If the active time is not explicitly available, 
+it can be estimated by the time interval between the user's two consecutive clicks. 
+For the different and continuous active time, we bucketize them into $k$ distinct categories, 
+and each category shares the same embedding vector $\mathbf{ta}_i$, representing a level of positive feedback. We feed this vector into the attention computation as extra click-level 
+feedback. Now, $\alpha_i$ is modified to:
+\begin{equation}
+    \alpha_i = W_0 \times \sigma (W_1 \times \mathbf{x_{nc}}_i + W_2 \times \mathbf{ta}_i + b_1),
+\end{equation}
+where $W_2 \in \mathbb{R}^{d_n \times d_t}$ is projection parameters that map active time embeddings with $d_t$ dimension into another dimension space. The final session vector $\mathbf{x_s}$ still follows
+\eqnref{eq:final_repre}.
+
+\subsection{Joint Learning with Negative Feedback}
+\label{sec:negative feedback}
+The most straight-forward and widely adopted negative sampling strategy is the random sampling 
+from a non-clicked set of items, or from a global buffer with the last $N$ 
+clicks~\cite{moreira_news_2018}. 
+The major problem of randomly sampled items is that these items might be completely unrelated to 
+the user, posing too little challenge for the model to learn. 
+
+While reading news, a user scrolls up and down the news stream, 
+and the articles that are exposed to the user collectively 
+form an impression list $Imp_u$. We take unclicked articles in $Imp_u$ as more informative negative signals than other candidates.
+As we discussed before, since the impression list is not always explicitly available, 
+we assume an article is more likely to be in $Imp_u$ if it was published nearby an article that has
+been clicked by $u$.
+We aim to minimize the cosine score between $\mathbf{s}_u$ and the negative samples 
+$\mathbf{v}_i\in Ne_u$, where $Ne_u\subseteq Imp_u$ is the set of negative samples for session $S_u$, 
+and the final loss is: 
+
+\begin{equation}
+    \label{eq:loss}
+    \begin{split}
+        \mathcal{L}_2 = - \frac{1}{|S|}\sum_{S_u \in S}\sum_{i=1}^K &( y_i^u \log(\hat{y_i}^u) + (1-y_i^u)\log(1-\hat{y_i}^u) \\
+        & +  \lambda \mathbbm{1}(\mathbf{v}_i \in Ne_u) \log(\sigma(1-\mathbf{v}_i^T\mathbf{s}_u))),
+    \end{split}
+\end{equation}
+where $\mathbbm{1}(\cdot)$ returns 1 if the expression is true, $\lambda$ is 
+the weighting parameter of loss from negative articles. We jointly optimize these two losses 
+with Adam optimizer. 

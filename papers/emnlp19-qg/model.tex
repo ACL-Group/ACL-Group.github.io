@@ -1,0 +1,62 @@
+\section{Model}
+Our overall framework follows encoder-decoder style. The encoder encodes both sequential and structural information of source sentence and the key phrase. Then the attentive decoder generates a question based on this information. In this section, we first introduce the sequential encoding of source sentence and key phrase. Then different tree encoders will be proposed to extract syntactic feature. Finally a decoder with different initialization and attention mechanism will be introduced.
+
+\subsection{Sequential Encoders}
+To get the sequential information of the source sentence and key phrase, a Bidirectional GRU encoder is applied on key-phrase-tagged sentence. Our tagging method is the same as ~\cite{zhou2017neural}, which uses a binary indicator bit concatenated to the word embedding to indicate whether this word is in the key phrase span. For example, given a key phrase span $(s, e)$, $s$ and $e$ are the start and end position of the key phrase in source sentence, the tagged word embedding in source sentence will be $w_i=[e_i; \mathds{1}(s\leq i\leq e)]$. Then the hidden states of source sentence $[h_1,h_2,...,h_N]$ is obtained by applying Bidirectional GRU encoder on tagged sentence $[w_1,w_2,...,w_N]$. We use the last hidden state as the semantic representation of source sentence $h^{(s)}=h_N$. To get the semantic representation of the key phrase, we average the sentence hidden states where key phrase span covers element-wisely, $h^{(a)}=\avg([h_s,h_{s+1},...,s_e])$.
+
+\begin{figure}[t]
+\begin{minipage}[b]{0.4\linewidth}
+  \centering
+  \epsfig{figure=pic/stack.eps,width=3.5cm}
+  \centerline{(a) Stack model}\medskip
+\end{minipage}
+\hfill
+\begin{minipage}[b]{0.5\linewidth}
+  \centering
+\epsfig{figure=pic/parallel.eps,width=4cm}
+  \centerline{(c) Parallel model}\medskip
+\end{minipage}
+%
+\caption{Two different designs to incorporate structural information with sequential information.}
+\label{fig:architecture}
+\end{figure}
+
+% Please add the following required packages to your document preamble:
+% \usepackage{booktabs}
+% \usepackage[table,xcdraw]{xcolor}
+% If you use beamer only pass "xcolor=table" option, i.e. \documentclass[xcolor=table]{beamer}
+
+\subsection{Tree Encoders}
+\label{sec:treeEnc}
+We design two models to make use of the sequential information combined with structural information, as shown in Figure ~\ref{fig:architecture}. The first one is stack model which means our tree encoder uses the information flow from the sequential encoder and the other one is parallel model which means our tree encoder is independent to sequential encoder.
+
+There are two tree encoder models, both of them encode hierarchical structure information recursively in a bottom-up fashion. The difference is the design of tree node: \\
+1. Fully-Connected Cell
+\begin{eqnarray}
+v = v_t + x_{t-1} + f(W \cdot \merge_{c \in C}(v_c) + b)
+\end{eqnarray}
+2. Modified-GRU Cell
+\begin{eqnarray}
+r &=& \sigma(W_r \cdot [\merge_{c \in C}(v_c);v_t; x_{t-1}] + b_r) \nonumber\\
+z &=& \sigma(W_z \cdot [\merge_{c \in C}(v_c);v_t; x_{t-1}] + b_z) \nonumber \\
+n &=& \tanh (W_n \cdot [r \odot \merge_{c \in C}(v_c); x_{t-1};v_t]) \nonumber \\
+v  &=& (1-z) \odot n + z \odot \merge_{c \in C}(v_c)
+\end{eqnarray}
+Where $f$ is the ReLU function, $x_{t-1}$ is the tracking memory~\cite{bowman2016fast} used to capture the tree traversal information, which is obtained through another GRU model by feeding previous tree node in post-order traverse. $v_c$ is the encoding of child nodes. $v_t$ is the phrasal category in constituency parse tree. The $\merge$ function could be the element-wise maximum function, the summation or the average function of all children nodes. For stacking model, we use sequential hidden states $[h_1,h_2,...,h_N]$ to initialize the leaf nodes and for parallel model, we use tagged word embedding $[w_1,w_2,...,w_N]$. Finally, we use $v^{(t)}$ to represent the encoding of root nodes, and $[v_1,v_2,...,v_M]$ to represent non-leaf node encodings or tree hidden states.
+
+\subsection{Attentive Decoder with Copy Mechanism}
+The decoder is a unidirectional GRU model with attention~\cite{bahdanau2014neural} and copy mechanism~\cite{gu2016incorporating,gulcehre2016pointing}.
+
+{\bf Attention Mechanism} allows the decoder to focus on different part in source sentence at each time step. In stack model, the context vector $c_t$ is calculated with tree node attention memory $[v_1,v_2,...,v_M]$. And in parallel model, we have two context vectors, sequence context vector $c^{(s)}_t$ and tree context vector $c^{(t)}_t$ which are calculated with tree node attention memory $[v_1,v_2,...,v_M]$ and sequential attention memory $[h_1,h_2,...,h_N]$ respectively, and then the final context is the addition of these two context vectors $c_t=c^{(s)}_t+c^{(t)}_t$.
+
+{\bf Copy Mechanism} allows the decoder to copy words from source sentence which is a common process when asking questions. The idea behind copy mechanism is to integrate the attention score $P_{att}$ into the vocabulary distribution $P_{vocab}$:
+\begin{eqnarray}
+P(w) = \alpha \cdot P_{vocab}(w) + (1 - \alpha) \cdot P_{att}(w)
+\end{eqnarray}
+and $\alpha$ controls the balance of generating a word from vocabulary or copying from the source sentence. And the $\alpha$ is calculated by:
+\begin{eqnarray}
+\alpha = \sigma(U_c\cdot c_t+U_s\cdot s_t+U_q\cdot q_t + b)
+\end{eqnarray}
+Where $c_t$ is the context vector, $s_t$ is the decoder hidden state and $q_t$ is the input word to decoder. In both two models, the copy mechanism is calculated with sequential attention memory and sequential context vector only, since the idea is to copy words from sequence source.
+
+{\bf Hidden State Initialization} varies in two models. For stack model, the hidden state is initialized by the concatenation of tree representation and answer representation $s_0=f([h^{(t)}; h^{(a)}])$. For parallel model, the sentence representation $h^{(s)}$ is also involved $s_0=f([h^{(t)}; h^{(a)}; h^{(s)}])$. Here $f(\cdot)$ is a fully connected layer.

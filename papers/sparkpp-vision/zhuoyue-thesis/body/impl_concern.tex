@@ -1,0 +1,44 @@
+\section{Inference on Apache Spark/GraphX}
+When a domain user has crafted a new model $M$
+and intends to program 
+the corresponding VMP inference code on Apache Spark,
+one natural choice is to do that through GraphX, the distributed graph processing framework on top of Spark.
+Nevertheless, the user still has to go through a number of programming and system concerns,
+which we believe, should better be handled by a framework like InferSpark instead.
+
+First, 
+the Pregel programming abstraction of GraphX
+restricts that only updated vertices in the last iteration can send message in
+the current iteration.
+So for VMP,  
+when $\phi_1$ and $\phi_2$ (\figref{fig:two_coins_mpg})
+are selected to be updated
+in the last iteration (multiple $\phi$'s can be updated in the same iteration when parallelizing VMP), 
+$x_1$ and $x_2$ 
+cannot be updated in the current iteration unfortunately 
+because they require messages from $z_1$ and $z_2$, which were not selected and updated in the last iteration.
+Working around this 
+through the use of primitive  \texttt{aggregateMessages} and \texttt{joinVertices} API
+ would not make life easier.
+ Specifically, the user would have to 
+ handle some low level details such as determining which intermediate RDDs 
+ to insert to or evict from the cache.
+ 
+
+Second, the user has to determine the best timing to make checkpoint so as to
+avoid performance degradation brought by the long lineage created by many iterations.
+
+
+Last but not the least, the user may have to customize a partition strategy for
+each model being evaluated. 
+GraphX built-in partitioning strategies are general and thus do not work well with message passing graphs,
+which usually 
+possess (i) complete bipartite components between the posteriors and the  observed variables
+(e.g., $\phi_1$, $\phi_2$ and $x_1, \ldots, x_N$ in \figref{fig:two_coins_mpg}), and
+(ii) large repetition of edge pairs induced from the plate (e.g.,  $N$ pairs of $\langle z_i, x_i\rangle$ in \figref{fig:two_coins_mpg}).
+GraphX adopts a vertex-cut approach for graph partitioning
+and a vertex would be replicated to multiple partitions if it lies on the cut.
+So, imagine if the partition cuts on $x$'s in \figref{fig:two_coins_mpg}, 
+that would incur large replication overhead as well as shuffle overhead.
+Consequently, that really requires the domain users 
+to have excellent knowledge on GraphX in order to carry out efficient inference on Spark. 

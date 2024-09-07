@@ -1,0 +1,85 @@
+\section{Approach}
+\label{sec:approach}
+
+We employ a data-driven approach to uncover the canine phonetic alphabet using data sourced from YouTube. After denoising, canine vocalization detection, self-supervised audio representation, and clustering, we obtained transcriptions for 31,294 dog vocalization clips represented by a sequence of phones as defined below. We then set a dynamic threshold to delineate the boundaries of words, as defined below, within each audio clip based on the natural pauses made by the canines. 
+
+The words are expected to exhibit both acoustic completeness and semantic stability. Referring to word embedding techniques, we assume that words with similar contexts within the vocalization clips share the same meaning. If two words differ by only one phone and hold the same meaning, we assume they can be merged to represent the same word. After merging all detected identical phones, we continue to filter the word list using minimal pairs to identify phoneme candidates, as defined below, until all words consist of valid phonemes that have minimal pairs. Finally, we have a canine phonetic alphabet and a list words hold stable contexts.
+
+\subsection{Definitions}
+In this paper, for the ease of discussion later, we define ``phone'', ``phoneme'', ``word'', and ``sentence'' within the context of the canine vocal communication system.
+
+\textbf{Phone}: A phone is a minimum sound unit from a dog vocalization, characterized by
+unique acoustic features. Because the dog vocalization audio clip may contain ambient noises, some of the phones can be false and we call them \textit{noise phones}.
+
+\textbf{Phoneme}: A phoneme is a distinct sound unit that can distinguish one dog word
+from another. All phonemes are phones, but only a subset of phones are phonemes. 
+
+\textbf{Word}: A (dog) word is one or more continuous dog barks bounded by short,
+low-energy pauses (<0.5 sec). A word has a stable meaning and is used in some fixed
+context. 
+
+\textbf{Sentence}: A sentence is a sequence of words, bounded by long pauses (>0.5 sec). 
+
+\subsection{Transcription of Dog Barks}
+
+To transcribe the dog barks, we applied a similar methodology as 
+\citet{huang2023transcribing}.  First, we used the fine-tuned PANNs~\citep{kong2020panns} 
+and AudioSep~\citep{liu2023separate} to remove as much noise as possible from the video data. This allows us to obtain cleaner and higher quality dog barking clips.
+We then used HuBERT~\citep{hsu2021hubert}, a self-supervised speech representation learning method, to transcribe these pure dog barking clips~\cite{li2024phonetic}.
+After this process, each dog vocal clips will be translated into a sequence of phones
+(in terms of integer numbers). Due to the noisy nature of YouTube video, the transcripts
+always contain a certain amount of noise phones, or sound units which are not actually vocalized by the dogs.
+
+\subsection{Word Candidates Segmentation}
+
+To obtain the preliminary version of word candidates, we begin with ensuring acoustic completeness. We set a dynamic threshold for the energy level of each audio clip (sentence) by multiplying a coefficient with the average energy of the sentence. We manually test the performance of each coefficient and ultimately achieve the ``parsed'' sentence as a sequence of words.
+
+\subsection{Minimal Pair of Phone}
+
+\textbf{Minimal pairs} are pairs of words that differ by only a single phoneme, which can change the meaning of the words~\citep{ladefoged2006course}. This method is crucial in phonological analysis for identifying and distinguishing phonemes within a particular language. To identify the phonemes of canines, we iteratively apply the Minimal Pair method to our canine transcriptions. We retain only the words that contain valid phones with minimal pairs and continue applying the Minimal Pair method to eliminate phones that do not have corresponding pairs, the specific algorithm of this mutual filtering is shown in \algref{alg:ifa}. The words obtained after word segmentation are considered our initial word list. 
+
+However, since the exact meaning of each word is unknown, the pairs we obtained are all minimal pair candidates. We utilize word embedding technology, which suggests that more similar words share more similar phonetic environments. We examine the phonetic environments of each minimal pair candidate using three different methods which are phonemes, words and N-grams to determine the environment of each word and calculate the KL divergence between each minimal pair. We calculate the number of instances occurring before and after each word and compute the KL divergence of the context distribution between words. A lower KL divergence of the phonetic environment indicates a greater similarity in the meanings of these words, implying they are not minimal pairs. If the words are similar enough, surpassing a threshold such as the 5th percentile, we merge these phonemes, update the transcriptions, and iteratively repeat this procedure until the phoneme list and word list stabilize. The specific algorithm for this phoneme-finding process is detailed in \algref{alg:pfa}.
+
+Finally, through iteratively refining the phoneme list and word list, and merging phonemes with identical meanings, this algorithm ultimately resulted in the canine phonetic alphabet.
+
+\begin{algorithm}[tb]
+\caption{Mutual Filtering Algorithm}
+\label{alg:ifa}
+\textbf{Input}: $\var{words}$\\
+\textbf{Parameter}: Optional list of parameters\\
+\textbf{Output}: $\var{words}$
+\begin{algorithmic}[1] %[1] enables line numbers
+\STATE Let $\var{phonemes} = \textproc{get\_phoneme}(\var{words})$.
+\WHILE {$\textproc{is\_changed}(\var{phonemes})$}
+\STATE $\var{min\_pairs} = \textproc{find\_minimal\_pairs}(\var{words})$.
+\STATE $\var{phonemes} = \textproc{get\_phonemes\_mp}(\var{min\_pairs})$.
+\STATE $\var{words} = \textproc{get\_valid\_words(\var{words}, \var{phonemes})}$.
+\ENDWHILE
+\STATE \textbf{return} \var{words}
+\end{algorithmic}
+\end{algorithm}
+
+
+\begin{algorithm}[tb]
+\caption{Phoneme Finding Algorithm}
+\label{alg:pfa}
+\textbf{Input}: $\var{trans}$\\
+\textbf{Parameter}: Optional list of parameters\\
+\textbf{Output}: $\var{phonemes}$, $\var{words}$
+\begin{algorithmic}[1] %[1] enables line numbers
+\STATE Let $\var{words} = \textproc{get\_word}(\var{trans})$.
+\STATE Let $\var{phonemes} = \textproc{get\_phoneme}(\var{words})$.
+\WHILE {$\textproc{is\_changed}(\var{phonemes})$}
+\STATE $\var{words} = \textproc{mutual\_filter}(\var{words})$.
+\STATE $\var{context\_kl} = \textproc{get\_context\_kl}(\var{words}, \var{trans})$.
+\STATE $\var{trans} = \textproc{merge\_phones\_update\_trans()}$.
+\STATE $\var{words} = \textproc{get\_word}(\var{trans})$.
+\STATE $\var{phonemes} = \textproc{get\_phoneme}(\var{words})$.
+\ENDWHILE
+\STATE $\var{words} = \textproc{mutual\_filter}(\var{words})$.
+\STATE Let $\var{phonemes} = \textproc{get\_phoneme}(\var{words})$.
+\STATE \textbf{return} \var{phonemes}, \var{words}
+\end{algorithmic}
+\end{algorithm}
+
+

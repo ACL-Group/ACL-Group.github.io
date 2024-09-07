@@ -1,0 +1,114 @@
+\section{Methodology}
+We first provide background on pretrained masked language models and the formulation of cloze prompt for querying these models, then we proceed to 
+elaborate our proposed pruning procedure.
+\subsection{Pretrained Masked Language Models}
+\label{sec:PLMs}
+%Pretrained masked language models have shown to be effective at extracting contextualized representations. 
+Given a sequence of tokens $\bm{w}=[w_1, w_2, ..., w_n]$ with length $n$, the model outputs a sequence of hidden states $\bm{h}=[h_1, h_2, ..., h_n]$ corresponding to each token. In standard MLM pretraining, the corresponding representation $h_{i}$ is fed into a  MLM head for computing the reconstruction probability $P(w_{i}|\bm{w}_{-i})$ of the masked $i$-th token $w_{i}$, where 
+$\bm{w}_{-i}$ are all other unmasked tokens. We denote the pretrained masked language model 
+$\mathcal{LM}$ with parameter $\theta$ as $\mathcal{LM}_{\theta}$ in following sections.
+\subsection{Knowledge Probing with Cloze Prompts}
+%While it is infeasible to probe PLMs with structured query defined by the KB schema and query language, 
+The natural language cloze prompts, such as ``\textit{you are likely to find a basement in below your [MASK]}'', offer a straightforward mean
+of querying pretrained masked language models that conform to their interfaces.
+
+We follow the formulation of \citet{Petroni2020}, where relational knowledge is in the form of triplets \triple{subj, r, obj}. 
+Here $subj$ refers to the subject, $obj$ refers to the object, 
+and $r$ indicates their corresponding relation. To query a model 
+$\mathcal{LM}_{\theta}$, each relation $r$ is associated with a set of 
+cloze template prompts $T_r$, each of which consists of a sequence of 
+tokens, two of which are place-holders for $subj$ and $obj$~(e.g., ``\textit{you are likely to find $[subj]$ in $[obj]$}''). We can
+check the existence of the knowledge in $\mathcal{LM}_\theta$ by 
+substituting the $[subj]$ place-holder with the 
+real subject and asking the model to predict the missing object:
+\begin{align}\nonumber
+\hat{obj}=\arg \max_{w\in \mathcal{V}}P_{\mathcal{LM}_\theta}([obj]=w|subj, T_r)
+\end{align}
+where $\mathcal{V}$ is the vocabulary of $\mathcal{LM}_\theta$. We say that $\mathcal{LM}_\theta$ 
+carries the knowledge if $\hat{obj}=obj$.
+
+\label{sec:prompts}
+\subsection{Estimating Representation Space by Weights Pruning}
+\label{sec:pruning}
+Prior works~\citep{disen} attain disentangled subspaces~(e.g., style and content space in style transfer) by applying parametrized transformation function upon the original space. It induces additional parameters and cannot faithfully reveal the relational knowledge originally present in PLMs. For this reason, we restrict subspaces to have correspondence with subnetworks of $\mathcal{LM}_{\theta}$. A subnetwork $\mathcal{LM}_{\theta_r}$ of relation $r$  is obtained by setting some dimensions of $\theta$ to zero. 
+
+The next question is how to identify $\mathcal{LM}_{\theta_r}$ such that the representation space it corresponds to inherits knowledge from MLM data expressing relation $r$. Based on previous evidence of positive correlation between downstream performance and task similarity with MLM data, we propose to estimate representation space for relation $r$ by searching $\mathcal{LM}_{\theta_r}$ 
+that is maximally predictive of prompts of relation $r$. Specifically, for each weight matrix $W^l$ from the set of all weight matrices $\bm{W}^l$ in the $l$-th transformer layer, we assign 
+learnable pruning mask generator $G_r^l$ 
+that is element-wise initialized from a prior distribution $\phi(\cdot)$ .
+Each entry $g_{i,j}^l\in G_r^l$ is a real-valued scalar that determines whether its corresponding weight $w_{i,j}^l\in W^l$ should be pruned. we explore two different schemes of converting $G_r^l$ into a masking matrix $M_r^l$ from a probabilistic view.
+%\KZ{Are these two schemes both novel in this paper?} 
+%\KZ{Not very sure what's the purpose of having $G_r^l$ when you have $M_r^l$, one is the mask generator and one
+%is the mask matrix. Can we avoid so many notations?}
+%\KZ{What are the s behind these
+%two types of pruning? Why aren't you exploring other types?
+%This is important particularly when the results of stochastic is not good.
+%People might wonder what's point of introducing it in the first place?}
+
+\subsubsection{Stochastic Pruning}
+\label{sec:stochastic}
+The first variant is to establish a probabilistic formulation for determining the importance of individual weights. Formally, $g_{i,j}^l$ is taken as input to a sigmoid function for parametrizing a Bernoulli distribution $B(\sigma(g_{i,j}^l))$, from which a binary masking random variable $m_{i,j}^l$ is sampled:
+\begin{align}
+	m_{i,j}^l\sim B(\sigma(g_{i,j}^l))
+	\label{eq:bernoulli}
+\end{align}
+where $m_{i,j}^l\in M_r^l$. The resulting masking matrix $M_{r}^{l}$ 
+can then be used to select weights within original linear layer $W^l$ 
+by Hadamard product:
+\begin{align}
+	W_r^l = W^l \odot M_r^l
+	\label{eq:mask}
+\end{align}
+Due to the non-differentiability introduced by sampling, the gradient w.r.t. loss function~(described in \secref{sec:training}) cannot be back-propagated to $g_{i,j}^l$. As a remedy, we use the re-parametrization 
+technique~\citep{Li2018} to approximate $m_{i,j}^l$ with another 
+differentialble variable $\tilde{m}_{i,j}^l$:
+\begin{align}
+	\tilde{m}_{i,j}^l=\sigma(\frac{g_{i,j}^l+\log{U}-\log{(1-U)}}{\tau})
+\end{align}
+where $U\sim Uniform(0,1)$ and $\tau$ is a small positive temperature parameter. As $\tau$ approaches zero, $\tilde{m}_{i,j}^l$ will match sampled $m_{i,j}^l$ more accurately~(detailed proof can be found in Appendix A). 
+
+Consequently, \eqnref{eq:mask} becomes:
+\begin{align}
+	W_r^l = W^l \odot \tilde{M}_r^l
+	\label{eq:soft}
+\end{align}
+\subsubsection{Deterministic Pruning}
+\label{sec:deterministic}
+While our first probabilistic pruning formulation considers flexible weights combination, the second proposed variant utilizes a hard thresholding function to directly generate the masking matrix.
+
+Let $t$ denotes the predefined thresholding hyperparameter ranging from 0 to 1, then we have:
+\begin{equation}
+\label{eq:hard}
+\hat{m}_{i,j}^l=\left\{
+\begin{aligned}
+1 & , & \sigma(g_{i,j}^l)\ge t, \\
+0 & , & otherwise.
+\end{aligned}
+\right.
+\end{equation}
+where $\sigma$ is the sigmoid function. Similar to \secref{sec:stochastic}, the resulting binary masking matrix $\hat{M}_r^l$ is then used to select weights relevant to relation $r$ by Hadamard product:
+\begin{align}
+	\label{eq:deterministic}
+	W_r^l = W^l \odot \hat{M}_r^l
+\end{align}
+Note that the hard thresholding operation in \eqnref{eq:hard} also blocks the gradient propagation to $g_{i,j}^l$. Here we employ the Straight-Through gradient estimator~\citep{DBLP:journals/corr/BengioLC13,NIPS2016_d8330f85,zhao2020} and use $\frac{\partial \mathcal{L}_r}{\partial \hat{m}_{i,j}^l}$ as a proxy of $\frac{\partial \mathcal{L}_r}{\partial g_{i,j}^l}$.  We elaborate on the loss function $\mathcal{L}_r$ w.r.t relation $r$ in the next section.
+
+%\KZ{My understanding is that $\mathcal{LM}$ corresponds to $W_l$, while $\mathcal{LM}_{\theta_r}$ corresponds to
+%$W_r^l)$. But this is not explitly stated. Particularly when you show the equation for computing $\mathcal{L}_r$,
+%you used $\mathcal{LM}_{\theta_r}$ and not $W_r^l$, which is a bit confusing.}
+
+\subsubsection{Training and Inference}
+\label{sec:training}
+The resultant subnetwork $\mathcal{LM}_{\theta_r}$ is expected to behave like a specialized neural knowledge base. That is, given a prompt requiring knowledge about relation $r$, $\mathcal{LM}_{\theta_r}$ should be able to fill in the missing object more accurately than $\mathcal{LM}_{\theta}$.
+
+To this end, the learning objective for pruning mask generator 
+$\{\bm{G}_r^l\}_{l_b \leq l \leq l_t}$, where $l_b$ and $l_t$ indicate 
+the range of transformer layers, is to find the subnetwork 
+$\mathcal{LM}_{\theta_r}$ that minimizes the following objective:
+\begin{align}\nonumber
+	\mathcal{L}_r=-\mathbb{E}_{(subj, T_r, obj)\sim D_r}[\log{P_{\mathcal{LM}_{\theta_r}}(obj|subj, T_r)}]
+	\label{eq:objective}
+\end{align}
+where $D_r$ is the collection of prompts under relation $r$. The training procedure is conducted for each relation $r\in \mathcal{R}$ of interest. Finally, we obtain a set of trained $\{\bm{G}_r\}_{r\in \mathcal{R}}$ for the designated pretrained model $\mathcal{LM}$.
+
+During inference, for deterministic pruning, $M_r$ is obtained from $G_r$ by \eqnref{eq:hard}. For stochastic pruning, $M_r$ is obtained by taking the expectation value~(i.e., $\sigma(G_r)$) of Bernoulli variables.

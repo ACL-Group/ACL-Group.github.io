@@ -1,0 +1,51 @@
+# Reviewer 1
+Response to "In my opinion, the loss ... related to the rank of the matrix":
+    We agree that the loss of information is related to the singular values. However, we would like to emphasize that the matrix rank determines the number of singular values. Given a target rank k, the proportion of the sum of top-k singular values of a low-rank matrix is much larger than the proportion of the sum of top-k singular values of a high-rank matrix. 
+To illustrate this empirically, the right part of Figure 4 shows the results of factorizing from full rank (768 for BERT) and low rank (~400 for first-order pruned BERT) to rank-100/80/60/40. 
+As shown by the red and blue bars, factorizing from a low-rank model significantly reduces the loss of information compared to factorizing from a high-rank model.
+
+Response to "why not use SVD in step 1 ... much lower rank?":
+    The gray lines in Figure 2 show the results of first applying SVD upon a normally fine-tuned BERT, decreasing the parameters down to 0.7/0.5/0.25, and then retraining the factorized model until convergence. The purpose of this experiment is to demonstrate the inferior performance of matrix factorization on language model compression when the compression ratio is large.
+Among the three factorization targets (fine-tuned, zero-order pruned, and first-order pruned), the first-order pruned model exhibits clear shrinkage of rank while preserving the most task accuracy. This is the fundamental motivation behind the proposed LPAF framework.
+
+
+# Reviewer 2
+Response to "what matrices are being factorized":
+    We apologize for the missing details. We factorized all linear transformation modules in the MHSA and FFN, which included four 768x768 weight matrices in the multi-head self-attention layer and two 768x3072 weight matrices in the feed-forward layer. 
+Instead of setting k for each matrix individually, we used the same k value for all weight matrices. We selected k such that the percentage of remaining parameters was approximately {0.7, 0.5, 0.25, 0.1}.
+
+Response to "unstructured pruning isn't properly described":
+    We would like to clarify that the unstructured pruning techniques used in our paper were well-estimated without any special designs. Specifically, we implemented first-order UP based on the open-sourced implementation of PLATON [1]. 
+In our preliminary study, we found that first-order UP can produce models with relatively low rank compared to zero-order UP and fine-tuning. For a highly sparse matrix, the low-rankness must mainly come from a large number of full-zero rows/columns, as verified in Figure 3. 
+This phenomenon is consistent with recent findings that task-specific adaptation of language models can occur in a low-dimensional space [2].
+
+Response to "constraint on the S matrix.":
+    We apologize for the missing details. The importance score S is indeed a non-negative matrix, with each entry being the absolute value of the gradient-weight product aggregated using an exponential moving average over all time steps
+
+Response to "implicitly assume low row-wise variance in S":
+    We take row-wise mean of S for two reasons: (1) when each entry has its own weight, the optimization problem represented by Eq 7 and Eq 8 does not 
+has an analytical solution; (2) because the sparsity pattern exhibits a row-wise structure, the importance scores of entries in full-zero rows are all below a certain threshold, while scores for entries in preserved rows are all above a certain threshold. 
+Though the row-wise variance is not guaranteed to be low, the difference of importance between pruned and unpruned rows can be well captured after taking the average.
+
+References:
+[1]PLATON: Pruning Large Transformer Models with Upper Confidence Bound of Weight Importance. ICML 2022.
+[2]Intrinsic Dimensionality Explains the Effectiveness of Language Model Fine-Tuning. ACL 2021.
+
+
+# Reviewer 3
+Response to Question A:
+   The term "instability" we used in line 399 might be inappropriate given that it is often related to some negative effects. In our case, mixed-rank fine-tuning consistently improved performance over vanilla fine-tuning, as shown in Table 6, even without sampling twice. 
+We will revise it to more accurately reflect our findings and avoid any potential confusion.
+
+Response to Question B:
+    For extremely large language models (LLMs) such as OPT/LLaLM, it is common practice to perform post-training compression, like quantization, and then use that compressed model for several tasks. However, our main focus is on task-specific compression of medium-to-small LMs that are more affordable for most users.
+Although our proposed method, LPAF, incurs roughly 1.4x the memory and 1.3x the training time compared to fine-tuning, we believe that it is worthwhile because the model only needs to be compressed once and can then be deployed wherever it is needed. This can save time and resources in the long run, especially for users who require a compressed LM for a specific task.
+
+Response to Question C:
+    We used t-test as the statistical test.
+
+Response to Question D:
+    The method mentioned by the reviewer focuses on improving SVD itself by incorporating Fisher Information, whereas our primary contribution is focused on making the factorization target of SVD more compressible through the use of first-order UP.
+Unfortunately, as this method has not been open-sourced, we cannot compare our results with it under various compression ratios. The paper only reports results under a 50% compression ratio, which are shown in the table below:
+| Method | RTE  | CoLA | MRPC | SST-2| QNLI | MNLI |  QQP |
+| FWSVD  |  -   | 49.4 | 86.8 | 91.2 | 89.5 | 83.0 | 91.4 |

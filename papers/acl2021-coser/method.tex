@@ -1,0 +1,175 @@
+\section{Methodology}
+% In this section, we first formalize the commonsense generation task in a commonsense-awared EBM setting.
+% Then we introduce the key ideas and methods\footnote{We leave detail derivation and prove in Appendix} about how we construct and implement $\mathcal{COSER}$. An overview
+% of the training stages is shown in Figure ~\ref{fig:overview}.
+
+%\subsection{Problem Formulation}
+
+\noindent \textbf{Problem Formulation} ~~Given two observations $O_1$ and $O_2$ happenning at $t_1$ and $t_2$, where $t_2 > t_1$,
+the task is to generate a valid hypothesis $\bm{x} = (x_1, x_2, ..., x_M)$ that can explain these two observations. 
+Our ultimate objective is to find a language model $P$ (i.e., a distribution) over the benchmark corpus $\mathbb{X}$ s.t.:
+
+\begin{equation}\label{setting}
+    \small
+    \hat{\bm{x}} = \arg\max_{\bm{x}}P(\bm{x}|O_1, O_2)
+\end{equation}
+Energy-Based Model(EBM)~\citep{hintonebm,LeCun06atutorial,DBLP:conf/iclr/DengBOSR20,dpg} is a learning framework
+that provides a flexible and rich mechanism for specifying model properties. We represent the desired
+optimal model $P$ as an EBM  in exponential family form to take the coherency and consistency of $\bm{x}$ into considertaion.
+
+\begin{equation}
+    \small
+    \hat{P}(\bm{x}) = a(\bm{x})e^{\bm{\lambda}\cdot\bm{\phi(\bm{x})}}
+\end{equation}
+where $a(\cdot)$ is the initial generation model. We denote by 
+$\phi(\bm{x}) \in [0, 1]$ as the $\mathcal{ART}$ \textit{score}, a real function that scores the 
+consistency and coherency of the generated text $x$ in $\mathcal{ART}$ challenges. % \JQ{The $\mathcal{ART}$ \textit{score} is denoted as $\phi(\bm{x}) \in [0, 1]$, a real function that scores the consistency and coherency of the generated text $x$.} 
+The higher $\phi(\bm{x})$ is, the better $\bm{x}$ fits 
+the given context. Supposed that the desired expectation of the $\mathcal{ART}$ \textit{score} is $\bar{\bm{\mu}}$, then $\bm{\lambda}$
+is the parameter vector s.t. $\mathbb{E}_{\bm{x} \sim p} \phi(\bm{x}) \simeq \bar{\mu}$. % \JQ{make sure this equation is correct} Under this setting,
+the EBM $\hat{P}$ defines the desired normalized distribution $P(\bm{x}) = \hat{P}(\bm{x}) / Z$, where
+$Z = \sum_{\bm{x}}P(\bm{x})$ is the partition function of $P$.
+% \JQ{Maybe introduce and highlight the key components of EMB first and they tell what the key components mean in our task is more clear?}
+% Intuitively, by Equation~\ref{mu}, if we sample a large number of $x$ from the desired distribution $p(x)$, 
+% the expectation of the commonsense score $\mathbb{E}_{x \sim p}\phi(x)$ should be close to $\bar{\bm{\mu}}$. 
+% In this EBM commonsense-awared setting, our ultimate target is to find the desired autoregressive language model
+% $p(x)$ to replace the ordinary language model $\hat{P}$ in Equation~\ref{setting}.
+
+\noindent \textbf{Initial Model Training} ~~For generation, we fine-tune and compare GPT2~\citep{gpt2} 
+and BART~\citep{bart} on $\alpha$\textit{NLG} as the initial model. Formally, we concatenate the 
+observations and golden hypothesis by the $[SEP]$ token as 
+$(o^1_1, ...,o^1_m, o^2_1, ..., o^2_n, [SEP], x_1, ..., x_M)$. The training
+object is the commonly-used cross entropy loss $\mathcal{L} = -\sum_{t=1}^{M}\log P(x_t|\bm{s}, x_{<t})$.
+
+For the $\mathcal{ART}$ \textit{score}, we fine-tune and compare BERT~\citep{bert},
+RoBERTa~\citep{roberta} on the $\alpha$\textit{NLI} as scoring model.
+We add a linear layer on the $[CLS]$ token to project the hidden state into a single real number.
+When inferencing, we use a sigmoid layer to regularize the real number into a score in $[0, 1]$.
+
+% \begin{equation}\label{cs}
+%     \phi(\bm{x}) = sigmoid(h(\bm{x}))
+% \end{equation}
+
+\noindent\textbf{Energy-Based Model Training}
+~~Besides the $\mathcal{ART}$ \textit{score} model, we need to find the parameter vector $\bm{\lambda}$. 
+Since we cannot directly sample $\bm{x}$ from $P(\bm{x})$, We follow ~\citet{dpg} and use
+Self Normalized Importance Sampling(SNIS)~\citep{DBLP:journals/corr/KimB16, mcbook,parshakova-etal-2019-global}
+to estimate $\bar{\bm{\mu}}$ by sampling a large number $\mathcal{N}$ of sequences $\bm{x}_1, ..., \bm{x}_i, ..., \bm{x}_{\mathcal{N}}$ 
+from the initial model $a$: 
+
+% The \textit{importance weights} of each sample $\bm{x}_i$ is defined as
+% \begin{equation}
+% w_i(\bm{\lambda}) = \frac{P(\bm{x}_i)}{a(\bm{x}_i)} = e^{\bm{\lambda}\cdot \bm{\phi(\bm{x}_i)}}
+% \end{equation}
+
+% Then we can approximate $\bar{\bm{\mu}}$ w.r.t. $\bm{\lambda}$ as:
+
+\begin{equation}\label{apmu}
+    \small
+    \hat{\bm{\mu}}(\bm{\lambda}) = \frac{\sum_{i=1}^{\mathcal{N}}w_i({\bm{\lambda}})\phi(x_i)}{\sum_{i=1}^{\mathcal{N}}w_i(\bm{\lambda})}
+\end{equation}
+
+where $w_i(\bm{\lambda}) = \frac{P(\bm{x}_i)}{a(\bm{x}_i)} = e^{\bm{\lambda}\cdot \bm{\phi(\bm{x}_i)}}$ is the \textit{importance weights}.
+Finally we solve in $\bm{\lambda}$ by minimizing the L2-norm $||\bar{\bm{\mu}} - \hat{\bm{\mu}}(\bm{\lambda})||_2^2$ using
+Adam~\citep{adam} optimizer until the L2-norm less than a tolerant value $\tau$. 
+% The whole procedure is shown in Algorithm~\ref{ebm-training}.
+
+% \begin{algorithm}[t]
+% \caption{Energy-Based Model Training}
+% \label{ebm-training}
+% \begin{algorithmic}[1]
+% \REQUIRE scoring model $\phi(x)$, corpus $\mathbb{X}$, number of sample $\mathcal{N}$, initial model $a$, tolerant value $\tau$, $\bm{\lambda}$
+
+% \STATE generated corpus $\mathcal{X} \leftarrow \emptyset$
+% \FOR{$i=1$ to $\mathcal{N}$}
+%     \STATE sample an input stem $s_i$ from $\mathbb{X}$
+%     \STATE generate sequence $\bm{x_i}$ from $a$ given $s_i$
+%     \STATE $\mathcal{X} \leftarrow \mathcal{X} \bigcup x_i$
+% \ENDFOR
+
+% \WHILE{$||\bar{\bm{\mu}} - \hat{\bm{\mu}}(\bm{\lambda})||_2^2 > \tau$}
+%     \STATE compute $\hat{\bm{\mu(\bm{\lambda})}}$ on $\mathcal{X}$ according to Eq~\ref{apmu}
+%     \STATE update $\bm{\lambda}$ by $\nabla_{\bm{\lambda}}||\bar{\bm{\mu}} - \hat{\bm{\mu}}(\bm{\lambda})||_2^2$ using Adam
+% \ENDWHILE
+
+% \ENSURE the parameter vector $\bm{\lambda}$
+% \end{algorithmic}
+% \end{algorithm}
+
+\noindent\textbf{Desired Optimal Model Training}~~We apply the KL-Adaptive Distributional Policy Gradient(DPG) algorithm~\citep{parshakova-etal-2019-global, 
+dpg} to reach the optmial model $P$. The KL-Adaptive DPG is a reinforcement learning algorithm whose objective
+is to obtain an autoregressive policy $\pi_\theta$ that approximates $P$ by minimizing the cross entropy
+between $P$ and $\pi_\theta$:
+
+\begin{equation}\label{ceppi}
+    \small
+    CE(p, \pi_\theta) = -\sum_{\bm{x}}p(\bm{x})\log \pi_\theta
+\end{equation}
+
+Basically, we start from the EBM $\hat{P}$ and a proxy language model $q$ to $P$. We initialize $q$ by the 
+fine-tuned model $a$, which we can directly sample from. 
+% Then for the objective in Equation~\ref{ceppi}, we can update model parameters $\theta$ by:
+% \begin{equation}\label{nabla}
+%     %\begin{aligned}
+%     % \nabla_\theta CE(p, \pi_\theta) &= -\nabla_\theta\mathbb{E}_{x\sim p} p(x)\log \pi_\theta(x) \\
+%     % &= -\mathbb{E}_{x \sim q}\frac{p(x)}{q(x)}\nabla_\theta\log\pi_\theta(x) \\
+%     % &\propto -\mathbb{E}_{x \sim q}\frac{P(x)}{q(x)}\nabla_\theta\log\pi_\theta(x)
+%     %\small
+%     \nabla_\theta CE(p, \pi_\theta) = -\mathbb{E}_{x \sim q}\frac{P(x)}{q(x)}\nabla_\theta\log\pi_\theta(x)
+%     %\end{aligned}
+% \end{equation}
+For each input data, we use $q$ to generate up to $\mathit{k_{bs}}$ samples by beam search. Intuitively, if a sample $\bm{x}_i$ 
+fits its context very well, the expert model will give it
+a high score $\phi(\bm{x}_i)$. Hence the EBM $\hat{P}(\bm{x})$ is also high, the generation model will pay more
+attention to those well-generated samples.
+
+After each episode, we update $q$ by the optmized policy $\pi_\theta$ if the KL divergence 
+$D_{KL}(P||\pi_\theta)$ is smaller than $D_{KL}(P||q)$. 
+The KL divergence constraint is to avoid
+$\pi_\theta$ drifting too far from the initial model $a$~\citep{Ziegler, dpg}.
+We approximate the KL divergence and partition function $Z$ also by importance sampling:
+
+\begin{equation}\label{dkl}
+    \small
+    D_{KL}(p||q) = -\log Z + \frac{1}{Z} \mathbb{E}_{\bm{x} \sim q}\frac{P(\bm{x})}{q(\bm{x})}\log\frac{P(\bm{x})}{q(\bm{x})}
+\end{equation}
+
+We summarize the KL-Adaptive DPG in Algorithm~\ref{kldpg}. The overview of the three
+training stages of our method is shown in Figure~\ref{fig:overview}.% \JQ{move this overview to the beginning of the approach.}
+
+
+% where the partition function $Z$ is also approximated by importance sampling
+% $Z = \mathbb{E}_{\bm{x} \sim q}\frac{P(\bm{x})}{q(\bm{x})}$. $D_{KL}(p||\pi_\theta)$ can be computed similar to
+% Equation~\ref{dkl} by replacing $q$ with $\pi_\theta$. 
+
+% The probability of a sequence $x$ from the language model is computed as:
+% \begin{equation}
+%     p(x) = \exp(\sum_{i=1}^{M}\log p(x_i| \bm{s}, x_{<i}))
+% \end{equation}
+
+\begin{algorithm}[t]
+\small
+\caption{KL-Adaptive DPG}
+\label{kldpg}
+\begin{algorithmic}[1]
+\REQUIRE EBM $P$, initial policy $q$, learning rate $\alpha^{(\theta)}$
+\STATE $\pi_\theta \leftarrow q$
+\STATE $Z_{ma} \leftarrow 0$ \hfill // Moving average estimate of Z
+\FOR{each iteration $i$}
+    \FOR{each step $k \in [1, K]$}
+        \STATE sample $x_k$ from $q(\cdot)$
+        % \STATE update $\theta$ according to Eq~\ref{nabla}
+        \STATE $\theta \leftarrow \theta+\alpha^{(\theta)}\frac{P(x_k)}{q(x_k)}\nabla_\theta\log\pi_\theta(x_k)$
+    \ENDFOR
+    \STATE $\hat{Z}_i \leftarrow \frac{1}{K}\sum_{i=1}^{K}\frac{P(x_k)}{q(x_k)}$
+    \STATE $Z_{ma}\leftarrow \frac{i * Z_{MA} + \hat{Z}_i}{i+1}$
+    %\STATE $D_{KL}(p||\pi_\theta) = (KZ_{ma})^{-1}\sum_{k}\frac{P(x_k)}{q(x_k)}\log\frac{P(x_k)}{\pi_\theta(x_k)}$
+    \STATE compute $D_{KL}(P||\pi_\theta)$ according to Eq~\ref{dkl}
+    \STATE compute $D_{KL}(P||q)$ according to Eq~\ref{dkl}
+    \IF{$D_{KL}(p||\pi_\theta) < D_{KL}(p||q)$}
+        \STATE $q \leftarrow \pi_\theta$
+    \ENDIF
+\ENDFOR
+\ENSURE the approximation $\pi_\theta$
+\end{algorithmic}
+\end{algorithm}

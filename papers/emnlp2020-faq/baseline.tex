@@ -1,0 +1,228 @@
+\section{Methods}
+\label{sec:method}
+%In addition to FMB and AMB, we also provide a human baseline for the proposed task. We will introduce them in this section.
+For textual QA pairs generation, a general method is the basic two-step framework consisting of answer extraction and question generation.
+This will be the backbone of our method and we will first introduce this framework including the modules we used.
+
+Then, in order to 
+%effectively consider 
+%the information of aspect keywords, 
+generate the aspect related QA pairs from text,
+we designed two methods: 
+%In this section, we will introduce our methods to generate QA pairs related to aspect keywords, including
+the Filtering Method and Aspect-based Method.
+The former model is 
+%naive and intuitive 
+to use a filter to discard the irrelevant QA pairs, 
+while the latter model considers effectively encoding the information of aspect keywords in the two-step framework.
+%These two methods are  talk about the Filtering Method and Aspect-based Method.
+
+\subsection{Two-step Generation Framework}
+\label{sec:two-step}
+%In this task, we aim at generating several QA pairs with an input paragraph $P$ and the aspect keyword $Aspect$.
+A textual QA pairs generation task aims at generating several QA pairs with an input context.
+The two-step generation framework is first extracting the answer from context and then generating questions based on the context and extractive answer.
+%Next, we will introduce these two steps.
+\subsubsection{Answer Extraction}
+Same as most of other QA pairs generation methods, answers are first extracted to prepare for the subsequent question generation.
+In this module, we choose two model to extract answers from context.
+\paragraph{Chunking (Ck)}
+\label{sec:chunk+nohint}
+Subramanian et al.~\shortcite{subramanian2017neural} have extracted all of the named entities from the context as the answer candidates, then they use a classifier to identify whether a named entity can be considered as a reasonable answer.
+The disadvantage of this approach is that not all of the answers are named entities, there are more answers in our data set cover the phrases with various meanings.
+% such as noun phrases, preposition phrases, verb phrases, etc.
+In the example shown as Figure \ref{fig:wiki}, the answer ``1908" is about time which is a named entity, the answer ``rats and fleas" is a noun phrase and ``the Justinian plague that was prevalent in the Eastern Roman Empire from 541 to 700 CE" is a clause.
+
+In order to get the meaningful phrases as much as possible, we use the parser of Stanford CoreNLP~\cite{manning-EtAl:2014:P14-5} to find specific types of chunks such as noun phrases, preposition phrases, verb phrases, clauses, etc\footnote{We used all the phrase structure grammar representations provided by Stanford parser.}. 
+%\SY{The types of phrases we choose are listed in Appendix A.}
+Then we use a classifier to select the subset of extractive chunks which are suitable as answers.
+It is fine tuned by BERT and takes the context (i.e., a sequence of words) and the words of answer as the input segments.
+The input positive samples are the phrases exactly matched with human annotated answers provided in our dataset.
+
+%\SY{ranking \& DP}
+%For an answer $a_i$, we can obtain $P(a_i|Context)$ by BERT classifier then 
+For extracting the best answers from a context, we expect to maximize $\sum^{n_a}P(a_i|Context)$ where $P(a_i|Context)$ is obtained by BERT classifier. 
+Due to the high overlapping of the extracted answers, 
+we use dynamic programming to schedule the weighted answer interval for deduplication:s
+\begin{equation*}
+\small
+S(a_i) = \begin{cases}
+0, i = 0\\
+max(S(a_{i-1}, S(frt(i)+P(a_i|Context))))
+\end{cases}
+\end{equation*}
+%where $A=\{a_1,a_2,...,a_|A|\}$ is the answer list selected by the classifier, $frt(i)$ 
+, where $A=\{a_1,a_2,...,a_{|A|}\}$ is the list of answers obtained from the classifier and sorted in ascending order according to the ending position of the answers,
+$frt(i)$ 
+represents the non-overlapping answer nearest to $a_i$ in the list,
+and $S(a_i)$ is the maximum probability sum obtained by the $i$-th answer.
+
+%where Represents the previous compatible maximum working number in the sequence
+
+\paragraph{Pointer Network (Ptr)}
+Because pointer network works well on generating all possible answer positions from context~\cite{subramanian2017neural},
+we also choose this as a method for answer extraction module.
+The input of the model is a context (i.e., a sequence of words) and the output is a sequence of answer spans, which is formatted as $\{s_{a_1}, e_{a_1},s_{a_2}, e_{a_2},...,s_{a_1{|A|}}, e_{a_{|A|}}\}$.
+$s$ and $e$ represent the start and end position of an answer respectively.
+
+%Same as most of other QA-pair generation tasks, we extract answers from the document first.
+%Follow the work of Subramanian et al.~\shortcite{subramanian2017neural}, we choose the pointer network to extract answers.
+%The input is $(P_i, Aspect)$ pair from retrieval. For entity tagging, we use the spaCy\footnote{https://spacy.io/docs/usage/entity-recognition} to predict entities in $P_i$ and keep all entities. For the pointer network, it will generate all possible answer positions of $P_i$. We implement pointer network as Subramanian et al's~\shortcite{subramanian2017neural}.
+\subsubsection{Question Generation (QG)}
+After extracting answers from the context by last step, we can generate questions based on the context and corresponding answers.
+%and the input tuple for this step is $(Context, a_i)$, where $a_i \in A=\{a_1, a_2,..., a_{|A|}\}$.
+In this step, we choose UNILM model~\cite{dong2019unified} which is the SOTA method for Question Generation.
+it realizes this task with the help of a language model which trained with the combination of uni-direction, bi-direction, and seq2seq.
+Similar to the answer extraction step, for each tuple, 
+we use ``[SEP]'' tokens to split the input segments.
+%we combine the two segments in the same sequence as the first segment of UNILM and use ``[SEP]'' tokens to split the context and answer:
+The input contains three segments: $Context, Answer$ and $Question$:
+\begin{equation*}
+\begin{aligned}
+{Context [SEP] a_i [SEP] q_i}\\
+\end{aligned}
+\end{equation*}
+where $a_i$ is an answer in $A=\{a_1, a_2,...,a_{|A|}\}$ extracted from context, $q_i$ is the target question for $a_i$. 
+%And the second segment is the generated question.
+\subsection{Filtering Method}
+%%Filtering Method is divided into three steps: Answer Extraction, Question Generation and Filtering. 
+%Filtering Method is 
+%%With the two-stage method, 
+%The first two steps can be unified into the two-step generation framework,
+%and it is easily to generate several QA pairs with the input context.
+Filtering Method is to add a filter module on the basis of two-step framework.
+%To ensure that the generated QA pairs are aspect related, 
+%an intuitive way is to 
+%%train a filter to remove those irrelevant QA pairs.
+%use a filter to make the judgment of whether the QA pair is relevant to the aspect keyword. 
+%It is designed to make the judgment of whether a QA pair is relevant to the aspect keyword,
+%and ensure that the generated QA pairs are aspect related.
+After generating adequate QA pairs, 
+a filter is designed to make the judgment of whether a QA pair is relevant to the aspect keyword
+and remove the irrelevant ones.
+%In this method, all steps are trained separately and following is the introduce about filtering.
+%\paragraph{Answer Extraction.} Same as most of other QA-pair generation methods, we extract answers from the document first.
+%
+%Follow the work of Subramanian et al.~\shortcite{subramanian2017neural}, we use two methods, entity tagging (NER), and pointer network, to extract answers.
+%The input is $(P_i, Aspect)$ pair from retrieval. For entity tagging, we use the spaCy\footnote{https://spacy.io/docs/usage/entity-recognition} to predict entities in $P_i$ and keep all entities. For the pointer network, it will generate all possible answer positions of $P_i$. We implement pointer network as Subramanian et al's~\shortcite{subramanian2017neural}.
+%%Considering that the error of this step will continue to the next step,
+%%while generating the question according to (paragraph, answer) pairs and generating the answer according to (paragraph, question) pairs are both hot research fields. 
+%%we choose to generate answers first because we can extract answers from paragraphs instead of generating them, and extraction generally causes less error than a generation.
+%
+%We also tried the sequence labeling method. The BIO tagging model implemented by BiLSTM-CRF predicts ``O" for every token. We think the reason is the answer is too sparse in each $P_i$, which misleads the model to predict ``O'' for every token. So we split $P_i$ into sentences $\{S_{i,1}, S_{i,2}, ..., S_{i,n}\}$ and use tagging model to predict BIO tagging for each $S_{i,j}$. Finally, we combine all the sentence tagging as the tagging of $P_i$.
+
+%\paragraph{Question Generation.} The input tuple for this step is $(P_i, A)$, where $A=\{a_1,a_2,...,a_m\}$ is the extracted answer list. We implement this based on two question generation models. One is seq2seq model~\cite{zhao2018paragraph}. This model uses RNN and gets self-attention to encode the paragraph and use another RNN to generate words sequence with copy mechanism. 
+%
+%Another one is UNILM model~\cite{dong2019unified}. UNILM is the SOTA method for Question Generation, it realizes this task with the help of a language model which trained with the combination of uni-direction, bi-direction, and seq2seq. Similar to the answer extraction step, for each input tuple, we combine the two segments in the same sequence as the first segment of UNILM and use ``[SEP]'' tokens to split paragraph and answer:
+%
+%\begin{equation*}
+%\begin{aligned}
+%{\rm P_i\ [SEP]\ a_i}\\
+%\end{aligned}
+%\end{equation*}
+%where $a_i$ is an answer in $A$. And the second segment is the generated question.
+
+\paragraph{The Filter}
+%We get some QA pairs after the first two steps. In this step, we use a filter to make the judgment of whether the QA pair is relevant to the aspect. 
+In order to identify the relevant QA pairs, we choose a binary sequence classifier as the filter. 
+A filter takes the aspect, the answer and the question as the input and outputs a Boolean value as the judgment of whether the QA pair is relevant to the aspect. 
+To make a better distinction between different segments of the input sequence, we add ``$[SEP]$'' tokens among different parts then the $i$-th input for a filter is ``$Aspect [SEP] a_i [SEP] q_i$''.
+
+%We propose two strategies for model pretrain, one is context-based filter (CF) and another is QA-based filter (QAF).
+%We propose one strategy for model pretrain, context-based filter.
+%%The former way 
+%It is based on the tree of Wikipedia pages and it regards the aspect keywords on the path to the context as the positive aspects, while the others are negative.
+%In this case, there is difference between the input of training data formatted as ``$Aspect [SEP] Context$" and the target format of the filter, but all of the relevance labels are accurate.
+%In the latter way, the data structure is consistent with the target, but the noise of training data is inevitable.
+We propose one strategy for model pretrain,
+it is based on the tree of Wikipedia pages.
+If one aspect keyword is on the path to a context, it can constitute positive samples with the QA pairs of this context.
+Conversely, the negative samples consist of aspect keywords and QA pairs that are not on the same path.
+%  are  and regards the aspect keywords on the path to the context as the positive aspects, while the others are negative.
+%In this case, there is difference between the input of training data formatted as ``$Aspect [SEP] Context$" and the target format of the filter, but all of the relevance labels are accurate.
+In this case, the data structure is consistent with the target one, but the noise of training data is inevitable.
+
+To ensure that the filter can learn reliable information of relevance between QA pairs and aspect keywords as well as reducing the impact of noise and differences of data, we use the annotated fine-tuning set to fine tune the filter model.
+
+% In this part, we design a three-step pipeline structure which is shown as Figure \ref{fig:pipeline}. All steps are trained separately.
+
+% %In this part, the answers are extracted from the source 
+% \textbf{Paragraph Retrieval.} Two different methods are used here to select valid paragraphs with high relevance to the hint from the document.
+
+% \textbf{Answer extraction.} Answers exist in the source document. The extraction module uses the approach of sequence labeling to mark the position of answers.
+
+% \textbf{Question generation.} Question generation module is to generate questions from the document and a relevant answer span.
+
+\subsection{Aspect-based Method}
+%Same as the Filter Method, Aspect-based Method also has three steps: Answer Extraction, Question Generation, and Filtering.
+The Aspect-based Method aims to effectively encode the information  of aspect in the two-step framework so that it can directly generate aspect related QA pairs.
+
+%We don’t use Aspect information in answer extraction because the relevance between aspect and answers is not strong. 
+To investigate whether the information of aspect keywords is helpful to two-step generation framework,
+we randomly sampling 100 samples from the training data, 
+finding only 34\% aspects are relevant to the answer. 
+For example in the paragraph about Black Death:
+\begin{equation*}
+\begin{split}
+&\text{Q : When did the plague return to Europe?} \\
+&\text{A : throughout the 14th to 17th centuries} \\
+&\text{Aspect : Recurrence}
+\end{split}
+\end{equation*}
+
+The aspect is relevant to the QA pair but it’s not relevant to answer directly. Different from answer extraction, for more than half (about 56\%) of the samples, aspect keywords are directly relevant to the questions.
+Thus, we only use aspects to help the model to generate more relevant questions.
+
+For aspect-based question generation (QG$_{\text{Aspect}}$), we additionally encode the aspect keyword into the input of the source sequence and it is ``${Context [SEP] Aspect [SEP] a_i [SEP] q_i}$".
+%\paragraph{Answer Extraction.} For methods mentioned in the Filter Method, we follow the same settings except that we use $P_i[SEP]Aspect$ to replace $P_i$ in the inputs. 
+%
+%One problem for the Filter Method is that it relies heavily on the accuracy of the filter. Based on this observation, we proposed a new method for Answer Extraction in the Aspect-based Method. In this new method, we first extract as many answer spans as possible and use a filter to omit some of them. This filter takes $(P_i, Aspect, Answer)$ triple as input and outputs whether the $Answer$ extracted from $P_i$ is related to the $Aspect$. We use a BERT classifier as the filter here. We made some adjustments to raise the threshold value of the triple to be determined as ``relevant'' to pass more QA pairs to the final filter.
+%
+%All samples will go through two filters in the process instead of only one. This gives our Aspect-based Method a better performance than the Filter Method.
+
+%\paragraph{Question Generation. } 
+%For the two proposed models in the Filter Method, we treat them differently. For the seq2seq model, to restrict the generated question with the aspect, we use another LSTM encoder for the aspect. Then use attention to aggregate information from aspect to the paragraph. The following equations shows the improved model.
+%\begin{equation}
+%\begin{aligned}
+%u_{p} &= LSTM(e_{p}, m_{p}) \\
+%u_{a} &= LSTM(e_{a}) \\
+%u_{p} &= gated\ attention(u_{a}, u_{p})\\
+%\end{aligned}
+%\end{equation}
+%Where $e_p$ and $e_a$ is the word embedding representation of  $P_i$ and $Aspect$. $m_p$ is the meta-word representation which identifies whether each word in the paragraph is in or outside the answer in $A$. The others are the same as the original model.
+
+%For the UNILM model, we use the same method as Answer Extraction: replace all $P_i$ in the inputs with $P_i[SEP]Aspect$.
+
+%\paragraph{The Filter. } We use the same filter as the Filter Method here. It takes the QA pair and $Aspect$ as input and output the relevance between these two inputs.
+%In this method, we can still add a filter after the two-step framework to enhance the filtering ability of the model.
+
+We can optionally add a filter to Aspect-based methods to enhance the filtering ability of the model.
+It takes the QA pair and $Aspect$ as input and output the relevance between these two inputs.
+
+%\subsection{Ranking Strategy}
+%\label{sec:ranking}
+%Both of the Filtering Method and Aspect-based Method can provide us a list of QA pairs for the given context.
+%We expect the ranked QA pairs list is reasonable for a given aspect, so several ranking strategies are designed here.
+%
+%For the two-step framework using pointer network, the generated answer spans have equal probability because they are generated as a complete sequence. 
+%Thus for the models with pointer network, we rank the generated QA pairs by the generative probability of each question $P(q_i|Context, a_i), a_i \in A=\{a_1, a_2,...,a_{|A|}\}$.
+%The probabilities of questions can be calculated by the log-likelihood of the sequence with $N$ tokens, $N$ is the sequence length.
+%
+%For the two-step framework using chunking to extract answers, it is obvious that we can rank the generated QA pairs by $P(a_i|Context), a_i \in A=\{a_1, a_2,...,a_{|A|}\}$.
+%The  probabilities of answers can be calculated by a binary classifier, that is, we take the ``$[CLS]$'' token into a linear layer of neural network and obtain the probability of the answer being positive.
+%In addition, the score for the $i$-th QA pair can also be calculated as $P(a_i|Context) \times P(q_i|Context, a_i)$.
+%To avoid the score of the product being 0, we normalized all probabilities to [0.1,1].
+%
+%In a word, we can get the ranked list of QA pairs by calculating the probability of generating the question ($\text{R}_\text{q}$), the probability of extracting the answer ($\text{R}_\text{a}$) and the product of the question and answer probabilities ($\text{R}_{\text{qa}}$) respectively.
+
+%\subsection{Human Baseline} To measure the difficulty of each task, there were three master students to do each individual module in the pipeline method.
+%For retrieval task, the students were asked to allocate the candidate paragraphs to 30 aspect keywords.
+%For answer extraction, the students tried to extract answer spans  from 30 paragraphs.
+%For question generation, they wrote the questions for 30 paragraphs with the given answers.
+%The final scores of human performance were averaged.
+%In this work, different ranking strategies to obtain the ranked list of QA pairs are based on the probability of extracted answers and generated questions.
+%In this work, we obtain the probabilities of answers and questions from the binary
+
+%The  probabilities of answers extracted by Chunking are calculated by a binary classifier, that is, we take the ``$[CLS]$'' token into a linear layer of neural network and obtain the probability of the answer being positive.
+
+

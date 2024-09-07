@@ -1,0 +1,109 @@
+\section{Approach}
+This section discusses the preprocessing of our text corpora, our
+simple baseline method, co-occur model, PMI model as well as the Skip-grams model.
+
+\subsection{Data Preprocessing}
+
+In this study, our input data is English literature written by
+American or British authors, including such categories as poetry,
+science fictions, politics, biography, fables, etc.
+We first lemmatize the text and reduce all words to original form.
+Then we remove stopwords and names of persons\cite{names} from the paragraphs.
+Stopwords include prepositions, pronouns, conjunctions, 
+numerals and modal verbs, which do not have significant meanings.
+Names occurring in books are also meaningless to support words' meaning
+because they stand a good chance to be the man in the moon.  
+Finally, we apply each of the following algorithms to generate two vector
+representations for each word, one from the American corpus and the other
+from the British corpus. The inverse of similarity between the
+two gives the amount of cultural difference for a word.
+
+\subsection{Similarity Measurement}
+
+To calculate the similarity for two vectors $v_i$ and $v_j$, 
+we use the \emph{Tanimoto} distance
+which is a generalization of Jaccard similarity ranging in [-1, 1]:
+\begin{equation*}    
+    T(\overrightarrow{v_i}, \overrightarrow{v_j}) = 
+    \frac{\overrightarrow{v_i} \cdot \overrightarrow{v_j}}
+    {\|\overrightarrow{v_i}\|^2 + \|\overrightarrow{v_j}\|^2
+    - \overrightarrow{v_i} \cdot \overrightarrow{v_j}}
+\end{equation*}
+where ${\overrightarrow{v_i} \cdot \overrightarrow{v_j}}$ is the dot product of
+the vectors $v_i$ and $v_j$ and ${\|\overrightarrow{v_i}\|^2}$ is the Euclidean
+norm of $v_i$.
+
+Another observation is that more frequent used words are inclined to content different
+meanings between American and British because they are more likely to vary during dairy life
+then less frequent used words through a long-time period.
+
+Therefore, in order to measure similarity for word $w$, we take the frequency into account:
+
+\begin{equation*}
+    Sim(w) = T(\overrightarrow{v_{am}}, \overrightarrow{v_{br}}) \cdot freq(w)^{\alpha}
+\end{equation*}
+
+where $v_{am}$ and $v_{br}$ are representing vectors for $w$ from American and British corpus 
+,$freq(w)$ is the total occurrence of $w$ in the whole corpus and $\alpha$ is a negative parameter
+to punish the frequency during similarity calculation process.
+ 
+\subsection{Co-occurrence Based Algorithms}
+Here we use the distribution of co-ocurring words to represent a word.
+%Co-occurrence matrix is a common tool in the field of word embedding.
+Given a sequence of words $(w_1, w_2, w_3,...,w_T)$, we use a fixed size
+sliding window to obtain the co-occurrence matrix $M_{US}$ and $M_{UK}$
+from the two corpora. Each entry in the matrix $M_{i, j}$ is the frequency
+of words $(w_i, w_j)$ appearing in the same window. Note the two matrixes
+are of the same size because we combine the distinct words from both corpora
+to form a global vocabulary.  We assume the cultural difference of a word
+can be computed from the two occurrence matrixes.
+
+Our first algorithm is based on TF-IDF. Each entry $M_{i, j}$
+in the above matrixes is multiplied by an IDF term, $IDF_{i, j}$, which
+is the inverse of the number of paragraphs containing
+both $w_i$ and $w_j$ with in a window. This gives us two new
+matrixes $M'_{US}$ and $M'_{UK}$. The cultural difference is computed by
+calculating the cosine similarity between $M'_{US, i}$ and $M'_{UK, i}$
+for $w_i$. This algorithm penalizes very frequent words.
+
+Our second algorithm is an optimization of the first. It factorizes the
+above TF-IDF matrixes by singular value decomposition (SVD), and then compute
+cosine similarity accordingly.
+
+\subsection{The Skip-gram Model}
+
+%The Skip-gram model is a high quality and efficient method for learning vector representation from a large data corpus. Its performance has been proven in many other applications. Due to our word embedding purpose, we use the Skip-gram model as one way to generate the vector representation from American and British corpus separately for every word $w_i$.
+
+In the Skip-gram model, the objective is to maximize the average
+log probability
+
+\begin{equation*}
+\frac{1}{T} \sum_{t=1}^{T} \sum_{j=-c}^{c} \log p(w_{t+j}|w_t)
+\end{equation*}
+where $c$ is the size of training window which can be a function of $w_t$ and
+$T$ is the total size of training corpus.
+
+$p(w_i|w_j)$ is defined by a softmax function
+\begin{equation*}
+p(w_i|w_j)=\frac{\exp(u_{w_i} {}^{\top} v_{w_j})}{\sum_{l = 1}^{V} \exp(u_l {}^{\top} v_{w_j})}
+\end{equation*}
+where $V$ is the size of the vocabulary, $u_w$ and $v_w$ are the "input" and "output" vectors representing the word $w$.
+
+After we train this model on each monolingual corpus, we have two vector spaces: one for US corpus and the other for UK corpus. These two vector spaces
+are not directly comparable due to unknown meaning of each dimension.
+However, experiments \cite{Mikolov:2013tp} have shown that the relationship
+between vector spaces trained using Word2vec can be possibly captured by
+rotation and scaling, represented by a linear transformation matrix $W$.
+This matrix can be learned using a number of words with {\em little}
+cultural difference and the following optimization problem:
+
+\begin{equation*}
+\argmin_{W}\sum_{i=1}^{n}\norm{Wx_{i}-t_{i}}^2
+\end{equation*}
+where $x_{i}$ is a word in American English while $t_{i}$ is its
+corresponding word in British English and $n$ is the size of
+training samples.
+%We take the most common 5000 culturally same words
+%to learn $W$ in our experiments.
+The training process can be optimized according to
+\cite{Mikolov2013distributed}.

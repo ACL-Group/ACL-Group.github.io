@@ -1,0 +1,83 @@
+\section{Experimental Setup}
+\label{sec:experiment}
+
+\subsection{Datasets}\label{sec:datasets}
+We finetune our post-trained model and test on a variety of 
+dialogue summarization datasets as follows:
+\begin{itemize}
+ \item \textbf{SAMSum}~\cite{gliwa2019samsum} is a human-written online dialogue dataset. Each dialogue has one summary.
+ \item \textbf{DialSumm}~\cite{chen2021dialsumm} contains spoken daily dialogues, having more formal style and diverse topics than SAMSum. Each dialogue is accompanied with three human annotated summaries.
+ \item \textbf{Email} is a dataset from ConvoSumm~\cite{fabbri2021convosumm} containing e-mail threads with a single summary\footnote{Other datasets in ConvoSumm are community post-replies instead of dialogues between interlocutors.}.
+ \item \textbf{TopicAMI}~\cite{goo2018abstractive} contains dialogues segmented from the original AMI meeting corpus~\cite{mccowan2005ami} by human-labeled topic segmentation. The summary of each dialogue is a high-level and extremely concise topic description.
+\end{itemize}
+
+
+\begin{table}
+	\small
+	\centering
+	\begin{tabular}{lrrrr}
+		\toprule[1pt]
+		\textbf{} & \textbf{SAMSum} & \textbf{DialSumm}& \textbf{Email} & \textbf{TopicAMI}\\ 
+		\midrule[1pt]
+		{\#Train} &14,732 &12,460 &215 &7,024  \\
+		{\#Val} & 818& 500& 50& 400 \\
+		{\#Test} & 819&500 &250 &400  \\
+		{\#DW} &94.52 &132.39 &1,021.59 &78.71 \\
+		{\#SW} & 20.31&22.37 &66.25 & 3.91\\
+		{CR (\%)} & 29.35&17.99 &7.83 &5.71 \\
+	%	{Abs1} & 44.35& 49.93&55.52 &16.07 \\
+		{Abs (\%)} & 16.34& 17.16&14.47 &0.90 \\
+
+		\bottomrule[1pt]
+	\end{tabular}
+	\caption{Statistics of dialogue summarization dataset. \#DW, \#SW, CR and Abs are short for the number of dialogue words, the number of summary words, compression ratio(\%), and abstractiveness(\%) respectively.}
+	\label{tab:sumdataset}
+\end{table}
+
+More statistics of each dataset is listed in Table \ref{tab:sumdataset}. Compression ratio equals \#SW divided by \#DW. %the number of dialogue words divided by summary words. 
+Abstractiveness is estimated by Rouge recall between the reference summary and the original dialogue as \citet{liu2018generating}. We use Rouge-2 and the higher score means the dataset is less abstractive and more amenable to extractive methods. Both compression ratios and rouge scores vary, showing differences in abstractiveness and levels of granularity among the datasets.
+%\KZ{The smaller the CR the more compressed. The smaller the Abs, themore abstract. This is a bit counter intuitive. Define then inversely?}
+
+%\subsection{Baselines}
+
+\subsection{Implementation Details}
+
+We use BART\footnote{\url{https://huggingface.co/facebook/bart-large}} as our basic language model. For both post-training and fine-tuning, the speakers and utterances of each dialogue are concatenated into a single sequence and truncated to the first $1024$ tokens.
+The learning rate is set to $3e-5$ with weight decay equaling $0.01$. The number of warmup steps is $500$ and dropout is $0.1$. The model is tested on the corresponding validation set after each training epoch and % It stops training when the Rouge-2 F1 score doesn't improve on the validation set or it reach the maximum training epoch. 
+the early-stop is activated if there is no improvement on the Rouge-2 F1 score. 
+The early-stop and 
+maximum training epochs are set to $3$ and $10$ for most cases, 
+and $5$ and $20$ for Email due to its limited corpus size. 
+During inference, i.e., validation and testing processes, 
+the beam size is set to $4$ with length penalty equaling $1.0$ 
+and no repeat n-gram size equaling $3$. 
+The minimum and maximum lengths are set to the corresponding lengths 
+of the reference summaries for each dataset, 
+allowing for free-length text generation. 
+All of our experiments are done on an RTX 2080Ti with 11G GPU 
+memory. We also reimplement the baseline BART fine-tuning 
+directly with the above hyper-parameters on different datasets for 
+a fair comparison. The results are averaged over three runs. We open-source all of the used datasets and codes at \url{http://anonymous.com}.
+
+\subsection{Evaluation Metrics}\label{sec:humansetup}
+Automatic evaluation metrics and two human evaluation tasks are presented
+as follows:
+%\KZ{A bit too verbose below.}
+
+\textbf{Automatic Evaluation:} We use Rouge-1,2,L~\cite{lin2004rouge} F1-scores as automatic evaluation metrics. Following Chen and Yang's work~\shortcite{chen2020multi}, we adopt the same Rouge evaluation tool\footnote{\url{https://github.com/pltrdy/rouge}} and compute between reference summaries and generated summaries without additional pre-processing steps, such as case normalization, tokenization or stemming. We recalculated Rouge scores for some baselines according to their released generated results for fair comparisons.%These operations may result in huge improvements on Rouge and lead to unfair comparisons. 
+
+\textbf{Overall Quality:} We randomly selected 200 samples and hired three proficient English speakers to evaluate the summaries. 
+Each original dialogue is shown with summaries in a random order simultaneously, including the reference summary and generated summaries from different methods. Showing summaries from different approaches together instead of one by one helps humans do comparisons between them.
+Following \citet{chen2020multi} and \citet{liu2021coreference}, each summary is scored on the scale of $[2, 0, -2]$. $2$ refers to a concise and informative summary which is applicable. $0$ refers to an acceptable summary with minor mistakes or missing important contents. $-2$ means the summary is poor with irrelevant information or doesn't make sense at all. The final scores are averaged among annotators.% for each summary
+
+\textbf{Error Analysis:} We randomly selected 100 samples and defined 4 types of frequent errors following \citet{chen2020multi}. \textbf{Rea}soning means the model did incorrect reasoning especially among multiple utterances.
+\textbf{Cor}eference represents mismatches between ``who-what-where-when-how'' caused by wrong coreference resolutions.
+\textbf{Mis}sing means missing important contents.
+\textbf{Red}undancy means repeated or irrelevant contents.
+Rea and Cor concentrate on comparisons to the dialogue, 
+and the rest two focus on comparisons to the reference. 
+We hired two annotators to label if there is an error in the generated 
+summary given both the dialogue and the reference. The score for each 
+summary is determined by the ``AND'' logical operation between two annotators.
+
+%and the Kappa coefficient among three annotators are ??, indicating ?? agreement.

@@ -1,0 +1,258 @@
+\section{Experiment}
+In this section, we experiment on different NLG tasks. We first present the experimental setup on different tasks. Then, we show the quantitative and qualitative results together with comprehensive analysis and ablation studies.
+
+\subsection{Implementation Details}
+We evaluate the newly proposed ICL strategy on five commonly-researched natural language generation tasks: reading comprehension, dialogue summarization, style transfer, question generation and news summarization. Details on the task description, the strong baseline, corresponding  dataset, evaluation metrics and key hyper-parameters for each task are presented as follows.
+
+\begin{table*}[th]
+	\scriptsize
+	\centering
+	\begin{tabular}{lp{1.1cm}rrrcccc}
+		\hline
+		Task & Dataset & \#Train & \#Val & \#Test & Input & Output & Avg & Std\\
+		\hline
+		Reading Comprehension & DREAM & 6,116 & 2,040 & 2,041 & ``Q:''+ question + dialogue & answer & 5.59 & 2.61\\
+		Dialogue Summarization & SAMSum & 14,732 & 818 & 819 & dialogue & summary  & 24.99 & 13.06\\
+		Style Transfer & Shakespeare & 36,790 & 2,436 & 2,924 & original/modern  & modern/original  & 11.63 & 8.19 \\
+		Question Generation & SQuAD1.1 & 75,722 & 10,570 & 11,877 & passage + [SEP] + answer & question & 13.09 & 4.27 \\
+		News Summarization & CNNDM & 287,227& 13,368& 11,490 & document & summary & 70.97 & 29.59\\ 
+		\hline
+	\end{tabular}
+	\caption{A summary of tasks and datasets. \#Train, \#Val and \#Test refers to the number of samples in the corresponding dataset. Avg and Std are the statistics for the number of output tokens. ``+'' refers to the concatenation operation.}
+	\label{tab:taskdata}
+\end{table*}
+
+\textbf{Reading comprehension} is the task that answering questions about a piece of text. We use the DREAM dataset~\cite{sun2019dream} where questions are about corresponding dialogues and the answer is a complete sentence in natural language. We neglect the negative choices in the original dataset and formulate it as a NLG task. We adopt the pre-trained language model BART~\cite{lewis2020bart} as the baseline, where the input is a concatenation of a question and the corresponding dialogue made up of speakers and utterances. 
+We experiment with  transformers\footnote{\url{https://github.com/huggingface/transformers}} based on the publically available ``facebook/bart-large'' checkpoint \footnote{\url{https://huggingface.co/facebook/bart-large}}.
+%The preceding BART model is also adopted as the baseline, whereas the input is a concatenation of question and a dialogue.
+The generated answers are evaluated by BLEU scores\footnote{The BLEU-1/2/3/4 scores are computed according the Google's implementation(\url{https://github.com/tensorflow/nmt/blob/master/nmt/scripts/bleu.py}).}~\cite{papineni2002bleu} widely used for QA systems, together with Meteor and Rouge-L F1 as mentioned above. The parameters are also the same as dialogue summarization, except that the early-stop is activated if there is no improvement on the perplexity of the validation set. 
+
+
+\textbf{Dialogue summarization} is to generate a concise summary covering the salient information in the input dialogue. The preceding model BART has shown to be a strong baseline for this task, where only the dialogue is concatenated into a single sequence as the input. We experiment with  %transformers\footnote{\url{https://github.com/huggingface/transformers}} based on the publically available ``facebook/bart-large'' checkpoint \footnote{\url{https://huggingface.co/facebook/bart-large}} and 
+SAMSum dataset\footnote{\url{https://arxiv.org/src/1911.12237v2/anc/corpus.7z}}~\cite{gliwa2019samsum} for daily-chat dialogues. 
+The generated summaries are evaluated by comparing with the reference through evaluation metrics, including Rouge-1/2/L F1 scores\footnote{\url{https://github.com/pltrdy/files2rouge}}~\cite{lin2004rouge}, Meteor~\cite{banerjee2005meteor} and BertScore F1\footnote{Both Meteor and BertScore are calculated by SummEval(\url{https://github.com/Yale-LILY/SummEval}), and the latter one is based on the default bert-base-uncased model.}. We evaluate the model on the validation set after each training epoch and the early-stop patience will be added 1 if there is no improvement according to the Rouge-2 F1 score. The training process terminates when the early-stop patience equals or is larger than 3.  During the inference, the minimum and maximum output length is set to 5 and 100 respectively, with no\_repeat\_ngram\_size=3, length\_penalty=1.0 and num\_beams=4.
+
+
+% The answer is either a span of words in the original text or a complete sentence in natural language.
+\textbf{Style transfer} preserves the semantic meaning of a given sentence while modifies it's style, such as positive to negative, formal to informal, etc.
+We adopt the Shakespeare author imitation dataset~\cite{xu2012paraphrasing}, containing William Shakespeare's original plays and corresponding modernized versions. Krishna el al.~\shortcite{krishna2020reformulating} proposed to do unsupervised style transfer by training paraphrase models based on the GPT-2 language model~\cite{radford2019language}. We re-implemented their approach STRAT\footnote{\url{https://github.com/martiansideofthemoon/style-transfer-paraphrase}} and evaluated with the provided script. Evaluation metrics includes 
+transfer accuracy(ACC), semantic similarity(SIM), Fluency(FL) and two aggregation metrics, i.e., geometric averaging(GM) and their newly introduced $J(\cdot)$ metric. The hyper-parameter $hp$ equaling 0.0, 0.6 or 0.9  in Table~\ref{tab:end2endst} is the sampling parameter for trades off between ACC and SIM in their approach. 
+In the training stage, we evaluate the model after updating every 500 steps. The perplexity on the validation set is used to activate the early-stop which equals 3. The inference is done as default.
+ 
+\textbf{Question generation}~\cite{zhou2017neural} aims at generating a question given an input document and its corresponding answer span. SQuAD 1.1~\cite{rajpurkar2016squad} is generally used for evaluation. We adopt the data split as in \cite{du2017learning} and fine-tune the pre-trained UniLM~\cite{dong2019unified} as the strong baseline according to their official implementation\footnote{\url{https://github.com/microsoft/unilm/tree/master/unilm-v1}}. Generated questions are evaluated by metrics including BLEU-1/2/3/4, Meteor and Rouge-L with the provided scripts. The model is evaluated every 1000 steps and the early-stop equaling 3 is associated with the perplexity on the validation set. Other parameters are unchanged following the official guideline.
+
+\textbf{News summarization} differs from dialogue summarization where the input is a document instead of a dialogue. We adopt the same strong baseline BART and evaluation metrics as dialogue summarization. Experiments are done with CNNDM dataset~\cite{HermannKGEKSB15} consisting of news articles and multi-sentence summaries\footnote{\url{https://github.com/pytorch/fairseq/blob/main/examples/bart/README.summarization.md}}. The model is evaluated every 2000 steps and the early-stop equaling 3 is associated with the Rouge-2 on the validation set. During the inference, the minimum and maximum output length is set to 45 and 140 respectively, with no\_repeat\_ngram\_size=3, length\_penalty=2.0 and num\_beams=4.
+%\footnote{Inference parameters are borrowed from \url{https://github.com/pytorch/fairseq/blob/main/examples/bart/summarize.py}}
+
+The summary of each task is listed in Table~\ref{tab:taskdata}. For fair comparisons, we re-implemented baselines following the above instructions on our machine. On top of the above baselines, we further arm them with the ICL strategy according to the Algorithm~\ref{alg:picl}. The settings of newly introduce Start and Stride are specified and discussed in following sub-sections. All of our experiments are done on a single RTX 3090 or a single RTX 2080Ti with 24G and 11G GPU memory respectively.
+%and the result are averaged over three runs.
+
+
+ 
+\subsection{Automatic Evaluations on Different Tasks}
+\label{sec:taskperformances}
+
+We compare our approach with the vanilla models mentioned above and the approach from~\citet{liang-etal-2021-token-wise} as baselines.
+The performances on different NLG tasks are shown in Table~\ref{tab:end2end}. 
+These tasks not only focus on solving different problems, but also has various amount of training data as well
+as reference output lengths as shown
+Table~\ref{tab:taskdata}.
+Besides, the basic model are also different, including BART, GPT-2 and UniLM. 
+Our new training strategy achieves significantly improvements among different tasks on most evaluation metrics, which shows that our method not only works well, but also has strong generalization abilities.
+
+We explain the some specific results as follows:
+
+(1) Our training strategy boosts the performances of the original STRAT with different $hp$ in the style transfer task. GM and J are two comprehensive evaluation metrics, with our approach topping the ranks with significant improvements.
+
+(2) TCL generally performs poorly on tasks
+with more training data. For example, it failed on question generation without any improvements over the vanilla model under the same parameter setting, while ICL still 
+logs gains. This is mainly due to two reasons.
+First, because the nature of TCL is data augmentation which is more effective in low-resource settings,
+when training data is abundant, it becomes less useful. 
+Second, the way they calculate the loss as sub-sequence generation better suites paraphrasing tasks, such as machine translation tested in their paper, as the order of 
+the corresponding tokens between input and output 
+are almost the same. Learning such forward mapping can 
+be regarded as a kind of ``easy-to-hard'' 
+in these limited scenarios.
+However, this doesn't hold true for other tasks, 
+such as summarization and question generation. 
+Therefore, we didn't further test it on CNNDM since
+CNNDM has the large amount of training data among
+the five.
+
+(3) For news summarization, Rouge-1 scores (precision, recall) for the baseline and our method on CNNDM are (38.16, 52.72) and (40.84, 49.23) correspondingly. Our method made substantial improvements on the precision with a compromise on the recall. 
+The meteor score based on the unigram precision and recall emphasizes more on the recall than the Rouge-1 F1. As a result, it drops while Rouge-1 F1 increases. Overall, our method still outperforms BART on this task, especially on F1 scores of Rouge-2 and Rouge-L.
+
+
+
+
+\begin{table}[th]
+	\small
+	\centering
+	\begin{subtable}{\linewidth}
+		\scriptsize
+		\centering
+		\begin{tabular}{lcccccc}
+			\hline
+			{Method} & {B1} & {B2} & {B3} & {B4} & {Met} & {RL}\\
+			\hline
+			w/o CL &  32.03 & 16.01 & 8.77 & \textbf{4.80} & 19.84 & 38.89\\
+			TCL & 32.53 & 16.25 & 8.52 &4.67 &19.88 & 39.65 \\
+			ICL &  \underline{\textbf{33.99}} & \underline{\textbf{17.43}} & \underline{\textbf{9.18 }}& 4.64 & \textbf{20.60} & \textbf{40.78}\\
+
+			\hline
+		\end{tabular}
+		\caption{Reading Comprehension}
+		\label{tab:end2endrc}
+	\end{subtable}
+	\\[5pt]
+	\begin{subtable}{\linewidth}
+		\scriptsize
+		\centering
+		\begin{tabular}{lccccc}
+			\hline
+			{Method} & {R1} & {R2} & {RL} & {Met} & {BertS} \\
+			\hline
+			%BART & 52.60&27.00 &42.10 &- & - \\
+			w/o CL & 51.88 & 27.30 & 42.77 & 24.75 & 71.38 \\
+			TCL  & 52.33 & 27.80 & \textbf{43.91} & 24.59 & 71.77 \\
+			ICL & \underline{\textbf{53.07}} & \underline{\textbf{28.23}} & {43.83} & \underline{\textbf{26.12}}& \underline{\textbf{72.17}} \\
+			
+			\hline
+		\end{tabular}
+		\caption{Dialogue Summarization}
+		\label{tab:end2endds}
+	\end{subtable}
+	\\[5pt]
+	\begin{subtable}{\linewidth}
+		\scriptsize
+		\centering
+		\begin{tabular}{lcccccc}
+			
+			\hline
+			{Method}&$hp$ &  {ACC} & {SIM} & {FL} & {GM} & {J}\\
+			\hline
+			%\multirow{3}{*}{STRAT}& 0.0 & 71.70 & \textbf{56.40} & 85.20 & 70.10 & 34.70 \\
+			%& 0.6 & 75.70 & 53.70 & 82.70 & 69.50 & 33.50 \\
+			%& 0.9 & 79.80 & 47.60 & 71.70 & 64.80 & 27.50 \\
+			%\hline
+			\multirow{3}{*}{w/o CL}& 0.0 & 70.49 & 55.70 & 85.98 & 69.63& 33.72 \\
+			& 0.6 &75.31 & 53.46 & 82.56 & 69.27& 33.30\\
+			& 0.9 & 78.76 & 47.38 & 74.42 &65.24 & 27.88\\
+						\hline
+			\multirow{3}{*}{TCL } & 0.0 & 70.31 & \textbf{55.95} &\textbf{87.24} &  70.01& 34.71 \\
+			& 0.6 & 74.79 & 53.14 & 82.56 & 68.97 & 33.21 \\
+			& 0.9 & 79.41 & 46.88 & 71.92 &64.45 & 26.92 \\
+			\hline
+			\multirow{3}{*}{ICL}& 0.0 & \underline{73.72} & 55.91 & 86.30 & \underline{\textbf{70.60}} &\underline{\textbf{35.81}}\\
+			& 0.6 & 77.26 & \underline{53.80} & \underline{83.87} & \underline{70.38} & 34.64\\
+			& 0.9 & \textbf{79.65} & 48.16 & 76.06 & 66.32 & 29.03\\
+
+			\hline
+		\end{tabular}
+		\caption{Style Transfer.}
+		\label{tab:end2endst}
+	\end{subtable}
+	\\[5pt]
+	\begin{subtable}{\linewidth}
+		\scriptsize
+		\centering
+		\begin{tabular}{lcccccc}
+			\hline
+			{Method} & {B1} & {B2} & {B3} & {B4} & {Met} & {RL}\\
+			\hline
+			w/o CL & \textbf{50.38} & 35.67 & 27.24 & 21.36 & 24.40 & 50.67 \\
+			TCL &\textbf{50.38} & 35.67 & 27.24 & 21.36 & 24.40 & 50.67\\
+			ICL &  50.18 & \textbf{35.72} & \textbf{27.36} & \textbf{21.54} & \textbf{24.57} & \underline{\textbf{51.09}} \\
+			\hline
+		\end{tabular}
+		\caption{Question Generation}
+		\label{tab:end2endqg}
+	\end{subtable}
+		\\[5pt]
+	\begin{subtable}{\linewidth}
+		\scriptsize
+		\centering
+		\begin{tabular}{lccccc}
+			\hline
+			{Method} & {R1} & {R2} & {RL} & {Met} & {BertS}\\
+			\hline
+			%BART &  \\
+			w/o CL &  43.07 & 20.01 & 35.94 & \textbf{21.44} & 63.72 \\
+			TCL & - & -&- &- &- \\
+			ICL & \textbf{43.39} & \underline{\textbf{20.55}} & \underline{\textbf{36.63}} & 19.68 & \textbf{64.05}\\
+			\hline
+		\end{tabular}
+		\caption{News Summarization}
+		\label{tab:end2endns}
+	\end{subtable}
+	\caption{Performances on different NLG tasks. ICL represents the models trained with our ICL algorithm. TCL refers to the previous work from~\cite{liang-etal-2021-token-wise}. Scores underlined are statistically significantly better than both re-implemented baselines with $p<0.05$ according to t-test. }	
+	\label{tab:end2end}
+\end{table}
+
+
+\subsection{Human Evaluations}
+
+To further prove the improvement of ICL, we hired three proficient English speakers for human evaluation. 20 samples from the test set of each task are randomly selected, ignoring the ones with totally same generations among three models, including the vanilla model, TCL and ICL. The original input, reference output and three generations are shown to annotators together, while the order of three generations are unknown and different among samples. 3-point Likert Scale is adopted for scoring for each generation~\cite{gliwa2019samsum}, where [1, 3, 5] represent 
+excellent, moderate and disappointing results 
+respectively. The average scores and agreements 
+among the annotators are shown in 
+Table~\ref{tab:humaneval}.
+
+The Fleiss Kappa on the first four tasks indicates the fair to moderate agreements. It shows the promising improvement of ICL over the vanilla model and TCL especially on DREAM, SAMSum, and SQuAD1.1, which is consistent with the conclusion based on automatic metrics.
+Although the agreement on style transfer is fair, 
+our annotators without Shakespeare background 
+tend to give low scores to all outputs.
+Therefore, the absolute improvement is 
+only $0.04$ compared to both baselines.
+%This mainly due to the indistinguishable styles between
+%Shakespeare’s plays with are quite different from modern languages. 
+Besides, the poor agreement on CNNDM reflects the 
+diverse concerns of summarization from different 
+annotators. Without more specific instructions, they 
+tends to focus more on the content coverage instead 
+of checking the detailed facts. This is also 
+consistent with the higher Meteor scores of the 
+vanilla model over ICL.
+
+\begin{table}[th]
+	\scriptsize
+	\centering
+	\begin{tabular}{l|ccc|c}
+		\hline
+		{Datasets} & {w/o CL} & {TCL} & {ICL} & {Agreement}  \\
+		\hline
+		DREAM  &3.07 & 2.50&3.20 &0.48 \\
+		SAMSum &2.97 &3.57 &3.97 &0.40 \\
+		Shakespeare &2.23 &2.23 & 2.27&0.32 \\
+		SQuAD1.1 &3.43 & 3.43 &3.77 &0.35 \\
+		CNNDM & 3.45 &- &3.40 &0.11 \\
+	%	\hline
+	%	overall & & & &\\
+		\hline
+	\end{tabular}
+	\caption{Human evaluations. The agreement is calculated by Fleiss Kappa.}
+	\label{tab:humaneval}
+\end{table}
+
+
+
+
+%Following Liu et al.\shortcite{liu2021competence}'s work, we asked annotators to comparing the performance between our generated results and baselines by choosing from ``Better, Tie, Worse''. 
+%The counts for each choice are shown in Table~\cite{}, where the Fleiss Kappa among annotators is ??.
+
+%Analysis
+
+
+
+
+
+%\subsection{Analysis on Variable Generation Lengths}
+
+%Teacher forcing, which predicts each token given the reference summary tokens during training and given the previous generated tokens during inference, leads to the exposure bias problem for NLG tasks.
+%Since ICL starts the training process by predicting the last few tokens of outputs and gradually calculates the loss based on more tokens when the model is stronger, we hypothesis that it can alleviate the exposure bias for training Seq2Seq models to some extent.
+%As stated in~\cite{pang2020text}, the output quality tends to degrade as the output length increase with the exposure bias.
+%So, we divided the test set of each task according to the length of the generated output into 4 buckets and randomly picked 20 samples in each buckets for both the corresponding baselines and our approach. Each generation is annotated by 5 point Likert Scale, where 1 is the worst and 5 is the best. 
+
+%The trends of performances on variable generation lengths are in Figure~\ref{}.
+

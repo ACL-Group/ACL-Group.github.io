@@ -1,0 +1,295 @@
+\section{Introduction}
+\label{sec:intro}
+
+Predicting ``what happens next'' in narrative stories is an important
+but challenging task of commonsense reasoning in AI. 
+Story comprehension was first studied in the context of 
+planning and goal searching~\cite{meehan1977tale}, which was one of the
+most important problems in AI. The task evolved %~\cite{chambers2008unsupervised}
+to predicting what is expected to happen next in stories. Much work
+has been evaluated on a standard dataset called 
+Story Cloze Test (SCT)~\cite{mostafazadeh2016corpus}. 
+SCT asks for the correct ending of a four-sentence
+story context from two alternatives, as shown in
+\figref {fig:story}(a). 
+
+
+
+%\begin{figure}[th]
+%\small
+%\begin{tabular}{ll} \hline
+%\\
+%Context: & Tiffany was \textcolor{blue}{getting overwhelmed at work}. \\
+ %& While she \textcolor{blue}{liked} her \textcolor{blue}{job} she \textcolor{blue}{longed for} a \textcolor{blue}{break}. \\
+ %& One day, she \textcolor{blue}{tripped outside} on uneven pavement. \\
+ %& She \textcolor{blue}{broke} her \textcolor{blue}{ankle} and had to be \textcolor{blue}{off work} for \\
+ %& a couple of months. \\
+%Ending(+): & She was \textcolor{blue}{in pain} but \textcolor{blue}{happy} to \textcolor{blue}{not} have to \textcolor{blue}{go to work}. \\
+%Ending(-): & She \textcolor{blue}{went in to work} the next day \\
+%\\
+ %\hline
+%\end{tabular}
+%\centering\includegraphics[width=3.5in]{pictures/story}
+%\caption{Example from the story-cloze task: predict the correct ending to a given short story out of provided options.}\label{fig:story}
+%\end{figure}
+
+%We re-emphasize the deficiency of the over-reliance on information bias between 
+%training and test data set that existed in many previous studies and 
+%propose to apply a new way to compensate for this deficiency 
+%in order to improve the authority of the assessment. 
+%Most early studies treat this task as a supervised binary classification problem.
+%However, this was not the original intention
+%of \scite{mostafazadeh2016corpus} who proposed the SCT dataset, 
+%because the training data has approximately 100,000 five-sentence stories,
+%without any negative endings.
+%%because the dataset didn't provide any
+%%binary classification training data, but only approximately 100,000
+%%five-sentence stories without negative endings.
+%To overcome the lack of negative training data, 
+%many researchers train their classifier using
+%the smaller validation set from SCT, 
+%which consists of 1,871 stories with annotated positive and negative endings.
+%%the smaller validation set from SCT, which consists of both positive and
+%In our study (\secref{sec:dataset}), we find there is significant bias in
+%the positive and negative endings of the stories provided in the validation
+%set, which causes information leak.
+%We argue that human authorship of negative story endings is both unreliable and costly,
+%and that validation set is not suitable for training
+%or even fine-tuning the predicting models.
+%%In addition, training with only about 1500 validation stories is contrary to ~\citeauthor{mostafazadeh2016corpus} 's original intention that actually understanding the underlying narrative from large quantity of narrative knowledge.
+%%Instead, we propose to define the SCT story ending predicting task as a
+%%semi-supervised learning problem. We train the prediction classifier on
+%%the training set (with only positive endings),
+%%as well as automatically generated negative endings.
+%Instead, We propose to construct a new training set following ~\scite{roemmele2017rnn} 
+%to reduce the correlation of training data and test data 
+%on irrelevant features, so as to improve the reliability of the evaluation. 
+
+%However, recent work~\cite{sharma2018tackling} 
+%has identified statistical spurious patterns in SCT 
+%are predictive of the correct answer. The pre-trained language models, 
+%such as BERT~\cite{devlin2018bert}, which have achieved 
+%a superhuman performance across many popular reasoning tasks are 
+%overestimated on many datasets~\cite{mccoy2019right,schuster2019towards} 
+%including SCT. There isn't proper training data on SCT for supervised learning. 
+%%So we propose to treat this problem as 
+%%a ``unsupervised'' problem which only provides positive endings for corresponding premise 
+%%four sentences for training. 
+%Some work~\cite{mostafazadeh2016corpus} treats this as an unsupervised problem and 
+%compares the correlation between context and endings to choose 
+%from alternatives. But the correlation represented by similarity of semantic vectors 
+%can hardly describe the reasoning logic. Thus others try to 
+%generate negatives for qualities of 5 sentence stories with GAN~\cite{wang2017conditional} or 
+%some proportional random methods~\cite{roemmele2017rnn}. Considering the 
+%quality of negatives, we choose to follow~\cite{roemmele2017rnn}'s generation method
+%to get augmentation data.
+%
+%Initial attempts to solve the story cloze test focused on computing the semantic 
+%similarity between the candidate ending and the story context sentences. This typically
+%requires representing the story sentences in one way or the other, e.g., averaging
+%the word vectors in a sentence~\cite{mikolov2013distributed}, sentence2vec~\cite{kiros2015skip}, %DSSM~\cite{huang2013learning} or some other features~\cite{schwartz2017story}.
+%Recently, pre-trained language models, such as LSTM~\cite{hochreiter1997long}, 
+%GPT~\cite{radford2018improving} or BERT~\cite{devlin2018bert} , have achieved 
+%a superhuman performance across many popular reasoning tasks. usually follow a two-layer architecture: first constructing
+%the representation of each sentence using some pre-trained language model such as
+%LSTM~\cite{hochreiter1997long}, GPT~\cite{radford2018improving} or BERT~\cite{devlin2018bert}  from a large corpus, then aggregating the sentence representations
+%into the whole story context representation by 
+%fine-tuning the classification model on the smaller SCT data.
+
+\begin{figure}[th]
+\centering\includegraphics[width=0.9\columnwidth]{pictures/story_example}
+\caption{An example from the story-cloze task. 
+In (b) and (c), the words in the blue boxes are concepts from the story; 
+the words in the white boxes are concepts not from the story 
+but serve as bridging nodes. }
+%\KZ{Is it too early to talk about the concepts and briding nodes here? Maybe split this figure into two figs. Show (a) first, and then (b) and (c) later when you talk about the idea of solving SCT. (a) is only used to illustrate the problem. Also, in (a) instead of using ending (+) and ending (-), say possible ending 1 and possible ending 2. Whether it'scorrect or not is obvious to the reader.}}
+%Ending (+) and ending (-) represent positive and negative ending for the context.}
+\label{fig:story}
+\end{figure}
+
+%Almost all of these methods make use of the full sentences in the story. Earlier
+%models treat every word in a sentence equally while later more advanced language
+%models, like attention models, give different weights to different words where such weights are implicitly
+%learned from the large corpus, where commonsense exists but sparsely. 
+%Based on the new training data without human annotation artifacts, 
+%we can still use the pre-training models. 
+%Moreover, merely relying on pre-training large language
+%models on corpora cannot provide reasoning structure just like humans do.
+Previous works suggest that structured commonsense knowledge~\cite{sap2019atomic,li2019story}
+may enhance story understanding. 
+For example, from \figref {fig:story} (b) and (c), the structured knowledge
+can help reason story endings with logic relations between tokens. 
+Meanwhile, it is easy to find that one could arrive at the correct
+ending 2) by looking at only some of the key words (highlighted in blue) which are 
+more informative for inference, instead of
+consuming all the words. 
+In fact, the other un-highlighted words are not only
+uninformative, but may even confuse the downstream classifier with 
+ambiguous semantics. For example, the name Tiffany is often associated 
+with jewelries, thus the introduction of this meaning into the story context 
+does more harm than good.
+
+
+%Previous research on text inference mostly requires world knowledge
+%which is often extracted from large text corpus in the form of events and
+%organized into a structure. Such encoded knowledge is called scripts which has been used 
+%successfully on several narrative modeling tasks ~\cite{ferraro2016unified,orr2014learning,pichotta2016learning,peng2017joint}. 
+%%\KZ{Cite some more?}
+%Then at run time, the stories are also ``simplified'' into
+%a sequence of events, and inference is conducted using the knowledge structure and
+%the events in the stories.
+%%Scripts, is a type of encoding of worldly knowledge, and it have been used 
+%%successfully on several narrative 
+%%modeling tasks~. 
+%%Scripts was developed to represent stereotypical sequences of event 
+%%which is a unit of story featuring a world state change 
+%%\cite{prince1987dictionary}. 
+%The events (or frames in some of the work)
+%are mostly defined by analyzing the complex structure 
+%of the sentence through dependency parsing or semantic role labeling (SRL).
+%Because the definition of events in these approaches follows a 
+%strict linguistic theory and often rigid patterns, the extraction of
+%such events is a pipelined process and suffers from low accuracy and
+%low recall. For example, using 2-tuple event (verb, dependency)~\cite{ostermann2018mcscript}, 
+%we can only extract (break, Tiffany) and (be, Tiffany) from sentence 4) of \figref{fig:story}(a), missing out some
+%very important information for inference, such as ``ankle'', ``off work'' .
+%However, The syntactic dependency events always utilize a very 
+%impoverished representation of events in the specific form of elements, 
+%for example two-tuple event (verb, dependency). 
+%The role labeled events with long pipeline preprocessing will 
+%result in an accumulation of errors and be over generalized.
+%However, 
+%the sparseness of data of events causes the information loss in the sentence
+%representation. 
+
+%Recently, Transformer~\cite{vaswani2017attention} has been 
+%popular used in text inference and reading comprehension tasks and
+% achieves great results, such as Bert~\cite{devlin2018bert} and 
+% models derived from Bert. Transformer is based on Attention 
+% which allows modeling of dependencies without regard to their distance in sequences 
+% and pay attention to the most relevance tokens by the training weight. 
+
+%Previous researches on this topic generally follow a two-step representation:
+%first represent the individual sentence with shallow linguistic features,
+%and then aggregate the sentence representations into a story context
+%representation~\cite{mostafazadeh2016story,li2018multi,chen2018incorporating,zhou2019story}.
+%Because most of these approaches use complex neural models
+%with large number of parameters,
+%they require large amount of training data.
+%Unfortunately, stories for training come in limited quantity,
+%and contain much variance and noises, distracting most of these models.
+%Moreover, most of these methods did not properly model the
+%commonsense relations between the sentences when aggregating
+%the sentence representations.
+
+%The first two genres represent the story from different perspectives.
+%Many feature-based models represent a whole story with the external shallow
+%linguistic features such as word embedding, character features,
+%part-of-speech (POS) taggings, sentiment polarity of a word and
+%negation~\cite{li2018multi}. However, these methods ignore the semantic
+%structure in the story line, which is important for story understanding.
+%The neural models represent each sentence with low-dimensional dense
+%vectors~\cite{mostafazadeh2016story}.
+%The sentence vectors are trained with different language models from
+%a larger corpus, such as the BookCorpus, which contains 11,000 books.
+%However, without sufficiently enough training resources, it is hard to
+%learn the reasoning logic and an efficient representation.
+%The third line incorporates the language features in neural model.
+%For example, \citeauthor{chen2018incorporating} and ~\citeauthor{zhou2019story} apply
+%!TEX encoding = UTF-8 Unicode~\cite{speer2017conceptnet}, a commonsence knowledge base,
+%to extract the commonsense features between any two sentences in
+%a story.
+
+%Inspired by the above observation, we propose to simplify the sentences
+%by preserving only the tokens deemed important, before representing them by
+%language models. This is equivalent to reducing the weight of less improtant tokens
+%to zero, like some prepositions. 
+%In other words, we reduce the weight of some unimportant tokens directly to zero 
+%on the first step of pre-trained language models. 
+%We model sentences as a sequence of events and concepts, defined in
+%ConceptNet~\cite{speer2017conceptnet}, a community curated open-domain 
+%knowledge graph covering much of the knowledge required for commonsense 
+%reasoning. 
+%The advantages of ConceptNet are i) events and concepts are defined
+%in the form of simple phrases, without complex structures, 
+%which makes matching at runtime easier; and ii) the relations
+%between the concepts are defined by humans and thus presumed to be
+%more accurate.
+% This method can also remedy the issues of event extraction mentioned above. \eve{?I didn't see the issue of event extraction.}
+%In \figref{fig:story}(a), each blue-color phrase (multi-word expression) 
+%matches a concept from ConceptNet. Put together, they 
+%constitute the necessary ingredient for understanding the story.
+%Such a way of extracting main events and concept from a story is simple 
+%but intuitive.
+
+%decent performance without generalization or designed format. 
+Inspired by the above observation, we improve the story representation
+by using commonsense knowledge from two aspects.
+%\KZ{Move fig (b) and (c) here.}
+First, we simplify sentences by extracting a sequence of concepts from
+ConceptNet~\cite{speer2017conceptnet}, a community curated open-domain 
+knowledge graph covering much of the knowledge required for commonsense 
+reasoning
+%concepts from the sentence
+and obtain the {\em intra-sentence} concept representation.
+%We keep only the concepts (colored words in \figref{fig:story}(a)
+%from each sentence to represent the main idea of the story.
+%By simplifying the sentences, we essentially reduce the noise
+%and variance in the training data, which allows better performance
+% given limited amount of data.
+%Then we use pre-trained language models from large corpus
+%inspired bySkip-thought~\cite{kiros2015skip}, 
+%to acquire the
+%semantic representation of each simplified sentence. 
+%We choose the typical encoding methods that have achieved good result on story ending 
+%reasoning task~\cite{roemmele2017rnn,mostafazadeh2016corpus,devlin2018bert}. 
+%We will show that simplification can bring great improvement in accuracy for
+%each of these encoding methods.
+%\KZ{But why not use GPT and other stronger language models? Shall we have a discussion here?}
+Second, we incorporate structured commonsense knowledge 
+from ConceptNet
+%ConceptNet is first used on the story ending prediction task 
+%by computing the concepts similarity between the ending and 
+%context~\cite{chen2018incorporating}. For better use of 
+by including the pre-trained concept 
+embeddings from ConceptNet knowledge graph to story sentence representation. 
+%These embeddings encode
+%relations between the key concepts that exist in the contexts and the ending from ConceptNet knowledge graph.
+For example, in ~\figref{fig:story}(c),  ``long for break'' is related to ``have a rest''
+through {\em CapableOf} and {\em MotivatedBy} relation edges.
+These edges help us ``connect the dots'' within the story and allow us
+to make more meaningful deduction along the story.
+
+%Although recent work on the story ending prediction task achieves increasingly
+%better results, they do so using the validation split of the original
+%SCT dataset. It has been shown that the validation set suffers from
+%annotation artifacts~\cite{gururangan2018annotation,sharma2018tackling},
+%which means it contains statistical biases that can be learned to make better
+%predictions without actually understanding the stories. 
+%Therefore, in this paper, instead of using the validation set, we create a
+%training set that doesn't share statistical cues with the test set, thus
+%minimizing the information leak betweent training and test. 
+
+In summary, this paper makes the following contributions:
+%\KZ{Here depending on your contribution, you should make forward references to either approach section and eval sections.}
+\begin{itemize}
+\item We simplify the stories by streamlining sentences to a few
+key concepts, which eliminates unwanted variance in the text,
+and achieve better results than
+using the original sentences (see \secref{sec:simp}).
+% \KZ{How do you show that training is easier with the simplification of sentences in theevaluation?};
+\item We combine sequential and structured representation for the key concepts
+in a sentence as the sentence representation
+and get better performance (see \secref{sec:represent}).
+%show that such structured
+%knowledge is useful in understanding the stories.
+%This kind of representation takes into account the inter-sentence semantics
+%and the external structured commonsense knowledge; ;
+\item %Comprehensive experiments show that the above techniques effectively
+%enhance the representation of commonsense in the stories and thereby improves
+%the end-to-end ending prediction accuracy. 
+Our approach, when combined with 
+the suitable language model, beats the recent state-of-the-art methods by
+substantial margins using the corrected, unbiased training data (see \secref{sec:dataset}
+and \secref{sec:result}).
+\end{itemize}

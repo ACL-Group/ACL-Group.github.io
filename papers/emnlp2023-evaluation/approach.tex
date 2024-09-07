@@ -1,0 +1,81 @@
+\section{Approach}
+\label{sec:approach}
+
+Given a source document $X=\{x_1, ..., x_n\}$ and the corresponding summary $Y=\{y_1, ..., y_m\}$, the goal of this work is to design a metric $\rm FFLM$ measuring the faithfulness of $Y$ based on the foundation model $LM(\cdot)$. We adopt $LM(\cdot)$ under the teacher-forcing strategy, which can provide a sequence of generation probabilities $p$ of a given text with or without other conditional inputs.
+We first introduce three probability changes for faithfulness measurements and then propose a feasible design of our comprehensive metric FFLM.
+Scores proposed by \citet{she2022cop} and \citet{son2022harim} are in Appendix~\ref{sec:appendix-bk}.
+
+\subsection{Faithfulness Measurements via Probability Changes}
+\label{sec:approach-pc}
+
+The intuition is that the generation probability of a piece of text will increase when providing more related and consistent information.
+On the contrary, the generation probability will drop when conditioned on inconsistent information.
+Accordingly, we considered three different probability changes in two categories as follows.
+
+
+\textbf{Changes with Prior Probability:} 
+The prior probability of $Y$ can be estimated by the foundation model $LM(\cdot)$:
+\begin{equation}
+	{p}_Y^{lm} = LM(Y) = \{p_{y_i}^{lm}\}|_{i=1}^m
+\end{equation}
+and the sequence-to-sequence probability of $Y$ given $X$ is:
+\begin{equation}
+	{p}_Y^{s2s} = LM(Y|X) = \{p_{y_i}^{s2s}\}|_{i=1}^m
+\end{equation}
+
+If $Y$ is a faithful summary, the sequence-to-sequence probability $p_Y^{s2s}$ should be larger than the prior probability $p_Y^{lm}$ as more  information consistent to $Y$ is given by conditioning on $X$.  
+Therefore, a faithfulness measurement can be defined as:
+\begin{equation}
+	\Delta_{p_Y}^{prior} =\frac{1}{m}\sum \nolimits_{i=1}^m  p_{y_i}^{s2s} - p_{y_i}^{lm} 
+\end{equation}
+From another point of view, we expect that the generation of $Y$ highly relies on $X$, instead of parametric knowledge stored in $LM$ which is a main resource of hallucinations~\cite{ji2023survey}.
+
+Similarly, a faithful $Y$ can support the contents in $X$. Thus, the differences between the sequence-to-sequence probability of $X$ given $Y$ and the prior probability of $X$ is another reasonable measurement:
+\begin{equation}
+	\begin{aligned}
+		&p_X^{lm} = LM(X) = \{p_{x_i}^{lm}\}|_{i=1}^n \\
+		&p_X^{s2s} = LM(X|Y) = \{p_{x_i}^{s2s}\}|_{i=1}^n\\
+		& 	\Delta_{p_X}^{prior} =\frac{1}{n}\sum\nolimits_{i=1}^n  p_{x_i}^{s2s} - p_{x_i}^{lm} 
+	\end{aligned}
+\end{equation}
+
+\textbf{Changes with Conditional Probability:}
+Instead of comparing sequence-to-sequence generation probabilities with prior probabilities, another way is to add more information $P$ besides the input document $X$, leading to an influence on the generation probability of $Y$. Following~\citet{she2022cop}, we simply set $P=Y$. In this way, if $Y$ is inconsistent with $X$, prefixing $P$ will cause information contradictions in the input and decrease the probability of $Y$ compared to a consistent one. Mathematically, the third measurement is:
+
+\begin{equation}
+	\begin{aligned}
+		&p_Y^{pref} = LM(Y|P, X) = \{p_{y_i}^{pref}\}|_{i=1}^m \\
+		& 	\Delta_{p_Y}^{cond} =\frac{1}{m}\sum\nolimits_{i=1}^m  p_{y_i}^{s2s} - p_{y_i}^{pref} 
+	\end{aligned}
+\end{equation}
+
+We didn't consider $X$ and $Y$ reversely here. The main reason is that inputting the sequence $[P=X, Y, X]$ to $LM(\cdot)$ is much more costly and may exceed the max sequence length of most models since $X$ is much longer than $Y$, i.e., $n\gg m$.
+
+
+\subsection{A Feasible Design of FFLM}
+\label{sec:approach-design}
+
+\citet{goyal2022training} found that high-loss tokens generally correspond 
+to unfaithful contents during training a summarization model. 
+Inspired by this finding and the success of the loss truncation training 
+algorithms~\cite{kang2020improved}, we think that more attention should be 
+paid to such high-loss (or low-probability) tokens when calculating 
+the faithfulness scores.
+So, instead of simply averaging the probability changes to get the final score for an (X, Y) pair, we adopt two operations. First, we take the logarithm of the probabilities before subtraction, which will magnify changes on the low-probability tokens. Second, we re-weight each token based on $p_Y^{s2s}$ and $p_X^{s2s}$ correspondingly. We get:
+
+\begin{equation}
+	\begin{aligned}
+			&\Delta_{Y}^{prior} =\frac{1}{m}\sum\nolimits_{i=1}^m  e^{p_{y_i}^{s2s}} (\log{p_{y_i}^{s2s}} - \log{p_{y_i}^{lm}}) \\
+			&\Delta_{X}^{prior} =\frac{1}{n}\sum\nolimits_{i=1}^n  e^{p_{x_i}^{s2s}}(\log{p_{x_i}^{s2s}} - \log{p_{x_i}^{lm}}) \\
+			&\Delta_{Y}^{cond} =\frac{1}{m}\sum\nolimits_{i=1}^m  e^{p_{y_i}^{s2s}}(\log{p_{y_i}^{s2s}} - \log{p_{y_i}^{pref}}) \\
+	\end{aligned}
+\end{equation}
+
+Finally, FFLM is a combination of these metrics:
+\begin{equation}
+	{\rm FFLM} = \alpha \Delta_{Y}^{prior} + \beta \Delta_{X}^{prior} + \delta \Delta_{Y}^{cond}
+	\label{eq:fflm}
+\end{equation}
+where $\alpha$, $\beta$, and $\delta$ are weighting parameters in the range 
+of 0 to 1 and $\alpha+\beta+\delta=1$. These three weights can be 
+tuned on a validation set, or set manually as hyper-parameters.

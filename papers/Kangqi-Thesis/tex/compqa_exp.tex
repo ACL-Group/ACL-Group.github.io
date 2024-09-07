@@ -1,0 +1,447 @@
+%# -*- coding: utf-8-unix -*-
+% !TEX program = xelatex
+% !TEX root = ../thesis.tex
+% !TEX encoding = UTF-8 Unicode
+
+\section{实验}%eval
+
+本节主要介绍我们所使用的自动问答数据集，以及用于比较的已有问答模型。
+具体实验包括在多个数据集上的端到端测试，以及一系列切除测试，%（ablation test）
+用来分析方法中不同模块的重要性。
+
+%In this section, we introduce the QA datasets and state-of-the-art systems
+%that we compare.
+%We show the end-to-end results of the KBQA task,
+%and perform detail analysis to investigate the importance of different modules
+%used in our approach.
+
+
+
+\subsection{实验设置}%experimental setup
+
+
+
+%TODO: QALD: too small, dismiss
+\textbf{自动问答数据集：}
+我们在实验中使用了三个开放领域的数据集，分别为ComplexQuestions\cite{bao2016constraint}，
+WebQuestions\cite{berant2013semantic}以及SimpleQuestions\cite{bordes2015large}，
+对应缩写为CompQ，WebQ和SimpQ。
+CompQ数据集来源于Bing搜索引擎日志，一共包含2,100个具有复杂语义的问题，
+以及人工标注的答案，
+%大致的类型比例
+前1,300个问句为训练集，后800为测试集。
+WebQ数据集收集了5,810个通过Google Suggest API抓取的问题，以及对应的人工标注答案，
+约有15\%的问句为复杂语义，同样数据集被分为3,778句训练集，以及2,032句测试集。
+SimpQ一共包含108,442个具有简单语义的问句以及标注的答案，
+答案形式为\textless 相关实体，谓词\textgreater 对，
+%哪来的
+我们主要利用该数据集进行补充实验，验证回答复杂问题的模型在简单语义场景中的性能。
+对于其它自动问答的数据集，例如QALD，由于测试集数量过小，我们没有在这之上进行实验。
+%WebQ/CompQ/SimpQ的下载地址呢
+
+%\noindent
+\textbf{知识库：}
+对于在CompQ和WebQ上进行的实验，
+我们跟随文献\parencite{berant2013semantic,xu2016question}的实验设置，
+使用完整版本的Freebase\footnote{
+该版本具体数据可从\url{https://github.com/syxu828/QuestionAnsweringOverFB}下载。}
+作为知识库，共包含约46,000,000个不同实体，以及5,323种不同谓词。
+同时通过开源图数据库Virtuoso\footnote{\url{http://virtuoso.openlinksw.com}.}
+对Freebase进行访问与查询。
+%\footnote{
+%We remove predicates in \textit{user}, \textit{base} and \textit{freebase} domain,
+%as well as predicates whose objects are neither entities or literals, 
+%like \textit{common.topic.article} and \textit{common.topic.image}.
+%}
+对于SimpQ上进行的实验，我们使用数据集中提供的FB2M知识库，
+它是Freebase的一个子集，包含大约2,000,000个实体和10,000,000个事实三元组。
+
+
+\textbf{模型实现及调参细节：}
+对本节中的所有实验，我们使用基于GloVe\cite{pennington2014glove}
+预训练的词向量作为模型词向量矩阵的初始化。
+词向量维度$d$，以及双向GRU层的隐藏状态维度均设为300。
+损失函数中的$\lambda$的调参范围为\{0.1, 0.2, 0.5\}，
+实体链接优化的集成阈值$K$范围为\{1, 2, 3, 5, 10, +INF\}，
+训练批量大小$B$范围为\{16, 32, 64\}.
+
+
+
+\subsection{端对端实验比较}%eval. result
+
+我们首先对WebQ和CompQ数据集进行端到端测试。
+实验所使用的评价指标为所有测试问题的平均$F_1$分数。
+%具体答案怎么生成，最好的schema
+Berant等人\cite{berant2013semantic}提供的官方评测代码\footnote{
+\url{http://www-nlp.stanford.edu/software/sempre}.
+}通过预测答案和标准答案的完全字面匹配计算每个问题的$F_1$分数，
+对于CompQ数据集，其中标注的实体名称和Freebase内实体名称存在大小写不一致的情况，
+因此我们参照Bao等人\cite{bao2016constraint}的做法，
+计算$F_1$分数时忽略大小写。
+% talk shorter??
+通过对验证集进行调参，WebQ数据集的实验参数为$\lambda=0.5$，$B=32$，$K=3$，
+CompQ数据集的参数为$\lambda=0.5$，$B=32$，$K=5$。
+
+
+\tabref{tab:compqa-e2e}列出了在两个数据集上的具体实验结果。
+%比较的都是些什么东西 不只是SP，但基本不是KGE（可以聊一下）
+%是不是可以考虑把SP+NN的方法标记出来
+%we mainly compare with SP or SP + NN methods, as close to our method,
+%and competitive among various approaches.
+Yih等人\cite{yih2015semantic}在CompQ上的实验结果基于Bao等人\cite{bao2016constraint}
+对其模型的实现。
+%无法复现，没有代码
+在CompQ数据集上，我们提出的神经网络模型超过了其它已有方法，
+将平均$F_1$分数提升了1.9，
+而在WebQ数据集上，与大量已有工作进行对比，我们的模型排在第二位，
+文献\parencite{jain2016question}基于记忆网络模型，成为分数最高的系统，
+其方法并不基于语义解析，
+无法直观解释一个答案是基于怎样的语义而生成，
+并且问答过程涉及的隐含语义与单一谓词路径相似，难以应对类型、时间、顺序等语义限制。
+%less interpretable
+需要指出的是，Xu等人\cite{xu2016question}利用维基百科的非结构化文本进行
+候选答案的验证，过滤掉满足主路径语义，但不匹配剩余语义的答案。
+由于此方法引入了大量由人工社区提供的额外知识，它达到了一个略高于我们方法的分数（53.3），
+但将此步骤去掉之后，模型分数跌落至47.0。
+此外，文献\parencite{yih2015semantic,bao2016constraint}
+额外使用了ClueWeb数据集\cite{gabrilovich2013facc1}
+学习谓词与自然语言词组之间的语义匹配关系。
+根据Yih等人公布的比较结果，
+把这一部分信息移除之后，WebQ数据集上的$F_1$分数将下降了约0.9。
+此外，结果显示，扩充实体链接可以进一步提升问答系统的整体性能，
+在两个数据集上都获得了大约0.8的提升，是对语义匹配模型的一个良好补充。
+我们认为，和其它使用了S-MART链接工具的问答系统相比，%此处可以cite
+我们的结果可以与之直接比较，
+这是因为S-MART的算法同样基于维基百科的半结构化信息进行学习，
+例如重定向链接、消歧义页面、锚文本%anchor text
+等信息，实体链接扩充的步骤没有并没有引入额外的知识，
+因此可以直接比较。
+%还有好几个可以说明的点
+
+\begin{table}[ht]
+    \centering
+    \bicaption{CompQ和WebQ数据集上的实验结果，评价指标为平均$F_1$分数}
+              {Average $F_1$ scores on CompQ and WebQ datasets.}
+    \begin{tabular} {l|c|c}
+        \hline
+        Method  &   CompQ  & WebQ \\
+        \hline
+        Dong et al. (2015)    \parencite{dong2015question}            &   -   & 40.8  \\
+        Yao et al. (2015)     \parencite{yao2015lean}                 &   -   & 44.3  \\
+        Bast et al. (2015)    \parencite{bast2015more}                &   -   & 49.4  \\
+        Berant et al. (2015)  \parencite{berant2015imitation}         &   -   & 49.7  \\
+        Yih et al. (2015)     \parencite{yih2015semantic}             & 36.9  & 52.5  \\
+        Reddy et al. (2016)   \parencite{reddy2016transforming}       &   -   & 50.3  \\
+        Xu et al. (2016)      \parencite{xu2016question} (w/o text)   &   -   & 47.0  \\
+        Bao et al. (2016)     \parencite{bao2016constraint}           & 40.9  & 52.4  \\
+        Jain (2017)           \parencite{jain2016question}            &   -   & \textbf{55.6}  \\
+        Abujabal et al. (2017)\parencite{abujabal2017automated}       &   -   & 51.0  \\
+        Cui et al. (2017)     \parencite{cui2017kbqa}                 &   -   & 34.0  \\     
+        Hu et al. (2018)      \parencite{hu2018answering}             &   -   & 49.6  \\
+        Talmor et al. (2018)  \parencite{talmor2018web}               & 39.7  &   -   \\
+        \hline
+        Ours (w/o linking enrich)       & 42.0  & 52.0  \\
+        Ours (w/ linking enrich)        & \textbf{42.8}  & 52.7  \\
+        \hline
+    \end{tabular}
+    \label{tab:compqa-e2e}
+\end{table}
+%TODO: if time allows, stat. the F1 of simple / complex questions in WQ.
+%TODO: also try to talk about enrichment analysis.
+
+
+针对语义匹配本身，我们在SimpQ数据集上进行了测试。
+由于SimpQ提供了标注的相关实体，我们可以消除实体链接步骤带来的差错，
+单独衡量语义匹配的性能。
+我们根据相关实体的名字，倒推出它在问句中对应的短语，
+将其替换为\textless E\textgreater 之后，预测问句所表达的知识库谓词，
+使用准确率作为评价指标。
+\tabref{tab:compqa-simpq}列出了具体的实验结果。
+相关文献主要针对简单问题，尝试了许多模型变种，
+例如文献\parencite{qu2018question}的准确率最高，
+该模型利用循环神经网络对问句语义进行建模，
+同时利用卷积神经网络，从问句和谓词名称的词级别二维相似度矩阵中学习隐藏匹配样式。
+文献\parencite{yu2017improved}使用了双层双向LSTM网络对问句进行编码，
+并在两层中使用残差连接方式捕捉不同粒度的语义。
+我们的语义匹配准确率略低一些，
+考虑到重点在于多个语义成分的组合，而不是回答简单问题，
+我们的模型更加轻量，同时93.1\%的准确率也确保了模型的有效性。
+
+\begin{table}[ht]
+    \centering
+    \bicaption{SimpQ数据集上的语义匹配测试结果}{Accuracy on the SimpQ dataset.}
+    \begin{tabular} {l|c|c}
+        \hline
+        Method  &   Relation Inputs     & Accuracy   \\
+        \hline
+        BiLSTM w/ words             & words         & 91.2 \\
+        BiLSTM w/ rel\_name         & rel\_name     & 88.9 \\
+        Yih et al. (2015) \parencite{yih2015semantic}     & char-3-gram   & 90.0 \\
+        Yin et al. (2016) \parencite{yin2016simple}       & words         & 91.3 \\
+        Yu et al.  (2017) \parencite{yu2017improved}      & words+rel\_name    & 93.3 \\
+        Qu et al.  (2018) \parencite{qu2018question}      & words+rel\_separated    & \textbf{93.7} \\
+        \hline
+        Ours                        & words+path    & 93.1 \\
+        \hline
+    \end{tabular}
+    \label{tab:compqa-simpq}
+\end{table}
+
+\subsection{模型分析}%ablation
+
+本节主要对模型的各个主要进行分析测试，并讨论模型回答错误的一些例子。
+
+
+\subsubsection{谓词路径表示}
+%word和id repr，换个名字可好
+我们改变模型对谓词路径的编码方式，并在CompQ和WebQ上进行分析测试。
+首先对于谓词名字序列，我们尝试使用双向GRU层
+（和问句编码部分结构一致，但不共享参数）拼接隐藏状态的方式
+替代词向量平均。
+对于谓词编号序列，我们将对路径整体编码方式改为谓词向量的平均。
+%谓词向量好像之前没提过
+
+实验结果如\tabref{tab:compqa-abl-pw}所示。
+观察发现，前三行的基线方法移除了名字序列或编号序列，
+在两个数据集上的$F_1$分数明显低于后三行的方法。
+这说明了谓词的名字序列和编号序列所提供的语义可以互相补充。
+另一方面，对比最后两行实验，
+在CompQ数据集上，对名字序列使用词向量平均要优于使用双向GRU，
+而在WebQ上，这个差距变得更小，
+我们认为原因主要来自于训练数据量的区别，
+WebQ的训练集大小约为CompQ的三倍，
+因此可以支持更复杂的模型。
+%考虑到avg还是比RNN要好，这里确定不狠踩一脚吗？
+%Since the number of distinct predicate sequences are limited,
+%leveraging both w and id outperforms other approaches.
+%Since the usage of words in FB could be slightly different from NL scenario,
+%as path embedding is fitting the residues between q and relation names,
+%and the repr of word and id are more likely to be complementary to each other.
+%Meanwhile,
+
+\begin{table}[ht]
+    \centering
+    \bicaption{对谓词表示的分析结果。}{Ablation results on path representation.}
+    \begin{tabular} {c|c|c|c}
+        \hline
+        Word repr.  &  Id repr.  &   CompQ $F_1$  & WebQ $F_1$ \\
+        \hline
+        None        &  PathEmb  &   41.11   & 51.86 \\      %%  XH
+        Average     &  None     &   42.18   & 51.74 \\      %   BX
+        BiGRU       &  None     &   41.80   & 51.87 \\      %   RX
+        Average     &  Average  &   42.16   & 52.00 \\      %   BB
+        BiGRU       &  PathEmb  &   41.52   & 52.33 \\      %   RH
+        Average     &  PathEmb  &   \textbf{42.84}   & \textbf{52.66} \\      %   BH
+        \hline
+    \end{tabular}
+    \label{tab:compqa-abl-pw}
+\end{table}
+
+
+%%Ablation 1: Bao / Sep / Comp. (20:00)
+%%Kernel: what's compact / separate / bao's difference
+%%Kernel: 
+%%Ablation 2: Q- encoding, compare with SimpQ, if possible (21:40)
+%%What dependency can do and what they can't.
+%%can: syntactic information (functional), as compression; can't: lose information
+%%Example: "end up marrying" "gain independence from" ...
+%\textbf{Question representation:}
+%\tabref{tab:abl-qw} shows the ablation result on all the datasets.
+%when dependency path information is augmented with sentential information,
+%the performance boosts by relatively xx.x on average.
+%introducing strong syntactic and functional features,
+%also local features (like attention)
+%however, performances drops by xx.x if only use dependency,
+%crucial words not in the path: such as 
+%"gain independence from"
+%"end up marrying"
+%%What dependency can do and what they can't.
+%%can: syntactic information (functional), as compression; can't: lose information
+%%Example: ``end up marrying`` ``gain independence from`` ...
+%\textbf{Question representation:}
+%\tabref{tab:abl-qw} shows the ablation result on all the datasets.
+%when dependency path information is augmented with sentential information,
+%the performance boosts by relatively xx.x on average.
+%introducing strong syntactic and functional features,
+%also local features (like attention)
+%however, performances drops by xx.x if only use dependency,
+%crucial words not in the path: such as 
+%``gain independence from``
+%``end up marrying``
+
+
+\subsubsection{问句表示及语义组合}
+为了说明语义组合的有效性，我们建立一个基线模型：
+不使用\eqnref{eqn:maxpool}对应的最大池化操作，
+替代方式是分别计算每个问句表示和每个语义成分之间的相似度，
+并将各部分相似度分值相加，作为查询图与问句的整体相似度：
+$S_{rm}(q, G) = \sum_{i}{cos(\bi{p}^{(i)}, \bi{q}_p^{(i)})}$。
+对于问句的编码方式，我们进行一系列比对实验，
+观察不使用字面序列或依存语法路径对整体性能带来的影响。
+
+
+\tabref{tab:compqa-abl-qw}显示了在CompQ和WebQ上的具体比较结果。
+相比仅使用问句字面信息的模型，当依存语法分析提供的路径信息被使用后，
+问答系统整体性能平均提升了0.42。
+在隐藏语义的角度，答案和相关实体之间的依存语法路径主要包含了
+词之间的语法依赖，以及每个词的功能化特征，
+是对整个问句序列信息的良好补充。
+然而，如果对问句编码只使用依存语法信息，$F_1$分数会大幅度下降约2.17。
+对于具有特殊语法结构的问题，如果仅关注疑问词和实体短语间的路径，
+会使得模型丢失句中表达语义的关键词，
+例如以下两例：
+``who did \textit{draco malloy} end up \textbf{marrying}'' 以及
+``who did the \textit{philippines} gain \textbf{independence} from'' ，
+其中相关实体用斜体标出，代表语义的关键词为粗体。
+经过观察发现，WebQ中大约有5\%的问句具有类似的结构，
+在丢失关键语义信息后很难预测出正确的查询图。
+
+
+语义组合的比较结果显示，模型中使用的最大池化操作要一致优于对应的基线方法。
+在WebQ上的提升要低于CompQ，
+主要原因是WebQ中约85\%的问句依然是简单语义形式，
+无法体现语义组合的区别。
+移除依存语法信息和池化操作的模型可以视为一个基础的
+利用深度学习改善语义解析的问答模型。
+在复杂语义场景中，局部信息和语义组合的引入，
+两者结合使得CompQ数据集上效果提升1.28。
+
+
+我们通过以下例子，进一步阐述模型中语义组合带来的优势。
+给定问句``who is gimli's father in the hobbit'' ，
+由于``gimli'' 的实体链接结果中既存在自然人，也存在名字一样的虚拟角色，
+我们主要关注下面两个可能代表真实语义的查询图：
+%此处可以画图填充
+\begin{enumerate}
+    \item ($?$, $children$, $gimli\_person$)；
+    \item ($?$, $fictional\_children$, $gimli\_character$) $\wedge$ ($?$, $appear\_in$, $hobbit$)。
+\end{enumerate}
+两个查询图涉及到三个不同的语义成分，
+如果独立观察其中每一个语义成分，谓词$children$与问句整体的匹配程度最高，
+因为``father'' 一词包含了很强的语义信息，训练数据中也包含较多``'s father'' 和$children$的关联，
+因此它们的关联特征容易被学习。
+相比之下，$fictional\_children$过于生僻，而$appear\_in$与``father'' 无关联，
+这两个语义成分的相似度远不如$children$，因此基线模型认为第一个查询图更加正确。
+%有没有办法show出两条边各自的分数？
+而我们的模型中，不同语义成分的隐藏特征通过池化方式汇集起来，
+分别将各自突出的隐藏语义传递出去，构成查询图整体的语义向量。
+与单独的$children$语义向量相比，查询图整体语义能兼顾
+与``'s father'' 以及``in the hobbit'' 匹配，
+因此模型能正确预测第二个查询图为答案。
+
+
+%To demonstrate the effective of this part of our model,
+%we construct two alternative baselines.
+%For the first baseline, we remove the max pooling operation (\eqnref{xx}) and
+%calculate the cosine similarity of each individual component,
+%then sum them together as the relation matching score:
+%$s(q, p) = sum blabla$.
+%The second baseline is inspired by \citet{bao2016constraint}:
+%the output of relation matching module is a 5-dim vector
+%serving as rich relation matching features in the final layer.
+%Each value in this vector indicates the sum of similarity scores
+%between the question and the semantic component in 5 different categories:
+%main, entity, type, time, ordinal, respectively.
+%As the results shown in \tabref{tab:abl-sem},
+%we observe that
+%there's a stable gap between our approach and the first baseline,
+%%TODO: t-test if possible
+%showing that our model is able to capture the semantic interaction between components,
+%rather than treating the query structure as a set of isolated components.
+%We also point out that for both baselines,
+%shared paths between positive and negative query structures are canceled out,
+%as a result, the learning step cannot make full use of training pairs.
+%% Bao lower than sep? not sure.
+%
+%%talk about "gimli's father", using figures if possible
+%
+%
+%%Ablation 2: Q- encoding, compare with SimpQ, if possible (21:40)
+%%What dependency can do and what they can't.
+%%can: syntactic information (functional), as compression; can't: lose information
+%%Example: "end up marrying" "gain independence from" ...
+%\textbf{Question representation:}
+%\tabref{tab:abl-qw} shows the ablation result on all the datasets.
+%when dependency path information is augmented with sentential information,
+%the performance boosts by relatively xx.x on average.
+%introducing strong syntactic and functional features,
+%also local features (like attention)
+%
+%however, performances drops by xx.x if only use dependency,
+%crucial words not in the path: such as 
+%"gain independence from"
+%"end up marrying"
+%
+%webq: more simple questions (80\%) not big difference between sep and comp
+%compq: significant gap
+
+\begin{table}[ht]
+    \centering
+    \bicaption{问句表示和语义组合的分析测试。}{Ablation results on question representation and compositional strategy.}
+    \begin{tabular} {c|c|c|c}
+        \hline
+        Composition     & Q\_repr   &   CompQ $F_1$   & WebQ $F_1$ \\
+        \hline
+        Baseline        &   sentential    &   41.56   & 52.14 \\
+        Baseline        &   both          &   42.35   & 52.39 \\
+        \hline
+        Ours            &   dependency    &   41.48   & 49.69 \\
+        Ours            &   sentential    &   42.59   & 52.28 \\
+        Ours            &   both          &   \textbf{42.84}   & \textbf{52.66} \\
+        \hline
+    \end{tabular}
+    \label{tab:compqa-abl-qw}
+\end{table}
+
+
+
+
+\subsubsection{错误分析}
+%Analyze the cases where not the highest result is returned.
+%take compQ as example.
+%
+%1. entity linking error
+%several small categories
+%
+%2. relation matching error
+%heat map
+%
+%3. not perfect (missing edges)
+%
+%
+%percentage
+%example:
+%what's wrong
+%what's right
+%reason
+
+我们从CompQ数据集中完全回答错误的问题中随机挑选100个例子进行分析，
+并归纳出下列几类错误原因。
+
+\emph{主路径错误} (10\%)：
+模型完全没有理解问句语义，哪怕最主要的语义也没有预测出来。
+这类错误对应的问题通常较难回答，例如
+``What native american sports heroes earning two gold medals in the 1912 Olympics'' 。%10/100 e.g. 1417
+
+\emph{语义限制错误} (42\%)：
+模型预测的查询图中包含正确的主路径，但其余语义限制存在偏差。
+比较典型的一类限制是隐含时间限制，例如问句
+``Who was US president when Traicho Kostov was teenager'' 无法准确回答，
+因为``when Traicho Kostov was teenager'' 暗示了时间限制，
+受限于候选生成方法，这类限制无法被识别。
+%这个例子有问题啊，讲道理主路径对的话，F1不会为0的
+%你确定比例这么高？？这可是完全错误的例子诶
+%35/100, e.g. 1930 1843
+
+\emph{实体链接错误} (16\%)：这类错误的主要原因是问句中的一些实体词组具有高度歧义。
+例如问句``What character did Robert Pattinson play in Harry Potter'' ，
+而``Harry Potter'' 可以对应7部不同的电影，因此很难猜测问句中指的是哪一部。
+%15/100  e.g. 2064 1664
+
+\emph{杂项} (32\%)： 包含了一些较明显的答案标注错误，以及问题本身语义不明确或不合逻辑。
+例如问句``Where is Byron Nelson 2012'' ，
+根据标注答案可以帮助确定问句中``Byron Nelson'' 的具体所指，
+然而此人已于2006年去世，因此该问题的真实意图难以捉摸，
+或许提问者想问的是他的逝世地点，或葬于何处。%25/100 e.g. 1301 1947
+
+

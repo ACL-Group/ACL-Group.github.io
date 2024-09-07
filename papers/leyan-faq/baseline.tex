@@ -1,0 +1,74 @@
+\section{Baselines}
+In addition to a naive baseline and a strong baseline, we also provide a human baseline for the proposed task. We will introduce them in this section.
+
+\subsection{Naive Baseline} The task is to generate several question-answer pairs (QA pairs) with the input of document $D=\{P_1, P_2, ... , P_n\}$ and aspect $Aspect$. In this naive baseline, it is divided into three steps: Answer Extraction, Question Generation, and Filtering. All steps are trained separately.
+
+\paragraph{Answer Extraction.} Same as most of other QA-pair generation methods, we extract answers from the document first.
+
+Follow the work of Subramanian et al.~\shortcite{subramanian2017neural}, we use two methods, entity tagging (NER), and pointer network, to extract answers.
+The input is $(P_i, Aspect)$ pair from retrieval. For entity tagging, we use the spaCy\footnote{https://spacy.io/docs/usage/entity-recognition} to predict entities in $P_i$ and keep all entities. For the pointer network, it will generate all possible answer positions of $P_i$. We implement pointer network as Subramanian et al's~\shortcite{subramanian2017neural}. 
+%Considering that the error of this step will continue to the next step,
+%while generating the question according to (paragraph, answer) pairs and generating the answer according to (paragraph, question) pairs are both hot research fields. 
+%we choose to generate answers first because we can extract answers from paragraphs instead of generating them, and extraction generally causes less error than a generation.
+
+We also tried the sequence labeling method. The BIO tagging model implemented by BiLSTM-CRF predicts ``O" for every token. We think the reason is the answer is too sparse in each $P_i$, which misleads the model to predict ``O'' for every token. So we split $P_i$ into sentences $\{S_{i,1}, S_{i,2}, ..., S_{i,n}\}$ and use tagging model to predict BIO tagging for each $S_{i,j}$. Finally, we combine all the sentence tagging as the tagging of $P_i$.
+
+\paragraph{Question Generation.} The input tuple for this step is $(P_i, A)$, where $A=\{a_1,a_2,...,a_m\}$ is the extracted answer list. We implement this based on two question generation models. One is seq2seq model~\cite{zhao2018paragraph}. This model uses RNN and gets self-attention to encode the paragraph and use another RNN to generate words sequence with copy mechanism. 
+
+Another one is UNILM model~\cite{dong2019unified}. UNILM is the SOTA method for Question Generation, it realizes this task with the help of a language model which trained with the combination of uni-direction, bi-direction, and seq2seq. Similar to the answer extraction step, for each input tuple, we combine the two segments in the same sequence as the first segment of UNILM and use ``[SEP]'' tokens to split paragraph and answer:
+
+\begin{equation*}
+\begin{aligned}
+{\rm P_i\ [SEP]\ a_i}\\
+\end{aligned}
+\end{equation*}
+where $a_i$ is an answer in $A$. And the second segment is the generated question.
+
+\paragraph{The Filter}
+We get some QA pairs after the first two steps. In this step, we use a filter to make the judgment of whether the QA pair is relevant to the aspect. 
+
+We use a two-class sequence classifier as the filter. 
+The filter takes the aspect, the answer and the question as the input and outputs a Boolean value as the judgment of whether the QA pair is relevant to the aspect. 
+To make a better distinction between different segments of the input sequence, we add ``[SEP]'' tokens between different parts.
+
+
+% In this part, we design a three-step pipeline structure which is shown as Figure \ref{fig:pipeline}. All steps are trained separately.
+
+% %In this part, the answers are extracted from the source 
+% \textbf{Paragraph Retrieval.} Two different methods are used here to select valid paragraphs with high relevance to the hint from the document.
+
+% \textbf{Answer extraction.} Answers exist in the source document. The extraction module uses the approach of sequence labeling to mark the position of answers.
+
+% \textbf{Question generation.} Question generation module is to generate questions from the document and a relevant answer span.
+
+\subsection{Strong Baseline}
+Different from the Naive Baseline, our strong baseline has four steps: Paragraph Retrieval, Answer Extraction, Question Generation, and Filtering.
+\paragraph{Paragraph Retrieval.} The reason we need to retrieve paragraphs from documents is that documents are too long as an input of any deep learning models. We take all paragraphs in the naive baseline, but only choose the paragraphs with higher relevance to aspect in this strong baseline.
+
+For each document, the input of the retrieval model is a list of paragraphs $[P_1, P_2, \cdot\cdot\cdot]$ and the aspect $Aspect$, and the output is a ranked list of paragraphs with their aspect-paragraph relevance scores.
+
+We choose two traditional rule-based methods TF-IDF and BM25~\cite{robertson2009probabilistic} to get the relevant paragraphs.
+Due to the remarkable effect of pre-trained models, we also implement a BERT classifier to do the paragraph ranking\cite{qiao2019understanding}.
+The input of BERT is a $(P_i, Aspect)$ pair and the output which can be regarded as the relevance score is the positive confidence of the [CLS] token after a classification layer.
+
+\paragraph{Answer Extraction. } We do this step same as the naive baseline except that we use $P_i[SEP]Aspect$ to replace $P_i$ in the inputs.
+
+\paragraph{Question Generation. } For the two proposed models in naive baseline, we treat them differently. For the seq2seq model, to restrict the generated question with the aspect, we use another LSTM encoder for the aspect. Then use attention to aggregate information from aspect to the paragraph. The following equations shows the improved model.
+\begin{equation}
+\begin{aligned}
+u_{p} &= LSTM(e_{p}, m_{p}) \\
+u_{a} &= LSTM(e_{a}) \\
+u_{p} &= gated\ attention(u_{a}, u_{p})\\
+\end{aligned}
+\end{equation}
+Where $e_p$ and $e_a$ is the word embedding representation of  $P_i$ and $Aspect$. $m_p$ is the meta-word representation which identifies whether each word in the paragraph is in or outside the answer in $A$. The others are the same as the original model.
+
+For the UNILM model, we use the same method as Answer Extraction: replace all $P_i$ in the inputs with $P_i[SEP]Aspect$.
+
+\paragraph{The Filter. } We use the same filter as the naive baseline.
+
+\subsection{Human Baseline} To measure the difficulty of each task, there were three master students to do each individual module in the pipeline method.
+For retrieval task, the students were asked to allocate the candidate paragraphs to 30 aspect keywords.
+For answer extraction, the students tried to extract answer spans  from 30 paragraphs.
+For question generation, they wrote the questions for 30 paragraphs with the given answers.
+The final scores of human performance were averaged.

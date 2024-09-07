@@ -1,0 +1,223 @@
+\section{Results and Analysis}
+\label{sec:ra}
+Here we show the results on the three datasets and give some discussions on our model design.
+
+\subsection{Main Results}
+%Result
+The results of our model \textbf{Thread-Encoder} (Thread-Enc) on UbuntuV2 and DSTC7 dataset are shown in Table \ref{tab:V2D7}. 
+\begin{table*}[ht!]
+	\centering
+	\scriptsize
+	\begin{tabular}{l|cccc|cccc}
+		\toprule[1pt]
+		\multirow{2}{*}{} &
+		\multicolumn{4}{c|}{UbuntuV2} &
+		\multicolumn{4}{c}{DSCT7}\\ 
+		Model &  hits@1 & hits@2 & hits@5 & MRR& hits@1 & hits@10 & hits@50 & MRR\\
+		\midrule[1pt]
+		DAM & - & -& -& - &  34.7 & 66.3 & - & 35.6\\
+		ESIM-18 &  73.4 & 85.4 & 96.7 & 83.1 & 50.1 & 78.3 & 95.4 & 59.3 \\
+		ESIM-19& 73.4 & 86.6& 97.4& 83.5 & 64.5 & 90.2 & \bf 99.4 & 73.5 \\
+		IMN &  77.1 & 88.6 & 97.9 &- & -& -& -&- \\
+		Bi-Enc & 83.6 & - &  98.8 & 90.1  &70.9 & 90.6 &  - & 78.1\\
+		Poly-Enc & 83.9 & - & 98.8 & 90.3 &70.9 & 91.5 & - & 78.0\\
+		Cross-Enc & \bf 86.5 & - & \bf 99.1 & \bf 91.9&71.7 & 92.4 & - & 79.0 \\
+		\hline
+		%Thread-Encoder	& 81.5 & \bf 91.0 & 97.9 & 88.5 & \bf 73.3 & \bf 92.5 & 99.3 & \bf 80.2 \\
+		%Thread-Encoder	& 82.6 & \bf 91.7 & 98.3 & 89.3 & \bf 73.3 & \bf 92.5 & 99.3 & \bf 80.2 \\
+		Thread-Enc	& 83.8 & \bf 92.4 & 98.5 & 90.0 & \bf 73.3 & \bf 92.5 & 99.3 & \bf 80.2 \\
+		\bottomrule[1pt]
+	\end{tabular}
+	\caption{Results on UbuntuV2 and DSTC7 dataset.}
+	\label{tab:V2D7}
+\end{table*}
+The performance on UbuntuV2 dataset is similar to Bi-Encoder and Poly-Encoder.
+Although the Cross-Encoder rank top on this dataset, it is too time-consuming and 
+not practical~\cite{humeau2019poly}. It runs over 150 times slower than both Bi-Encoder 
+and Poly-Encoder. Our best model, Thread-Encoder, takes the top four threads~(see \secref{sec:number} for more details) 
+into consideration with the inference time overhead similar to Bi-Encoder and Poly-Encoder. 
+It should be also noticed that the dialogue dependency parser is trained on the ubuntu dataset with the same origin with DSTC7 and DSTC8. There may be some differences in data processing steps for the old Ubuntu dataset released by Lowe et al.~\cite{LowePSCLP17} and the new one~\cite{KummerfeldGPAGG19}. So, there may be some loss on the accuracy for predicted dependencies which may negatively
+affect the final selection result. 
+
+\begin{table}[th!]
+	\centering
+	\scriptsize
+	\begin{tabular}{lccccc}%{|p{7cm}|rl|}
+		\toprule[1pt]
+		Model & hits@1 & hits@5 & hits@10 & hits@50 & MRR  \\
+		\midrule[1pt]
+		Bi-Enc & 11.6 & 24.1 & 34.1 & 83.6 & 19.72 \\
+
+		Poly-Enc & 14.8 & 29.2 & 38.1 & 85.6 & 23.46  \\
+		\hline
+		Thread-Enc & \bf 17.1 & \bf 32.4 & \bf 42.2 & \bf 89.9 & \bf 26.22  \\
+		\bottomrule[1pt]
+	\end{tabular}
+	\caption{Results on DSTC8.}
+	\label{tab:dstc8}
+\end{table}
+
+For thorough comparision, we also implement the state-of-the-art baselines on 
+DSTC8 dataset in addition to our best model as shown in Table \ref{tab:dstc8}. 
+Since ``None'' is the positive response only if there is no other better candidates, it is unreasonable to say whether a dialogue history should be replied with ``None''. Previous baselines trained with binary classification objective are not appropriate, such as DAM and ESIM.
+%Following the official baseline, ``None'' is provided only as positive candidate during training, hence models such as DAM and ESIM trained using binary classification objective are naturally prone to predicting ``None'' during testing.
+Therefore we only show the competitive results with the state-of-the-art baselines 
+which consider other candidate responses as negatives in a batch during training.
+Thread-Encoder achieves the new state-of-the-art results on both DSTC7 and DSTC8 dataset, 
+proving that threads based on dependency relation between turns is helpful for dialogue context modeling. The inherent properties of these three datasets are different. UbuntuV2 and DSTC7 datasets are dialogues between two parties, while DSTC8 dataset involves more complicated multi-party dialogue. This reveals that Thread-Encoder not only works under the simple scenarios such as private chats between friends, but also acquires further enhancement under more interlaced scenarios such as chaos chat rooms. 
+
+
+\subsection{Different ways to generate threads}
+\label{sec:ways}
+Next, we evaluate some reasonable alternative methods to extract dialogue threads
+from the history. 
+\begin{itemize}
+	\item \textbf{Full-hty} uses the full dialogue history. 
+Our model degrades to Bi-Encoder.
+	\item \textbf{Dist-seg} segments the turns based on their distance to the next response. This idea is based on the intuition that the adjacent turns are possible to have strong connections. For example, if we use 4 threads, the dialogue in Figure \ref{fig:algorithm} will be segmented into $\langle\langle t_6, t_7\rangle, \langle t_4, t_5\rangle, \langle t_2, t_3\rangle, \langle t_1\rangle\rangle$.
+	\item \textbf{Dep-extr} refers to the threads extraction procedure as explained in \algoref{alg:DSA}. %based on the predicted dependencies 
+\end{itemize}
+
+The results are shown in Table \ref{tab:abl_way}. It is clear that extraction operation 
+helps with the response selection as both Dis-seg and Dep-extr have significant 
+improvement over Full-ctxt on all of the evaluation metrics. 
+Dep-extr is slightly better than Dis-seg on hits@1 and significantly better on other metrics, 
+showing that despite the distance-based extraction method is a strong baseline, 
+the dependency relations captures salient information in dialogue more accurately and 
+yields better performance.
+% Ablation on way to generate threads
+\begin{table}[th]
+	\centering
+	\scriptsize
+	\begin{tabular}{lccccc}
+		\toprule[1pt]
+		Method &  hits@1 & hits@5 &hits@10 & hits@50 & MRR \\
+		\midrule[1pt]
+		Full-hty &11.6 & 24.1 & 34.1 & 83.6 & 19.72 \\
+		Dist-seg & 16.8 & 30.4 & 39.3 & 87.9 & 25.18 \\
+		Dep-extr & \bf 17.1 & \bf 32.4 & \bf 42.2 & \bf 89.9 & \bf 26.22 \\
+		\bottomrule[1pt]
+	\end{tabular}
+	\caption{Comparison results on different ways to generate threads.}
+	\label{tab:abl_way}
+\end{table}
+
+\subsection{The number of threads to use}
+\label{sec:number}
+
+After deciding the way for extration, the number of threads to use is another key hyper-parameter for this model design. We use three metric to evaluate the extraction results: The average number of threads (\textbf{avg\#thd}) is to show how many dialogue threads are discovered in each dialogue, which ranges from 1 to the number of leaf nodes in the dialogue history. It's unreasonable to have large number of threads in a dialogue context. The average number of turns in each thread (\textbf{avg\#turn}) and the average standard deviation of the number of turns in each thread (\textbf{std\#turn}) are to measure the length of each thread. Dialogues context is not well separated if the length of each thread varies a lot~(i.e., the std\#turn is too high).
+
+\begin{table}[th]
+	\centering
+	\scriptsize
+	\begin{tabular}{lcccc}
+		\toprule[1pt]
+		\multicolumn{2}{c}{Dataset} &  avg\#thd & avg\#turn & std\#turn \\
+		\midrule[1pt]
+		\multirow{3}*{UbuntuV2} & train & 1.50 & 3.24 & 0.36 \\
+		~ & valid& 1.39 & 3.09 & 0.25 \\
+		~ & test & 1.39 & 3.13 & 0.25 \\
+		\hline
+		\multirow{3}*{DSTC7}  &train &1.42 &4.48  &0.47  \\
+		~ & valid& 1.39 & 4.42 & 0.37 \\
+		~ & test& 1.45 & 4.42 & 0.42 \\
+		\hline
+		\multirow{3}*{DSTC8} &train & 3.86 & 25.59 & 5.48  \\
+		~ & valid& 3.85 & 25.52 & 5.43 \\
+		~ & test& 3.85 & 25.32 & 5.45 \\
+		
+		\bottomrule[1pt]
+	\end{tabular}
+	\caption{Statistics on extraction results.}
+	\label{tab:parstatis}
+\end{table}
+
+
+We apply the dialogue extraction algorithm in Section \ref{sec:DSA} on the three datasets with the threshold $P$ as $0.2$. The statistics of extracted threads for three datasets are in Table \ref{tab:parstatis}. We can find that the average number of threads is around $3.85$ for DSTC8 dataset while around $1.40$ for the other two datasets. The average length of threads is around $25.50$ for DSTC8 dataset while around $4.0$ for DSTC7 dataset and UbuntuV2. The standard deviation for DSTC8 dataset is also larger, which well aligns with the empirical observation that two-party dialogues tend to have more concentrated discuss with smaller number of threads while multi-party dialogues usually contains more threads to accomodate conversation with high diversity. If the number of dialogue threads increase, the standard deviation of the length of each thread also tends to increase since some dialogue threads may catch more attentions while others may be ignored. As is listed in Table \ref{tab:dataset}, the number of turns for DSTC8 dataset is usually larger than UbuntuV2 and DSTC7 dataset, which naturally leads to more leaf nodes hence larger number of threads.
+
+\begin{table}[th]
+	\centering
+	\scriptsize
+	\begin{tabular}{lccccc}
+		\toprule[1pt]
+		&  hits@1 &hits@5& hits@10 & hits@50 & MRR \\
+		\midrule[1pt]
+		1 & 15.5 & 30.4 & 39.3 & 88.0 & 24.22 \\
+		2 & 17.0 & 31.2 & 41.1 & 88.7 & 25.70 \\
+		3 & \bf 17.3 & 31.6 & 41.1 & 88.8 & 25.86 \\
+		4 & 17.1 & \bf 32.4 & \bf 42.2 & \bf 89.9 & \bf 26.22 \\
+		\bottomrule[1pt]
+	\end{tabular}
+	\caption{Ablation test on number of threads.}
+	\label{tab:abl_num}
+\end{table}
+We tested our model with the number of threads ranging from $1$ to $4$. The results are shown in Table \ref{tab:abl_num}, from which we draw following conclusions. First, by comparing the results with $1$ thread with the Bi-Encoder, we can see that dependency information helps to filter out the unrelated information and improve the results. Second, with the increasing number of threads, the improvement is tapering off. It reflects the effectiveness of our algorithm by ranking the threads based on the distance in ascending order. Third, the results show that most of responses are related to the current dialogue thread while considering other dialogue threads can promote the retrieval results. So, we choose the number of threads as $4$ for our best model under these datasets.
+
+
+%DSTC 7
+%\begin{table}[th]
+%	\centering
+%	\scriptsize
+%	\begin{tabular}{|l|c|c|c|c|}
+%		\hline
+%		Model &  hits@1 & hits@10 & hits@50 & MRR \\
+%		\hline
+%		DAM &  34.7 & 66.3 & - & 35.6 \\
+%		ESIM 2018 & 50.1 & 78.3 & 95.4 & 59.3 \\
+%		ESIM 2019 & 64.5 & 90.2 & \bf 99.4 & 73.5 \\
+%		Bi-Enc & 70.9 & 90.6 &  - & 78.1 \\
+%		Poly-Enc & 70.9 & 91.5 & - & 78.0 \\
+%		Cross-Enc & 71.7 & 92.4 & - & 79.0 \\
+%		\hline
+%		Par-Enc (basic4)& \bf 73.3 & \bf 92.5 & 99.3 & \bf 80.2 \\
+%		\hline
+%	\end{tabular}
+%	\caption{Accuracy on DSTC 7}
+%	\label{tab:dstc7}
+%\end{table}
+
+%DSTC 8
+%\begin{table*}[th]
+%	\centering
+%	\small
+%	\begin{tabular}{|l|c|c|c|c|c|c|c|c|c|}%{|p{7cm}|rl|}
+%		\hline
+%		\multirow{2}{*}{} &
+%		\multicolumn{5}{|c|}{All} & 
+%		\multicolumn{4}{|c|}{Have Answer}\\ 
+%		\cline{2-10} 
+%		& hits@1 & hits@5 & hits@10 & hits@50 & MRR & hits@1 & hits@5 & hits@10 & hits@50 \\
+%		\hline
+%		Bi-Enc & 11.6 & 24.1 & 34.1 & 83.6 & 19.72 & 14.8 & 30.1 & 40.4 & 79.5 \\
+%		\hline
+%		Poly-Enc & 14.8 & 29.2 & 38.1 & 85.6 & 23.46 & 19.4 & 37.2 & 47.4 & 83.9 \\
+%		\hline
+%		Par-Enc best & \bf 17.1 & \bf 32.4 & \bf 42.2 & \bf 89.9 & \bf 26.22 & \bf 21.5 & \bf 40.7 & \bf 50.0 & \bf 87.3 \\
+%		\hline
+%	\end{tabular}
+%	\caption{Accuracy on DSTC 8}
+%	\label{tab:dstc8}
+%\end{table*}
+
+% Ablation on num of partitions
+%\begin{table}[th]
+%	\centering
+%	\scriptsize
+%	\begin{tabular}{|l|c|c|c|c|c|}
+%		\hline
+%		&  hits@1 &hits@5& hits@10 & hits@50 & MRR \\
+%		\hline
+%		4 & 17.1 & \bf 32.4 & \bf 42.2 & \bf 89.9 & \bf 26.22 \\
+%		3 & \bf 17.3 & 31.6 & 41.1 & 88.8 & 25.86 \\
+%		2 & 17.0 & 31.2 & 41.1 & 88.7 & 25.70 \\
+%		1 & 15.5 & 30.4 & 39.3 & 88.0 & 24.22 \\
+%		\hline
+%	\end{tabular}
+%	\caption{Ablition test on number of parititons}
+%	\label{tab:abl_num}
+%\end{table}
+
+
+
+
+

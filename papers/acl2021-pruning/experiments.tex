@@ -1,0 +1,341 @@
+\section{Experiments}
+We first expound our pruning setting
+and provide evidences of its ability to identify relation-specific subnetworks in PLM.
+Then we experiment on several commonsense-intensive scenarios to seek 
+good practices for using these subnetworks.
+
+\subsection{Disentangling PLMs into Relation-specific Subnetworks}
+\label{sec:LAMA}
+\begin{table}[ht!]
+	\centering
+	\small
+	\begin{tabular}{l|ccc}
+		\toprule
+		\textbf{Corpus} & \textbf{\#Facts} & \textbf{\#Rels} & \textbf{\#Sentences} \\
+		\midrule
+		ConceptNet & 11,458 & 16 & 29,774 \\
+		\bottomrule
+	\end{tabular}
+	\caption{Statistics of C-LAMA.}
+	\label{table:conceptnet}
+\end{table}
+
+\noindent
+\textbf{Dataset.}~~We use the ConceptNet~\citep{speer-havasi-2012-representing} subset of LAMA benchmark as weak supervision, denoted as C-LAMA.
+C-LAMA contains facts from the English part of ConceptNet that has
+single-token objects covering 16 relations. Prompts that will be used 
+for pruning and probing are extracted from Open Mind Common Sense~(OMCS). 
+Statistics is listed in \tabref{table:conceptnet}. Since our goal is 
+to explore the existence of specialized subnetworks within general-purpose PLMs, 
+we utilize the whole dataset to fully exploit the high-precision knowledge 
+therein. This naturally deviates from the conventional supervised 
+experimental train/valid/test setting.
+
+
+\noindent
+\textbf{Models.}~~For the choices of $\mathcal{LM}$, we consider the 6-layer \textsc{DistilBERT-base}~\citep{DBLP:journals/corr/abs-1910-01108}, 12-layer \textsc{BERT-base}, 12-layer \textsc{RoBERTa-base}~\citep{DBLP:journals/corr/abs-1907-11692}. We also include the more recent powerful 12-layer \textsc{MPNet-base}~\citep{song2020mpnet} model. All models are implemented with HuggingFace's transformers~\citep{DBLP:journals/corr/abs-1910-03771} library.
+
+\textbf{Setup.}~~The prior distribution $\phi(\cdot)$ is a Gaussian $\mathcal{N}(\mu, 1)$ where $\mu$ is the mean controlling initial sparsity of pruned model~(e.g., $\mu=0$ indicates $50\%$ initial sparsity). We set $l_t$ to be the top layer of a given model and set $l_b$ to be within $3-4$ for \textsc{DistilBERT}, $5-9$ for \textsc{BERT}, \textsc{RoBERTa}, and \textsc{MPNet}. The temperature $\tau$ is fixed as $0.1$. The threshold $t$ is fixed as $0.5$. We use Adam~\citep{kingma2014method} with a batch size of $32$ and a linear warm-up scheduler with $0.1$ warm-up ratio for training the mask up to $6$ epochs. The learning rate is fixed as $3\times 10^{-4}$. All experiments are conducted on a GTX 1080 Ti GPU with 11G RAM.
+
+
+
+
+\noindent
+\textbf{To what extent can we achieve disentanglement?}~~As stated in \secref{sec:pruning}, for each model, our pruning procedure will identify 16 subnetworks for 16 commonsense relations. We record the P@K~(K=1,2,3) scores of each subnetwork $\mathcal{LM}_{\theta_r}$ evaluated on its corresponding subset $D_r$ of C-LAMA and shows the macro-averaged results in \tabref{table:rank}. 
+
+Among all models without pruning, \textsc{RoBERTa} achieves the highest P@1 score of $15.4$ while \textsc{DistilBERT} gets the lowest $11.4$. It indicates that while PLMs are shown to be helpful for downstream learning, they cannot accurately complete cloze-like prompts that require commonsense relation knowledge. This observation also coincide with previous finding~\citep{inductivemlm} that the uniform masking adopoted by PLMs is biased towards extracting statistical and syntactic dependencies. 
+Comparing the results for each pair of original and subnetworks, we consistently observe a surprisingly significant increase~(37.0 on average), especially for deterministically pruned ones. This large performance gap provides unique new evidence of sparse latent relational knowledge structures in PLMs, which are weakened by pretrained weights that are \textit{reserved} for more general-purpose use. 
+
+We also observe that the deterministic pruning excels by a huge margin 
+across all models, which suggests the importance of removing noisy 
+transformation of input representations to regain the expressivity of specific 
+commonsense knowledge. Another advantage of deterministic pruning in memory 
+footprint is that only sets of 1-bit masks rather than 32-bits float parameters 
+need to be saved for solving multiple tasks. For the above reasons, 
+we focus our analysis on and use \textsf{pruned} to denote deterministically 
+pruned PLMs throughout this paper henceforth. 
+%\KZ{Why deterministic ones are so much better than stochastic ones?
+%THis is a bit counter-intuitive.}
+
+
+\noindent
+\textbf{How specialized are these subnetworks?}~~We next investigate
+alternative ways of building the subnetworks. 
+We attempted to instantiate the pruning mask upon \textsc{BERT-base} via 
+either creating a set of mismatched masks or 
+assigning a randomly initialized mask with comparable sparsity. 
+For \textit{mismatched} one, we corrupt the correspondence of relation between masks and prompts by shifting the order of masks 15 times, as there are 16 relations in total. Then we calculate the micro-averaged P@K for each shift and average the results. For \textit{random} one, we initialize the mask element-wise with a Bernoulli $B(0.5)$ and average the results from 5 different random seeds.
+%\begin{figure}[t]
+%	\centering
+%	\scalebox{1.0}{\includegraphics[width=1.0\columnwidth]{figure/nontriviality.png}}
+%	\caption{Non-triviality of the learned mask.} \label{fig:nontriviality}
+%\end{figure}
+%\begin{figure}[!tb]
+%	\begin{tabular}{cc}
+%		\begin{minipage}[t]{0.5\linewidth}
+%			\includegraphics[width = 1\linewidth]{figure/nontriviality.png}
+%		\end{minipage}
+%		\begin{minipage}[t]{0.48\linewidth}
+%			\includegraphics[width = 1\linewidth]{figure/vertical_.png}
+%		\end{minipage}
+%	\end{tabular}
+%\caption{Non-triviality of the learned mask~(left) and effect of initial sparsity and pruned layers~(right).}
+%\label{fig:both}
+%\end{figure}
+\begin{figure}[th]
+	\centering
+	\scalebox{1.0}{\includegraphics[width=1.0\columnwidth]{figure/both.pdf}}
+	\caption{Ablation on the pruning masks~(left) and effect of initial sparsity and pruned layers~(right).} \label{fig:both}
+\end{figure}
+The results are shown in \figref{fig:both}~(left). If we apply the random masks with sparsity comparable to learned ones, the P@1 drops drastically to $0.4$. This notable gap proves that the effective subnetworks cannot be trivially identified through random weights sampling. If we apply the mismatched masks from other relations, the P@1 also significantly drops to $4.8$, even inferior to the unpruned one. It shows that the latent structure for different types of 
+commonsense knowledge exhibits remarkably distinct geometry.
+
+
+\noindent
+\textbf{Factors impacting performance.}~~~We also investigate how initial masking sparsity and choice of layers to prune influence the probing performance. We experiment on \textsc{BERT-base} with $l_b$ in $\{6,7,8,9\}$ and initial sparsity in $\{50\%,54\%,58\%,62\%\}$. \figref{fig:both}~(right) shows that (i)~increasing the number of pruned layers helps distill more knowledge. (ii)~larger initial sparsity is more likely to prune away weights important to certain knowledge and cannot be recovered in the later training process. In general, we find an initial sparsity around $50\%$ yields decent performance both in probing and downstream applications~(see \secref{sec:csr} and \secref{sec:ckbc}).
+%\begin{figure}[t]
+%	\centering
+%	\scalebox{1.0}{\includegraphics[width=1.0\columnwidth]{figure/vertical.png}}
+%	\caption{Effect of initial sparsity and pruned layers.} \label{fig:vertical}
+%\end{figure}
+
+
+
+
+\noindent
+\textbf{Visualization of attention weights and representations.}~~To explain 
+how the subnetworks accommodate more accurate commonsense knowledge despite 
+having far fewer weights than the full-scale models, we randomly 
+sample several prompts that the subnetworks correctly answered but 
+the full-scale model~(\textsc{BERT-base}) failed to and 
+visualize the attention patterns in the last layer.
+\begin{table*}[t!]
+	\centering
+	\scriptsize
+	\begin{tabular}{l|cccc|cccc}
+		\toprule
+		\multirow{2}{*}{\textbf{Model}} & \multicolumn{4}{c|}{\textbf{Development Set}} &\multicolumn{4}{c}{\textbf{Test Set}}  \\
+		
+		&MRR~(\%)   &P@1~(\%)  &P@2~(\%)  &P@3~(\%)  &MRR~(\%)   &P@1~(\%)  &P@2~(\%)  &P@3~(\%)  \\
+		\cline{1-9}
+		\textbf{\textit{Supervised}} & & & & & & & &\\
+		\cline{1-9}
+		\textsc{DistMult}~\citep{yang2015embedding} &8.5   &4.2  &6.6  &8.3  &10.5   &5.4  &8.4  &10.9  \\
+		\textsc{ComplEx}~\citep{complex} &10.7   &6.5  &9.0  &11.0  &13.6   &8.2  &12.4  &15.7  \\
+		\textsc{ConvE}~\citep{DBLP:journals/corr/DettmersMSR17} &18.9   &11.5  &16.6  &19.0  &21.9   &13.5  &18.9  &24.0  \\
+		\textsc{TuckER}~\citep{DBLP:journals/corr/abs-1901-09590} &17.3   &10.9  &14.8  &18.8  &21.6   &14.0  &20.4  &24.0  \\
+		\textsc{ConvTransE}~\citep{shang2019end-to-end} &19.8   &13.2  &17.8  &21.3  &24.0   &\textbf{15.6}  &21.9  &\underline{26.5}  \\
+		\textsc{SACN}~\citep{shang2019end-to-end} &21.2   &13.2  &19.8  &23.2  &\textbf{24.2} &14.4  &\underline{22.1}  &\textbf{28.0}  \\
+%		\textsc{InteractE}~\citep{DBLP:journals/corr/abs-1911-00219} &20.5   &12.2  &18.3  &22.2  &\textbf{25.0}   &\underline{15.0}  &\textbf{23.6}  &\textbf{29.0}  \\
+		\midrule
+		\textbf{\textit{Unsupervised}} & & & & & & & &\\
+		\cline{1-9}
+		\textsc{DistilBERT-base} &9.0 &3.1 &6.9 &10.3 &10.8 &5.8 &9.6 &11.2 \\
+		\textsc{BERT-base} &12.4 &7.2 &10.0 &13.7 &14.3 &8.3 &13.7 &16.6 \\
+		\textsc{RoBERTa-base} &8.3 &4.2 &6.0 &7.1 &9.4 &5.1 &7.1 &9.3 \\
+		\textsc{MPNet-base} &11.7 &7.2 &9.4 &11.1 &11.1 &6.0 &9.9 &11.7 \\
+		\midrule
+		\textsc{DistilBERT-base}~(pruned) &\textbf{24.1} &\textbf{15.8} &\textbf{24.1} &\underline{26.4} &\underline{23.4} &\underline{14.8} &\textbf{22.2} &\underline{26.5} \\
+		\textsc{BERT-base}~(pruned) &\underline{23.7} &\underline{15.5} &\underline{22.1} &\textbf{27.0} &22.8 &14.3 &20.9 &26.0 \\
+		\textsc{RoBERTa-base}~(pruned) &9.0 &4.9 &7.1 &8.9 &9.5 &6.1 &7.6 &11.4 \\
+		\textsc{MPNet-base}~(pruned) &22.1 &12.9 &21.2 &25.5 &20.0 &11.4 &18.8 &22.9 \\
+		\bottomrule
+	\end{tabular}
+	\caption{Link prediction results. Best results are marked with \textbf{bold} font and second best with \underline{underline}.}
+	\label{table:linkprediction}
+\end{table*}
+\begin{figure}[th]
+	\centering
+	\scalebox{1.0}{\includegraphics[width=1.0\columnwidth]{figure/attention.pdf}}
+	\caption{Attention weight visualization. \textit{AtLocation} is required for prompt in the left column and \textit{PartOf} is required for prompt in the right column.} \label{fig:attention}
+\end{figure}
+Specifically, we focus on the attention weights between [MASK] token and 
+other tokens in the prompt. A first glance of change of attention pattern 
+is given in \figref{fig:LAMA} and we show more examples of other ConcetpNet 
+relations in \figref{fig:attention}. We observe that while the original 
+pretrained model tends to attend to special tokens like period and [SEP], 
+the subnetwork successfully grasps the relevant concepts~(i.e., apple, 
+worms, and basement) in the prompt hence produces the right object. 
+We also use t-SNE~\citep{vanDerMaaten2008} to visualize the last layer's 
+representation of [CLS] for each prompt. From \figref{fig:tsne}, the 
+representations computed by original pretrained model are hardly separable as 
+different types of knowledge are intermingled. In contrast, the pruned 
+subnetwork can extract meaningful and disentangled representations for 
+different commonsense relations.
+
+\begin{figure}[th]
+	\centering
+	\scalebox{1.0}{\includegraphics[width=1.0\columnwidth]{figure/tsne_compare.pdf}}
+	\caption{t-SNE visualization of [CLS]'s representation from original~(left) and pruned~(right) \textsc{BERT-base}.} \label{fig:tsne}
+\end{figure}
+
+
+\subsection{Commonsense Knowledge Base Completion~(CKBC)}
+\label{sec:ckbc}
+We evaluate the utility of identified relation-specific subnetworks on CKBC in an unsupervised manner. Specifically, we use the ConceptNet-100K benchmark provided by \citet{Li2016}. To allow a fair evaluation, we manually create a subset of ConceptNet-100K 
+consisting of triples with single-token subject/object, of which the dev/test set have \textbf{no overlap} with C-LAMA. 
+Each relation is associated with a sentence template~(provided in 
+Appendix)~\citep{Kwon2019} of which the wording is distinct from 
+those in C-LAMA. We acknowledge that these sentence templates might be suboptimal for certain relations, but prompt optimization is 
+out of the scope of this paper. The resulting dataset contains 
+$17,891$ training instances, $349$ development instances, 
+and $446$ test instances.
+
+\textbf{Link prediction.}~~We first formulate CKBC as a link prediction task 
+and compare subnetworks~(i.e., $\mathcal{LM}_{\theta_r}$ 
+is queried to predict missing link for instance of relation $r$) as well as original PLMs
+against strong supervised KB completion mothods. 
+
+
+\tabref{table:linkprediction} shows the results. Most of the supervised 
+models outperform full-scale PLMs by a large margin, which suggests the 
+inefficacy of directly using PLMs to perform link prediction. However, 
+the subnetworks identified by our pruning procedure can
+acquire performance on par with or better than state-of-the-art 
+supervised models. Surprisingly, the pruned \textsc{DistilBERT} get the 
+highest MRR, outperforming other larger and more advanced PLMs. 
+\textsc{RoBERTa} struggles to predict correct objects, perhaps due to 
+its larger vocabulary size compared to WordPiece~($50,265$ vs $30,522$) 
+and less lexicon overlap~($53\%$ vs $59\%$) with the dataset.
+
+
+\textbf{Triple classification}~~We can also formulate CKBC as a triple classification task. Following ~\citet{Feldman2020}, we use estimated point-wise mutual information~(PMI) computed by pretrained language model as a surrogate of a triple's validity. An expectation-maximization-based Gaussian mixture clustering method is used and instances in the cluster with higher mean PMI are labeled as valid. 
+\begin{table}[th]
+	\centering
+	\scriptsize
+	\begin{tabular}{l|c}
+		\toprule
+		\textbf{Model} &  \textbf{F1 Score}\\
+		\midrule
+		\textsc{DistilBERT-base} & 74.1\\
+		\textsc{DistilBERT-base}~(pruned) & \textbf{76.3}\\
+		\midrule
+		\textsc{BERT-base} & 73.7\\
+		\textsc{BERT-base}~(pruned) & \textbf{76.7}\\
+		\midrule
+		\textsc{RoBERTa-base} &74.8 \\
+		\textsc{RoBERTa-base}~(pruned) & \textbf{76.9}\\
+		\midrule
+		\textsc{MPNet-base} &76.5 \\
+		\textsc{MPNet-base}~(pruned) & \textbf{78.0}\\
+		\bottomrule
+	\end{tabular}
+	\caption{Triple classification on ConceptNet-100K.}
+	\label{table:tripleclassification}
+\end{table}
+In our preliminary experiments, we found that the model pruned by the mask 
+of a single relation might not be robust for PMI estimation and generally 
+performed inferior to the intact model. 
+In the same spirit as model ensembling, we then perform grid search over 
+combinations of multiple knowledge, which is similar to what we did 
+in zero-shot commonsense reasoning. For all four PLMs considered in 
+\tabref{table:tripleclassification}, we observe that there exists one 
+or multiple knowledge combinations delivering F1 score higher than the 
+original models.
+
+\textbf{Triple extraction.}~~We then investigate the ability of specialized 
+subnetworks to extract novel commonsense knowledge triples absent 
+from the dataset. We randomly sample 100 triples from the test set of 
+ConceptNet-100K and for each sample use top-$K$ predictions from 
+pruned \textsc{DistilBERT-base} as candidate objects. 
+Three human annotators are asked to first determine the correctness of 
+each candidate object and further determine their novelty~(i.e., not present 
+in any of train/validation/test set) if deemed to be correct. 
+The Fleiss Kappa inter-annotator agreement $\kappa$ is 0.66/0.65 
+for precision and novelty, respectively.
+\begin{figure}[th]
+	\centering
+	\scalebox{0.7}{\includegraphics[width=1.0\columnwidth]{figure/precision_novelty_2.pdf}}
+	\caption{Precision-novelty curve with varied $K$.} \label{fig:extraction}
+\end{figure}
+\figref{fig:extraction} shows the change of precision-novelty with varied $K$. We observe a clear trade-off between the validity and novelty of triples extracted by the pruned model. As expected, a large $K$ inevitably makes noisy predictions but is more likely to extract unseen knowledge. For the purpose of knowledge enrichment, one might choose a large $K$ to ensure a desirable recall. We list the obtained novel triples in the Appendix D due to space limits.
+
+
+
+
+
+
+\subsection{Commonsense Reasoning~(CSR)}
+\label{sec:csr}
+After identifying sparse subnetworks within PLMs that specialize in different commonsense knowledge, we now evaluate their generalization ability in the context of commonsense reasoning.
+%One desirable outcome of our pruning procedure is the transformation from language representation to knowledge representation. We test if such subnetworks generalize in the context of commonsense reasoning.
+
+\textbf{Many-shot learning.}~~We experiment with \textsc{BERT-base} and its deterministically pruned version using supervised fine-tuning on $7$ datasets: RTE~\citep{CambridgeJournals:6906264}, COPA~\citep{roemmele_choice_2011}, CommonsenseQA~\citep{talmor-etal-2019-commonsenseqa}, SWAG~\citep{zellers-etal-2018-swag}, HellaSWAG~\citep{DBLP:journals/corr/abs-1905-07830},   aNLI~\citep{DBLP:journals/corr/abs-1908-05739} and CosmosQA~\citep{huang-etal-2019-cosmos}. For each task, we heuristically identify the commonsense knowledge it might requires. If multiple types of knowledge are required, we simply take the union of all masks and apply the resultant mask to the pretrained model as initialization for finetuning. We repeat training three times with different random seeds for each task. The  choice of mask combination for each task can be found in Appendix B.
+
+The results in \tabref{table:finetuning} shows that, when initialized with proper weights, the model can be better fine-tuned on downstream commonsense reasoning tasks via more useful \textit{prior} knowledge. We further analyze the change of performance under the low-resource regime on COPA dataset. \figref{fig:copa} shows that the pruned \textsc{BERT} exhibits a notable advantage when training data is extremely scarce. As more training data is seen, the benefit of the pruned 
+model becomes less prominent, i.e., $p>0.05$.
+\begin{table}[t!]
+	\centering
+	\scriptsize
+	\begin{tabular}{l|cc|c}
+		\toprule
+		\textbf{Task} & \textbf{Original} & \textbf{Pruned} &$p$-value \\
+		\midrule
+		RTE & 69.2$\pm${\scriptsize 2.3} & 69.8$\pm${\scriptsize2.0}& 0.12\\
+
+		COPA & 62.4$\pm${\scriptsize 5.0} & 63.0$\pm${\scriptsize 4.7} &0.33  \\
+
+		CommonsenseQA & 53.1$\pm${\scriptsize 0.6} & 54.1$\pm${\scriptsize 0.7} &0.08\\
+
+		SWAG & 73.9$\pm${\scriptsize 0.3} & 74.2$\pm${\scriptsize 0.1} &0.09\\
+		HellaSWAG & 38.9$\pm${\scriptsize 0.4} & 39.1$\pm${\scriptsize 0.5}&0.32  \\
+		aNLI &63.7$\pm${\scriptsize 0.4} &64.0$\pm${\scriptsize 0.4}  &0.19\\
+		CosmosQA &61.3$\pm${\scriptsize 1.0} &61.8$\pm${\scriptsize 0.2} &0.26\\
+		\bottomrule
+	\end{tabular}
+	\caption{Fine-tuning results of \textsc{BERT-base} for CSR.}
+	\label{table:finetuning}
+\end{table}
+\begin{figure}[t]
+	\centering
+	\scalebox{0.75}{\includegraphics[width=1.0\columnwidth]{figure/copa.pdf}}
+	\caption{\textsc{BERT-base} results on COPA.} \label{fig:copa}
+\end{figure}
+\begin{table*}[t!]
+	\centering
+	\scriptsize
+	\begin{tabular}{l|cccccccc|c}
+		\toprule
+		\textbf{Model} &\textbf{COPA~(Tra.)} &\textbf{COPA~(Dev.)} &\textbf{CSQA} &\textbf{CA} &\textbf{WSC}  &\textbf{SM} &\textbf{ARCT1} &\textbf{ARCT2} & \textbf{Average} \\
+		\midrule
+		\textsc{DistilBERT-base} &58.3 &60.0 &29.6 &84.6 &53.3  &71.6 &48.6 &50.4  &57.0  \\
+		\textsc{DistilBERT-base}~(pruned) &\textbf{61.5} &\textbf{69.0} &\textbf{31.5} &\textbf{89.6} &\textbf{56.9}  &\textbf{72.1} &\textbf{53.4} &\textbf{51.6} & \textbf{60.7} \\
+		\midrule
+		\textsc{BERT-base} &60.2 &54.0 &26.5 &89.0 &57.3  &69.7 &46.8 &50.3 &56.7 \\
+		\textsc{BERT-base}~(pruned) &\textbf{63.0} &\textbf{64.0} &\textbf{28.5} &\textbf{91.8} &\textbf{59.0}  &\textbf{71.7} &\textbf{50.0} &\textbf{52.0}  & \textbf{60.0}\\
+		\midrule
+		\textsc{RoBERTa-base} &60.7 &59.0 &39.9 &90.1 &61.8  &73.1 &48.6 &53.1 &60.7 \\
+		\textsc{RoBERTa-base}~(pruned) &\textbf{65.3} &\textbf{72.0} &\textbf{40.4} &\textbf{93.4} &\textbf{62.9}  &\textbf{74.4} &\textbf{53.2} &\textbf{55.1} &\textbf{64.6}\\
+		\midrule
+		\textsc{MPNet-base} &66.5 &69.0 &40.0 &94.5 &64.3&75.8  &52.9 &56.7 &64.9  \\
+		\textsc{MPNet-base}~(pruned) &\textbf{71.0} &\textbf{74.0} &\textbf{41.7} &\textbf{97.3} &\textbf{66.4}  &\textbf{77.5} &\textbf{56.1} &\textbf{57.7}  & \textbf{67.7}\\
+		\bottomrule
+	\end{tabular}
+	\caption{Zero-shot results of accuracy~(\%) on commonsense reasoning tasks. Better results of each pair is in \textbf{bold}.}
+	\label{table:zeroshot}
+\end{table*}
+
+
+
+\textbf{Zero-shot learning.}~~We next assess the ability of specialized 
+subnetworks to perform zero-shot commonsense reasoning, a setting where 
+the knowledge relied on to complete the task is solely determined by the model 
+parameters. Here we focus on: COPA, CommonsneseQA, Conjunction 
+Acceptability~(CA)~\citep{Zhou2019}, 
+Winograd Schema Challenge~(WSC)~\citep{levesque_winograd_2012}, 
+SenseMaking~(SM)~\citep{wang-etal-2019-make}, 
+ARCT1~\citep{habernal-etal-2018-argument} and 
+ARCT2~\citep{DBLP:journals/corr/abs-1907-07355}. Each sample in the above datasets can be formulated as \textit{[CLS] premise [SEP] hypothesis$_i$ [SEP]}, where $i$ is the subscript. Hypothesis with the highest plausibility scored by PLMs is the predicted answer. 
+
+Since multiple types of knowledge are typically required for effectively 
+reasoning over concepts, for each task, we perform grid search over 
+combinations of $3$-$4$ different commonsense knowledge out of 
+the $16$ total types and reported the best accuracy in \tabref{table:zeroshot}. 
+We put the best combination for each model on each task in Appendix B
+for space constraints. By combining multiple commonsense knowledge useful for the task, 
+we show that the pruned models can actually surpass their full-scale 
+version in all tasks considered in our experiments. 
+The most likely explanation is that knowledge irrelevant to the specific task 
+in the original models hurt the in-domain zero-shot reasoning capability. 
+It also manifests that the most important reasoning skills vary from 
+task to task.

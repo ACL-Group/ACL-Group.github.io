@@ -1,0 +1,126 @@
+\section{Silver Labeling Function}
+\label{sec:label}
+
+%18 sents.
+%1. intro (2 sent)
+With a schema $s$, a relation $r$ and its training instances as 
+input, the silver labeling function $lb(s, r)$ approximately 
+measures the correctness of the schema representing the relation.
+The function follows a simple data-driven idea: a schema is more
+confident to be correct, if it covers more positive relation 
+instances and less negative instances. 
+%2. incompleteness (3 sent)
+A straightforword function can be derived by just calculate the 
+proportion of instances covered in both positive and negative side.
+However, the incompleteness fact of KB has not been taken into 
+consideration: given a positive instance $\langle e_1, e_2 \rangle$,
+where $e_1$ is a rare entity in KB, and its relationship with other
+entities are not well connected, even a best schema (annotated by 
+human) can't cover this entity pair, should this pair contributes
+a negative evdience equally with those popular pairs not covered by
+a schema?
+The answer is no, so treating all positive and negative instances 
+equally is not the best way to produce labeling function.
+
+%3. group by e1 + formula (7 sent)
+Now we introduce our solution to handle this problem.
+The notations listed below are used in this secton:
+\begin{itemize}
+  \item $E_1(r)$: the set of distinct $e_1$ in training instances of $r$,
+  \item $CV_s(e_1)$: all $e_2$ where $\langle e_1, e_2 \rangle$ is covered by $s$ in KB, 
+  \item $PS_r(e_1)$: all $e_2$ where $\langle e_1, e_2 \rangle$ is in positive instances,
+  \item $NS_r(e_1)$: all $e_2$ where $\langle e_1, e_2 \rangle$ is in negative instances,
+  \item $PC_{sr}(e_1) = PS_r(e_1) \cap CV_s(e_1)$, and
+  \item $NC_{sr}(e_1) = NS_r(e_1) \cap CV_s(e_1)$.
+\end{itemize}
+
+For positive part of training data, we define the confidence score 
+of $e_1$ to the schema $s$ over relation $r$ as 
+\eqnref{eqn:scp}:
+\begin{equation}
+\label{eqn:scp}
+  sc_p(e_1, \! s, \! r) \! = \! \left\{
+  	\begin{aligned}
+	\! 1 / ( 1 \! + \! \ln \frac 
+	  {\left| PS_r(e_1) \right|} 
+	  {\left| PC_{sr}(e_1) \right|} 
+	)    & ~ & PC_{sr}(e_1) \! \neq \! \varnothing  \\
+	\! 0 & ~ & CV_s(e_1) \! = \! \varnothing        \\
+	\! \frac {1} {
+	  1 \! + \! \ln (\left| CV_s(e_1) \right| \! + \! 1)
+	} \! - \! 1  & ~ & otherwise    \\
+	\end{aligned}
+  \right..
+\end{equation}
+
+These 3 branches in the formula represents different scenarios.
+The first branch shows us that some positive $e_2$ are covered by 
+the schema in KB, thus $e_1$ makes a confidence larger than 0:
+The confidence reaches 1 if all positive instances are covered, 
+and the scores decreases smoothly when more positive instance are
+not covered by $s$.
+The second branch encounters the problem of incompleteness: 
+querying the shcema over $e_1$ returns nothing, without enough 
+information, we can't make the statement that $s$ is not correct,
+so we put a zero confidence here.
+The last branch goes even worse: some $e_2$ are covered in the 
+knowledge base, but neither is found in the positives instances.
+Though KB incompleteness is still possible in this scenario, 
+with more $e_2$ covered, the $e_1$ is more popular, which 
+gives us a stronger evidence that $s$ is not correct.
+Therefore, the confidence for the schema goes down from 0,
+and become smaller when its coverage on $e_1$ goes larger, with
+the minimum confidence as -1.
+
+%4. negative side (3 sent)
+Then we consider the negative part of training data.
+Similar with \eqnref{eqn:scp}, negative relation instances also
+provide confidence scores to the schema, 
+defined in \eqnref{eqn:scn}:
+\begin{equation}
+\label{eqn:scn}
+  sc_n(e_1, \! s, \! r) \! = \! \left\{
+    \begin{aligned}
+	\! -1 / ( 1 \! + \! ln \frac
+	  {\left| NS_r(e_1) \right|}
+	  {\left| NC_{sr}(e_1) \right|}
+	)            & ~ & NC_{sr}(e_1) \! \neq \! \varnothing  \\
+	\! 0         & ~ & CV_s(e_1) \! = \! \varnothing        \\
+	\! 1 \! - \! \frac {1} {
+	  1 \! + \! ln (\left| CV_s(e_1) \right| \! + \! 1)
+	}            & ~ & otherwise \\
+	\end{aligned}
+  \right.,
+\end{equation}
+
+\noindent
+where the first scenario makes the confidence score smaller than 0
+(negative instances are covered by $s$); again the second scenario
+faces the problem of KB incompleteness and we can't decide the 
+quality of schema by this $e_1$; the last scenario shows us a
+confidence score larger than 0, since all entity pairs it covered 
+on $e_1$ are not negative, and the score increases monotonically 
+when the size of coverage increases.
+
+%5. summary  (3 sent)
+In summary, each distinct $e_1$ from the training data of $r$ gives
+us confidence scores on the side of both positive and negative
+instances, ranging from -1 to 1.
+Our silver labeling function takes all the confidences and 
+averages them into the score from 0 to 1:
+\begin{equation}
+\begin{aligned}
+  lb(s, & r) = 
+  \frac {1} {2 \cdot \left| E_1(r) \right|}
+  \sum\limits_{e_1 \in E_1(r)} \{ 
+    1 + \\
+	& \alpha \cdot sc_p(e_1, s, r) 
+	+ (1 - \alpha) \cdot sc_n(e_1, s, r)
+  \},  \\
+\end{aligned}
+\end{equation}
+
+\noindent
+where $\alpha$ controls the tradeoff between positive and negative
+instances.
+

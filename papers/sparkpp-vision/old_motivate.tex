@@ -1,0 +1,55 @@
+\section{A Motivating Example}
+\label{sec:motivate}
+
+TrueSkill \cite{ralf2007trueskill} is a Bayesian skill rating model developed by Microsoft Research. We consider a simplified model.
+
+Suppose we have N players, each pair of them played a game. We model the skill of each player as random draws from a gaussian prior. The result of a game depends on which player has performed better, which is a random variable draw from a gaussian distribution with the skill as its mean. The factor graph of the model is shown in \figref{fig:trueskill_factors}.
+
+\ZY{insert the trueskill factor graph here}
+\begin{figure}[h]
+\centering
+\epsfig{file=trueskill_factor_graph,scale=0.5}
+\caption{True skill factor graph}
+\label{fig:trueskill_factors}
+\end{figure}
+
+Given the game results, we want to infer the skills of each player. We only need
+to encode the model in PP which is straight-forward (\figref{fig:trueskill_code}) and
+obtain the inference results by calling API.
+
+\begin{figure}[h]
+\centering
+\begin{verbatim}
+model Skill(n: Int) {
+  val skill ~ pp.Array.
+    tabulate(gaussian(100, 10))
+  val perf ~ skill.map(
+    s => gaussian(s, 20))
+  val results = perf.zip(perf).map{ 
+    (p1, p2) => p1 > p2 }
+}
+
+object Skill extends App {
+  /* data loading */
+  val model = new Skill(n)
+  model.observe_results(results)
+  model.infer()
+  model.skill.foreach{
+    s => println(s.mean)
+  }
+}
+\end{verbatim}
+\vspace{-15pt}
+\caption{True skill code in PP}
+\vspace{-5pt}
+\label{fig:trueskill_code}
+\end{figure}
+
+The first line in model definition defines an array of the skills of n players to be independently drawn from the gaussian prior. The next line draws the performance of each player from a gaussian distribution with mean of corresponding skills by perform a mapping operation. The last line results are deterministically computed by comparing the performances of each pair of players. Half of the results are duplicates but we just omit the details for simplicity.
+
+The object Skill defines the entry function of the program. It loads the data, creates a new instance of the Skill model and supplies the observation by calling observe\_results method of it. The inference algorithm is executed by calling infer method and finally the means of each players' posterior skills are queried by referencing the mean member of the skill variables.
+
+Since MLlib is not applicable to the customized model, we would be forced to write hundreds of lines of code to implement the model directly in Spark without PP. We need to create classes from scratch to represent the factors of the model and carefully implement an inference algorithm. Debugging could be another challenge in distributed applications. It would be hard for domain experts who do not have significant knowledge in Bayesian inference or programming techniques to implement these customized models. Existing PP also would not work when the data gets too large to fit in the main memory. 
+
+With a probabilistic programming language built on Spark, we can write code as simple as the the above example while leveraging the scalability enabled by Spark. The ease of developing probabilistic models means more attention could be paid to the design and the tuning of the model rather than coding.
+

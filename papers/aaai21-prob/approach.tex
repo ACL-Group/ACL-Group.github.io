@@ -1,0 +1,287 @@
+\section{Approach}
+\label{sec:approach}
+We evaluate the information leak in the datasets by statistical features only. 
+First, we formulate  a number of NL reasoning tasks in a general form. 
+Then based on the frequency of words associated with each label, 
+we design a number of metrics to measure the correlation between words
+and labels. Such correlation scores are called ``cue scores'' because they are 
+indicative of potential cue patterns. Afterwards, we aggregate the scores using a number of simple statistical
+models to make the predictions. Finally, we show how to split a dataset into
+the easy and hard parts using the above fast predictions.
+
+\subsection{Task Formulation}
+
+%\textcolor{red}{Hongru: these are concrete examples, which i think should be given after the problem
+%formulation} 
+Given question instance $x$ of a natural language reasoning (NLR) task dataset $X$ 
+we mentioned above, we formulate it as
+\begin{equation}
+    x = (p, h, l) \in X,
+\end{equation}
+\noindent
+where $p$ is the context against which to do the reasoning, and $p$ corresponds 
+to ``premise'' in~\exref{exp:snli};
+$h$ is the hypothesis given the context $p$. $l \in \mathcal{L}$ is the label that 
+depicts the type of relation between $p$ and $h$. 
+The size of the relation set $\mathcal{L}$ varies between tasks. We argue that 
+most of the discriminative NLR tasks can be formulated into this general form. 
+%which will bring us much convenience to evaluate the cues of a dataset. 
+For example, an NLI question consists of a \textit{premise}, a \textit{hypothesis} 
+and a \textit{label} on the relation between premise and hypothesis. 
+%The formulation of this task will be $p =$ \textit{premise}, $q =$ \textit{hypothesis} and $l =$ \textit{label}. 
+$|\mathcal{L}| = 3$ for three different relations: 
+\textit{entailment}, \textit{contradiction} and \textit{neutral}. 
+We will talk about how to transform into this form in \secref{sec:dynamic}. 
+%The ROCStory~\cite{mostafazadeh2016corpus} dataset
+%such as in~\exref{exp:roc}, 
+%consists of a \textbf{context} and two possible story \textbf{endings}. 
+
+%We will formulate this task by setting $p = $ \textit{context}, $h = $ \textit{ending1/ending2}. In this case, $|\mathcal{L}| = 2$. because $l$ is ``true'' or ``false'' indicating whether 
+%the ending is a plausible ending of the story.
+
+\subsection{Cue Metric}
+
+For a dataset $X$, we collect a set of all words $\mathcal{N}$ that exist
+in $X$. 
+%These 
+%words can be word or cross-word that consists of a pair of
+%unigrams, one from the premise and other from the hypothesis.
+%the token pair between $p$ and $h$.
+The cue metric for a word measures the disparity of the word's appearance under 
+ a specific label. 
+%The cross-unigrams, such as  ``swimmer-sea'' in~\exref{exp:snli}, 
+%represent the 
+%relational unigrams in a dataset. 
+%The ``swimmer-sea'' cross-unigram can be identified as a cue if it always appear in the instances with 
+%one label, like entailment.
+
+Let $w$ be a word in $\mathcal{N}$, we compute a scalar statistic metric 
+called {\em cue score}, $f_{\mathcal{F}}^l$,  in one of the following eight ways.
+%of $w$ with respect to label $l$ as
+%%\KZ{Consider changing $\mathcal{F}$ to $\mathcal{B}$ to avoid confusion with $f$?}
+%
+%\begin{equation}
+%    f_{\mathcal{F}}^{l} = f_{\mathcal{F}}(w, l),    
+%\end{equation}
+%%We call $f_{\mathcal{F}}^{(k,l)}$ \textit{cue metric}, 
+%where $f_{\mathcal{F}}^{l}$ is a function which measures how much spurious information can be conveyed by token $w_k$ for a particular label $l$. 
+%$\mathcal{F}$ is a set of cue metrics that we used for computing the \textit{cue score}. 
+We categorized the metrics into two
+genres: the first four use only statistics and last four use
+a notion of angles in the Euclidean space:
+Let $\mathcal{L'} = \mathcal{L} - \{l\}$ and we define 
+\begin{equation}
+    \#(w, \mathcal{L'}) = \sum_{l' \in \mathcal{L'}} \#(w, l').
+\end{equation}
+Think of $v_w=[\#(w, l), \#(w, \mathcal{L'})]$ and $v_l = [(\#(l), \#(\mathcal{L'})]$ are two vectors on a 2D plane. 
+Intuitively, if $v_w$ and $v_l$ are co-linear, $w$ leaks no spurious information. 
+Otherwise, $w$ is suspected to be a spurious cue as it tends to appear 
+more with a specific label $l$.\\ 
+
+
+%\subsubsection{Statistics}
+%\KZ{Since you show so many diff stats measures, you need to show some
+%results in the eval how you pick the cond prob in the end.}
+%This category of functions measure the cues from the perspective of statistics.
+
+\noindent\textbf{Frequency(Freq)}
+
+The most simple but straight measurement is the co-occur of the 
+words and labels, where $\#()$ means naive counting.
+\begin{equation}
+    f_{Freq}^{(w,l)} = \#(w, l)
+\end{equation}
+
+\noindent\textbf{Conditional Probability(CP)}
+
+The distribution of a dataset based on label may not always balance. 
+So we also try conditional probability as a measurement of correlation.
+\begin{equation}
+    f_{CP}^{(w,l)} = \frac{\#(w, l)}{\#(w)}
+\end{equation}
+
+\noindent\textbf{Point-wise Mutual Information (PMI)}
+
+PMI is a widely used method for association measurement in information theory and statistics.
+We estimate the probability:
+\begin{equation}
+p(l) = \frac{\#(l)}{\#(\mathcal{L})}, p(l|w) = \frac{\#(w, l)}{\#(w)},
+\end{equation}
+where $\#(\mathcal{L}) = \sum_{l\in \mathcal{L}} \#(l)$.
+The PMI score of token $w$ with respect to label $l$ is
+\begin{equation}
+    f_{PMI}^{(w,l)} = \log \frac{p(l|w)}{p(l)}
+\end{equation}
+
+\noindent\textbf{Local Mutual Information (LMI)}
+
+Considering the frequency of tokens can influence models with different weight and inspired 
+by \citealp{schuster2019towards}'s work,
+we estimate the probability by
+\begin{equation}
+    p(w, l) = \#(w, l) / \sum_{i=1}^{|\mathcal{N}|}\#(w_i).
+\end{equation}
+
+The LMI of token $w_k$ with respect to label $l$ is 
+
+\begin{equation}
+    f_{LMI}^{(w,l)} = p(w, l)\log \frac{p(l|w)}{p(l)}.
+\end{equation}
+
+\noindent\textbf{Ratio Difference (RF)}
+
+\begin{equation}
+    f_{RF}^{(w,l)} = \left|\frac{\#(w, l)}{\#(w, \mathcal{L'})} -
+    \frac{\#(l)}{\#(\mathcal{L'})}\right|
+\end{equation}
+
+\noindent\textbf{Angle Difference (AD)}
+
+Angle Difference is similar to \textit{Ratio Difference} except that we take arc-tangent function.
+\begin{equation}
+    f_{AD}^{w,l} = \left| \arctan\frac{\#(w, l)}{\#(w, \mathcal{L'})} -
+    \arctan \frac{\#(l)}{\#(\mathcal{L'})} \right|
+\end{equation}
+
+\noindent\textbf{Cosine(Cos)}
+%We imply calculation of the cosine distance between the two vectors.
+\begin{equation}
+    f_{Cos}^{(w,l)} = \cos(v_w, v_l)
+\end{equation}
+
+\noindent\textbf{Weighted Power(WP)}
+
+\begin{equation}
+    f_{WP}^{(w,l)} = (1-f_{Cos}^{l})\#(w)^{f_{Cos}^{l}}
+\end{equation}
+
+In general, we can denote \textit{cue score} of a word $w$ w.r.t. label $l$ as
+$f^{(w,l)}$, by drop by the method subscript $\mathcal{F}$. 
+%Once obtained the bias metric of each \textit{ngram-span} of $\mathcal{N}$, we can sort them in order and set a threshold. 
+%If the bias metric of a \textit{ngram-span} $n_k$ surpass the threshold, we say it is a \textit{bias ngram-span}. 
+%We denote the set of \textit{bias ngram-span} as $B \subseteq \mathcal{N}$. 
+%If a model output a correct answer on a data point $x \in X$ that contains some \textit{bias ngram-spans} in domain $p$ and $h$, 
+%the result is likely to be overestimated because the data point might have conveyed some spurious information.
+
+\subsection{Aggregation methods}
+
+%The cue metrics represent each word with the \textit{cue score} $s^{l}_k$. 
+We can use some simple methods $\mathcal{G}$ to aggregate the cue scores of words within
+a question instance $x$ to make a prediction.
+%for convenience and effectiveness. 
+
+%A dataset consist of $m$ instances can be denoted as $E = (e_1, e_2, ...e_m)$. 
+%${\mathcal{L}}_E={l_1, l_2, ..., l_t}$ is the alternative label 
+%set for dataset $E$.
+%Given an instance $e_n$ with $d$ tokens and one gold label $l_n$, $e_{n}=({w}_{n_1}, {w}_{n_2},... w_{n_d}, l_n)$,  $l_n\in{\mathcal{L}_E}$, 
+For example, the simplest way to predict a label is picking label with the average or 
+max \textit{cue score} in an instance. 
+%Each span ${w}_{n_i}$ corresponding to t bias scores 
+%We represent the aggregate score for $e_n$ with label $l\in{\mathcal{L}}$ as $\mathcal{G}_l$.
+
+\begin{equation}
+%    \mathcal{G}(average) = \frac{\sum_{i}^{d} f_{\mathcal{F}}^{(w_{n_i})}}{\left | d \right |}
+     \mathcal{G}_{average} = \mathop{\arg\max}_{l}{\frac{\sum_{w}f^{w,l}}{|x|}},  l\in{{\mathcal{L}}}, w \in \mathcal{N}
+ %\mathcal{G}(average) = \frac{\sum_{i}^{d}s^{l}_{n_i}}{\left | d \right |},  l\in{{\mathcal{L}}_E}
+\end{equation}
+
+\begin{equation}
+ %   \mathcal{G}_l(max) = max(f_{\mathcal{F}}^{(w_{n_i})})  i\in{d}
+ \mathcal{G}_{max} = \mathop{\arg\max}_{l}{\max_w(f^{w,l})},  
+l\in {\mathcal{L}}, w\in \mathcal{N} 
+ %\mathcal{G}(max) = \max(s^{l}_{n_i}),  i\in{d},l\in{{\mathcal{L}}_E}
+\end{equation}
+
+%For $e_n$ with labels $\mathcal{L}=(l_1,...l_v)$, we will get an aggregate score set $(\mathcal{G}_{l_1},..., \mathcal{G}_{l_v})$. 
+%The chosen label can be get with:
+
+%\begin{equation}
+%    chosen\_label = \mathop{\arg\max}_{\theta}\mathcal{G}_{\theta}
+%\end{equation}
+
+To take beter advantage of the \textit{cue score} in making prediction, 
+we also use two simple linear models: SGDClassifier and logistic regression. 
+The inputs of the models for instance $x$ is the concatenation of \textit{cue scores} 
+for each label which can express as : 
+\begin{equation}
+\begin{aligned}
+input(x) = &[ f^{w_1, l_1},,..., f^{w_d, l_1},  f^{w_1, l_2},..., f^{w_d,l_2},\\&
+..., f^{w_1,l_t},..., f^{w_d,l_t}].
+\end{aligned}
+\end{equation}
+where $d$ is the length of $x$. Note that the input vectors will be padded
+to the same length in practice.
+ %$input(e_n) = [ f_{\mathcal{F}}^{(w_{n_1}^{l_1})},..., f_{\mathcal{F}}^{(w_{n_d}^{l_1})},..., f_{\mathcal{F}}^{(w_{n_1}^{l_v})},..., f_{\mathcal{F}}^{(w_{n_d}^{l_v})}]$. 
+ 
+The loss for training the linear model is:
+ \begin{equation}
+  \hat{\phi}_{n} = \mathop{\arg\min}_{\phi_n}{loss({\mathcal{G}_{linear}(input(x);\phi_n)})}
+\end{equation}
+%The output for a certain instance is  The corresponding target is the correct label $l\_n$. 
+% \begin{equation}
+%output(e_n) = linear_classifier(input(e_n))
+%\end{equation}
+where $loss$ is between the
+gold label $l_g$ and the predicted label $\mathcal{G}_{linear}(input(x);\phi_n)$.
+ %is computed for each predicted
+$\phi_n$ are the optimal
+parameters in $\mathcal{G}_{linear}$ that minimize the loss for label $l_g$. 
+
+These choices of simple aggregation models are made specifically because
+our cue features are very low dimensional and we want our method to be both
+easy to implement and fast in practice.
+%With the aggregator $\mathcal{G}$, we can choose the 
+%label $l$ with strongest strongest tendency. 
+%Then this chosen label for $e_n$ will be compared with the gold label $l_n$ to
+% determine whether the chosen answer is correct or not.
+
+\subsection{Transformation of MCQs with dynamic choices}
+\label{sec:dynamic}
+So far the multiple-choice questions we targeted such as NLI problems
+are actually classification problems with fixed set of choices. There is
+another type of language reasoning tasks which are also in the form of
+multiple-choice questions, but their choices are not fixed, as shown
+below. 
+\begin{example}\label{exp:roc}
+An example question in ROCStory~\cite{mostafazadeh2016corpus}.\\
+
+\noindent
+\textbf{Context}: Rick grew up in a troubled household. 
+He never found good support in family, and turned to gangs.           
+It was n't long before Rick got shot in a robbery.             
+The incident caused him to turn a new leaf.\\
+
+\noindent
+\textbf{Ending 1}: He joined a gang. \\
+
+\noindent
+\textbf{Ending 2}:  He is happy now.\\
+
+\noindent
+\textbf{Answer}: 2
+\end{example}
+
+In this type of tasks,
+we can separate the original story into two unified instances, 
+$u_1=(context, ending1, false)$ and $u_2=(context, ending2, true)$.
+We can predict the label with probability for each instance $\mathcal{G}(input(u_1);\phi)$ and 
+ $\mathcal{G}(input(u_2);\phi)$.
+Then we can choose the ending with higher probability to make the prediction.
+%For better take advantage of the bias score to choose the right choice. We also use two linear model: SGDClassifier and 
+%logistic regression. The inputs of the models for instance $e_n$ is the concatenation of bias scores for each label which %can express as :  $input(e_n) = [ f_{\mathcal{F}}^{(w_{n_1}^{l_1})},..., f_{\mathcal{F}}^{(w_{n_d}^{l_1})},..., f_{\mathcal{F}}^{(w_{n_1}^{l_v})},..., f_{\mathcal{F}}^{(w_{n_d}^{l_v})}]$. The corresponding target is the correct label $l_{gold}\in{L}$.
+
+ 
+\subsection{Splitting a Dataset into Easy and Hard Parts}
+The above approach effectively train a very simple aggregation model 
+using only word-frequency features and makes prediction for any question.
+If the question is correctly predicted, this question is deemed an easy question,
+otherwise it's a hard one. Using this principle, we can split a whole
+dataset into easy questions and hard questions. 
+We achieved this by doing an $n$-fold random split on the
+data, then training the aggregation model from $n-1$ parts and testing it on the
+last part in a round-robin fashion. At the end, every question will have been
+tested once and received an ``easy'' or ``hard'' label. We can repeat
+this process multiple times and label each question according to its
+majority labels. We can thus split the dataset into easy and hard
+according to the final label of each questions.
+

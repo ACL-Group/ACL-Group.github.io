@@ -1,0 +1,148 @@
+\section{Experiments}
+In this section we demonstrate the experiment setup and present detailed analysis of our model.
+\subsection{Dataset}
+\begin{table}[t]
+\small
+\centering
+\renewcommand\tabcolsep{4.0pt}
+\begin{tabular}{@{}l|ccc@{}}
+\toprule
+  \multirow{2}{*}{\textbf{Model}} &\multirow{2}{*}{\textbf{\shortstack{Interpre-\\tability}}} &\multicolumn{2}{c}{\textbf{Accuracy}}  \\ 
+  \cline{3-4}
+  & &Dev & Test \\
+ \midrule
+BiDAF &N          &-                   &42.9\\
+Coref-GRU\cite{DBLP:journals/corr/abs-1804-05922} &N  &56.0          &59.3                   \\
+WEAVER\cite{DBLP:journals/corr/abs-1804-10490} &N  &64.1          &65.3                   \\ 
+MHQA-GRN\cite{Song2018} &N  &62.8          &65.4                   \\ 
+Entity-GCN\cite{Cao2019} &N  &64.8          &67.6                   \\
+BAG\cite{BAG} &N  &66.5          &69.0                   \\
+EPAr\cite{Chen2019}  &Y  &67.2          &69.1                   \\ 
+\citet{Kundu2019}  &Y  &67.4          &69.6                   \\ 
+CFC\cite{Zhong2019} &N  &66.4          &70.6                   \\
+HDE\cite{Tu2019}  &N  &68.1          &70.9                   \\  
+\midrule
+RF &Y &\textbf{68.2} & 70.9\\
+%RF(pretrained LM) &Y & &- \\
+\bottomrule
+\end{tabular}
+\caption{Comparison among different models on WikiHop dataset. Y/N indicates model's interpretability.}
+\label{tab:acc}
+\end{table}
+We use the unmasked version of WikiHop~\cite{Welbl2018}, which is as we know the only multiple-choice multi-document multi-hop RC benchmark, to validate the effectiveness of our model.
+The queries in WikiHop are constructed with entities and relations from WikiData and supporting documents are from WikiReading~\cite{hewlett-etal-2016-wikireading}. There are totally about 43K samples in training set, 5K samples in development set and 2.5K samples in test set. The average number of supporting documents in one sample is $13.7$ and the average number of candidates is $19.8$, which makes the task more challenging compared to previous RC dataset. We train our model on all samples in training set and evaluate it on dev set.
+
+\subsection{Implementation Details}
+Queries, supporting documents are tokenized into word sequences using Spacy~\cite{spacy2}. We adopt a two-stage strategy to locate mentions of candidates and subject: exact matching is firstly employed to find direct match and then a fuzzy matching using NLTK stemmer is employed to identify mentions with lexical variations. Named entities of node type (4) are extracted with Spacy. 300-dimensional GLoVe embedding and 100-dimensional character n-gram embedding~\cite{hashimoto-etal-2017-joint} are employed and fixed during training. We use a single-layer Bi-GRU as learnable document encoder, the hidden state dimension of which is set to 100. We use another 100-dimensional single-layer Bi-GRU for query encoder. The maximum number of nodes for type (1)-(4) are empirically set to be 700, 10, 200 and 100, respectively. L is searched in a range of [3, 5] and finally set to 5. $\alpha$ is searched within $\{0.2, 0.3, 0.4\}$ and finally set to 0.2. Our reported model has 25MB parameters in float32 precision.
+
+We train our model on a single GTX1080Ti using DiffMod optimizer with an initial learning rate of 0.001 and a cosine decay strategy for a maximum of 20 epochs. Gradients are clipped with a maximum $L_2$ norm of 5. Dropout~\cite{JMLR:v15:srivastava14a} with 0.2 drop rate is applied after embedding layer and to all learnable layers. Batch size is fixed at 18. Our code is available on \url{http://anonymized.for.blind.review.}
+\subsection{Accuracy Results}
+\textbf{Main Results. } In \tabref{tab:acc}, we show the result of our proposed graph-based RF model on WikiHop and compare it with previously published models.
+
+The proposed graph-based RF model outperforms previous models~(Entity-GCN, BAG) that utilize deep contextual embeddings from pretrained language model ELMo~\cite{DBLP:journals/corr/abs-1802-05365}, which proves that the efficacy of our model indeed comes from better multi-hop reasoning capability other than from deeper contextual encoder. RF  achieves 68.2\% accuracy on the dev set, outperforming most recently published multi-hop QA models that do not make use of contextual embeddings from pretrained LM. RF is also competitive with the previous strong heterogenous graph-based HDE in terms of accuracy and additionally benefit from interpretability~(\secref{sec:inter}).
+\begin{table}[t]
+	\centering
+	\small
+	\renewcommand\tabcolsep{4.0pt}
+	\begin{tabular}{l|c c}
+	\toprule
+  \textbf{Model} &Single-follow &Multiple-follow \\
+  \midrule
+  w/o RF graph &66.8 &66.0 \\
+  Full model &71.0 &74.4 \\
+  \bottomrule
+	\end{tabular}
+\caption{Accuracy comparison under sample settings that requires single or multiple hops of reasoning. w/o RF indicates model directly using bi-attention output.}
+\label{tab:follow}
+\end{table}
+
+\noindent
+\textbf{Results on Multi-hop Questions. }
+Since not all samples in WikiHop require multi-hop reasoning, we also investigate how the proposed RF graph based model behave by conducting experiments on ``single-follow'' and ``multiple-follow'' subset of WikiHop development set. ``Single-follow'' means single document is enough to to answer the query, while ``multiple-follow'' means multi-hop reasoning across multiple documents are needed. Detailed information is presented in \cite{Welbl2018}.
+
+As shown in \tabref{tab:follow}, our full model achieves consistently better performance in both reasoning settings. Under ``single-follow'' case the improvement brought by RF graph is 4.2\%, while a larger 8.4\% improvement is observed under ``multiple-follow'' case, suggesting that RF is able to adjust to samples of different reasoning requirements.
+
+\noindent
+\textbf{Ablation Studies. }
+To better understand the contribution of different ingredients to the performance, we conduct several ablation studies on the development set of WikiHop, including ablations on the edge type involved and different training objectives. The results are shown in \tabref{tab:ablation}. If we remove edge type 5, the accuracy on dev set degrades by 1.5\%, while it is lower for the removal of edge type 4 or 6. This means that the fine-grained pair-wise relation contribute more to answer prediction than other edge types, which is reasonable because information loss from edge type 4 or 6 can be to some extent compensated by edge type 5. Removing supervision from path induction will result in large performance degradation, which validates the importance of encouraging model to identify meaningful paths that lead to the answer.
+
+\begin{figure*}[t!]
+	\centering
+	\scalebox{1.7}{\includegraphics[width=1.0\columnwidth]{figure/path5.eps}}
+	\caption{Two examples with generated interpretation from WikiHop dev set. Path generated by RF is annotated with edge type number and optionally specific predicate. {\color{gray}{Gray-colored}} spans denote intermediate concepts identified by RF and predicate spans are marked with dark yellow.} \label{fig:overview}
+	\label{fig:path}
+\end{figure*}
+\begin{table}[t]
+\small
+\centering
+\begin{tabular}{@{}l|ccc@{}}
+\toprule
+  \multirow{2}{*}{\textbf{Model}} &\multicolumn{2}{c}{\textbf{Accuracy(\%)}} \\ 
+  \\ [-1.8ex]
+  \cline{2-3}
+  \\ [-1.8ex]
+  &Dev & $\bm{\vartriangle}$ \\
+ \midrule
+Full model &68.2          &-                   \\
+\midrule
+\midrule
+w/o edge type 4 &67.3          &0.9                   \\
+w/o edge type 5 &66.7          &1.5                   \\
+w/o edge type 6 &66.9          &1.3                   \\
+w/o path induction loss &66.3          &1.9                   \\
+w/o answer loss &63.1          &5.1                   \\
+\bottomrule
+\end{tabular}
+\caption{Ablations results on the WikiHop development set based on our full model.}
+\label{tab:ablation}
+\end{table}
+
+
+
+\subsection{Interpretability Results}
+\label{sec:inter}
+%\KZ{I think you wanna show some qualitative results and compare your results with the results of
+%the previous coarse-grained approach to illustrate how our approach better handles interpretability.}
+One key hallmark of our model is its ability to identify reasoning paths directly from RF graph that contribute most towards predicting the answer choice. Unlike previous interpretable methods like \cite{Kundu2019} and EPAr, RF benefit from more fine-grained semantics presented in the graph, hence more transparency is provided for analyzing model behavior. 
+
+\noindent
+\textbf{Case Study. } \figref{fig:path} illustrates the top-ranking reasoning paths extracted by RF and two previous interpretable multi-hop models on two samples from WikiHop development set. In the first sample, the top-1 path returned by RF is formed by first recognizing \textit{Ho Chi Minh City} as the object of predicate \textit{is a private university in} and then performing cross-document lexical matching to land in document 5. \textit{Vietnam} is finally reached as the object of predicate \textit{is the largest city in}. \citet{Kundu2019} produces sequence of entities without explicit pair-wise relation but still gets the correct answer. EPAr is only able to identify document 2 and 5 in which reasoning flow is implicitly contained. In the second sample, except for the detailed relation \textit{was released through}, RF further exhibit more transparency in terms of the length of reasoning path. It captures the relation between the song \textit{Hate to Say I Told You So} and its record \textit{Burning Heart Records} through the band and album it belongs to. \citet{Kundu2019} is by design constrained to 2-hop queries and hence sacrifice flexibility to adapt to dataset that requires more hops, while our proposed RF is able to perform up to L-hop reasoning. Paths generated by \cite{Kundu2019} can be considered as a special case of RF where only edge type 3 and 6 are reserved and L is set to 2. EPAr remains the least interpretable as it only provides document-level context information.
+
+\noindent
+\textbf{Human Evaluation. } To further qualitatively gauge the quality of reasoning paths discovered by our model compared to previous interpretable models, we conduct human evaluation by manually analyzing 50 randomly chosen samples from WikiHop development set that are annotated as requiring multi-hop reasoning and are correctly answered by both RF, model presented in~\cite{Kundu2019} and EPAr. Each generated top-ranking interpretation is scored on a 3-point scale by three annotators who are asked to take both meaningfulness and granularity into consideration. As shown in \tabref{tab:score}, the human evaluation scores\footnote{Annotator-wise and sample-wise average sequentially.} for RF, \cite{Kundu2019} and EPAr are 2.65, 2.06 and 1.43 respectively, indicating better interpretability of RF. The smaller average standard deviation of score for RF also shows that RF is more robust to reading material where complex relationships between concepts are involved.
+
+\noindent
+\textbf{Error Analysis. } After investigating cases where RF fails to predict the correct answer, we found that most of them are caused by failure of OpenIE or coreference resolution system. Other failures are incurred by missing edges between argument nodes due to lexical variation. It provides qualitative evidence that the performance and interpretation quality of RF are correlated with the quality of constructed RF graph.
+
+\begin{table}[t]
+	\centering
+	\small
+	\renewcommand\tabcolsep{4.0pt}
+	\begin{tabular}{l|cc}
+	\toprule
+  \textbf{Model} &score & std.\\
+  \midrule
+  RF(ours) &2.65 &0.23\\
+  \citet{Kundu2019} &2.06 &0.47 \\
+  EPAr &1.43 &0.28 \\
+  \bottomrule
+	\end{tabular}
+\caption{Human evaluation score on the quality of reasoning paths extracted by different models.}
+\label{tab:score}
+\end{table}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

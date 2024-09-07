@@ -1,0 +1,197 @@
+\section{Challenge of Commonsense Relation Classification}
+\subsection{Preliminary}
+\label{sec:factual}
+Modern relation extraction is formulated as a sentence-level relation classification (RC) problem.  Formally, the problem is defined as: 
+given an argument pair \textit{(h,t)} and a sentence \textit{s} 
+in which they co-occur, predict the probability that $h$ and $t$ are related by
+$r \in R\cup\{NA\}$, where $R$ is a set of all possible relations and $NA$ is a special
+not-related relation. 
+
+A variant of the problem is the corpus-level relation extraction problem, in which
+the input is an argument pair \textit{(h,t)}, a set of sentences \textit{S} 
+mentioning the pair, and $r \in R \cup \{NA\}$. The output is the same prediction probability.
+
+%Factual relation extraction aims to classify an entity pair to a set of pre-defined relations by consuming documents mentioning the entity pair. Sentence-level extraction focus on single sentence while corpus-level extraction retrieve all sentences the given concept pair co-occur and regard them as a whole. Sentence-level method predicts relation restricted on one sentence but corpus-level method gives more general output.
+
+%One of the standard corpus for factual relation extraction is the New York Times (NYT) dataset(). The text is from New York Times and is aligned with Freebase knowledge base as resource KB. The approach is based on the distant supervision assumption():
+Because labeling the ground truth relations in sentence is hard,
+previous work often makes the assumption that, if ($h$, $r$, $t$) is true,
+and $h$ and $t$ co-occur in sentence $s$, then $h$ is related to $t$ by $r$ in
+$s$. This is the basis of distance supervision used in many works~\cite{riedel2010modeling, mintz2009distant}.
+
+%\KZ{Don't mention specific datasets. These are implementation details.Just mention the common models used in HRERE and OpenNRE. Revise below:}
+
+%\eve {can't use automatic kb but manual ones. why use cnet.}
+\subsection{Extraction Results}
+\eve{Is Freebase enough? should we add more factual kb? should we include some domain-specific corpus that contain more commonsense?}
+
+%\KZ{This is about how we implement the SOTA RC methods to extract 
+%both factual and commonsense knowledge from a number of datasets. Ideally
+%we should extract both kinds of knowledge from every available dataset.
+%We should have two test sets (targeted triples to be extracted), 
+%one for facts and one for CS.}
+%\KZ{You never mention
+%what is a resource knowledge base previously. You should define it when
+%you talked about Freebase earlier.}
+
+%(HRERE) is SOTA on NYT dataset. It utilizes knowledge base embeddings trained on subset of Freebase without any entity pairs present in NYT dataset to improve performance. But the limited scale of ConceptNet (34 million triples) compared with Freebase (1.9 billion triples) makes it hard to divide it into two big enough subsets. 
+For commonsense knowledge, there are few available KBs to obtain side information. 
+Hence, we choose OpenNRE~\cite{lin2016neural} because it also performs well without any side information and thus straightforward to be directly applied on commonsense relation extraction task.
+
+We apply OpenNRE to extract both factual and commonsense knowledge
+on three datasets: New York Times, Wikipedia and Gutenberg. Because 
+Gutenberg mainly consists of fictions in which real-world entities are
+scarce, we only try to extract commonsense from it. 
+For fact extraction, we use a subset of relations (54) from Freebase as
+our resource KB (called FB$^*$); while for commonsense, we use a 
+subset of relations (27) from ConceptNet (called CN$^*$). We choose ConceptNet because ConceptNet is the largest manual annotated commonsense KB but generally speaking any KB could be used. 
+
+%To apply the factual model on commonsense, we simulate the process in the same way. 
+%ConceptNet serves as resource knowledge base to obtain triples. 
+%Considering there are some non-commonsense relations in ConceptNet, we manually exclude some relations, such as ExternalURL and EtymologicallyRelatedTo, leaving 27 relations in total (denoted as ConceptNet$^*$).
+%
+%\KZ{The following is how you create your training and test set. The
+%same procedure should be applied to both factual and commonsense extraction.}	
+%Based on the triples from these relations, we find all sentences that contain these two concepts. We choose NYT as resource corpus to make fair comparison with factual relation. Gutenberg and Wikipedia are also included due to its different genre from news report and potential in containing more commonsense knowledge. 
+%
+
+First we use all the triples in CN$^*$ to retrieve input sentences for the
+RC model. 
+To create negative data, we randomly select head and tail concepts per relation and regard them as triples of \textit{NA} relation. 
+Triples are the same across all three corpus and we set the upper bound of training triples as 100 per relation to make data uniformly distributed over relations. 
+
+As for factual relation, NYT (FB$^*$) is actually NYT dataset. 
+We construct Wikipedia (FB$^*$) in similar way. 
+Traditional relation extraction evaluation will remove the probability of NA relation for each pair. Thus we don't keep NA triples in Wikipedia (FB$^*$) test set.
+The specific statistic is listed in Table~\ref{table:sen distribution}.
+
+
+\begin{table}[h]
+	\small
+	\centering
+	\begin{tabular}{|l|c|c|c|c|}
+		\hline
+		& \multicolumn{2}{c|}{\textbf{Train}} & \multicolumn{2}{c|}{\textbf{Test}} \\\hline 
+		Corpus                & \multicolumn{1}{c|}{non-NA} & \multicolumn{1}{c|}{NA} & \multicolumn{1}{c|}{non-NA} & \multicolumn{1}{c|}{NA} \\ \hline
+NYT (FB$^*$)  & 156,664& 413,424& 6,444&166,004\\ \hline		
+NYT (CN$^*$)&10,937& 190,129& 120,340& 22328\\ \hline
+		Gutenberg             & 11,353                                & 203,295                           & 124,968                               & 24,368                            \\ \hline
+		Wiki(CN$^*$)             & 11,375                                 & 215,805                           & 130,212                                & 26,434                             \\ \hline
+		Wiki(FB$^*$) & 5,690& 46,594 & 19,137 & 0 \\ \hline
+	\end{tabular}
+	\caption{\# of Sentences in Different Corpora}
+	\label{table:sen distribution}
+\end{table}
+
+
+
+
+We use 100-dimensional pretrained GloVe embedding~\cite{pennington2014glove} and choose PCNN+ATT architecture which performs best on factual relation extraction task.
+
+
+
+%\begin{table}[h]
+%	\small
+%	\centering
+%	\begin{tabular}{|c|c|}
+%		\hline
+%		\textbf{Corpus}            & \textbf{MRR}   \\ \hline
+%		NYT (FB$^*$)     & 0.93 \\ \hline
+%		NYT (CN$^*$) & 0.31 \\ \hline
+%		Wiki (FB$^*$)& 0.37 \\ \hline
+%		Wiki (CN$^*$)& 0.26 \\ \hline
+%		Gutenberg         & 0.26 \\ \hline
+%	\end{tabular}
+%	\caption{MRR of Factual and Commonsense RC}
+%	\label{table:results}
+%\end{table}
+
+
+The test result is listed in Table~\ref{table:results}. 
+%For factual relations, we directly re-run the source code and reproduce the result.
+Because the number of relations is different between factual (54 relations) 
+and commonsense (27 relations), it is not suitable to apply the commonly-used metrics: 
+P@N or AUC. Instead, we use Mean Reciprocal Rank (MRR) here. 
+For pairs with multiple relations, we consider the relation of highest rank 
+as the only ground truth relation.
+One can see that when applying the same model on the same dataset, extracting
+commonsense is much harder than facts. In the following, we will explore
+why.
+
+
+%\begin{comment}
+%\begin{table*}
+%	\small
+%	\centering
+%	\begin{tabular}{|l|c|c|c|c|l|l|}
+%		\hline
+%		corpus                & \multicolumn{1}{l|}{P@100(\%)} & \multicolumn{1}{l|}{P@200(\%)} & \multicolumn{1}{l|}{P@300(\%)} & \multicolumn{1}{l|}{Mean} & AUC        & max F1     \\ \hline
+%		NYT dataset (factual)  & 77.228                        & 72.139                        & 68.439                        & 72.602                   & 0.341   & 0.406    \\ \hline
+%		nytimes (commonsense) & 10.891                        & 11.940                        & 11.628                        & 11.486                   & 0.080   & 0.185    \\ \hline
+%		Gutenberg             & 9.901                        & 14.925                      & 12.625                      & 12.484                 & 0.067 & 0.125 \\ \hline
+%		Wikipedia             & 13.861                      & 21.393                      & 22.259                      & 19.171                 & 0.074 & 0.130 \\ \hline
+%	\end{tabular}
+%	\caption{Evaluation Metrics for Factual and Commonsense Relation Extraction}
+%	\label{table:test result}
+%\end{table*}
+%\end{comment}
+%\KZ{Trim all numbers in results to two decimal places.}
+
+%\eve{two reasons: polymorphism(exist in other manual kb?), error in cnet triples.}
+
+\subsection{Polymorphism of Commonsense Argument Concepts}
+\label{sec:polymorphism}
+
+To answer why factual RC model fails on 
+commonsense relations, we hypothesize that 
+the arguments of commonsense relations take more forms than their factual counterparts. We will give more detailed analysis below.
+
+A concept has various expressions and they may differ greatly from each other while an entity usually has fewer and similar variants. 
+%\KZ{This example doesn't back up the claim above. Can we have some stats to show that concepts vary more than entities?}
+For example, 
+%concept \textit{[low temperature]} variant: \textit{cold}, 
+concept \textit{exercise} variant: \textit{[play sport, work out, go to the gym, build up body]}, entity \textit{Italy} variant: \textit{[Italia, Italian Republic]}. Moreover, the variants of a concept could have different POS tag but still express the same meaning, such as \textit{anger} and \textit{angry}. 
+
+%The larger vocabulary of commonesence concepts means if some variants are missed, we could not find all matching sentences which express the same meaning of the concept triple. 
+%\KZ{This doesn't make much sense.}
+
+For both factual and commonsense relation, we randomly sample 3 
+triples per relation from FB$*$ and CN$*$. We use Wikidata API\footnote{See \url{ https://www.wikidata.org/w/api.php?action=help&modules=wbsearchentities}} to retrieve \textit{aliases} of 
+an entity and manually write variants of head and tail concepts. 
+For example, triple \textit{(exercise, Entails, move)}, variants of head and 
+tail concepts are \textit{[sport, work out, go to the gym, build up body]} 
+and \textit{[movement, motion]}, which results in 15 pair variants. 
+
+%\KZ{This subsection is about vocab of concepts, why are you talking about the ambiguity of relations here?}
+
+Next we use all the variants to match sentences in corpus, 
+calculate entropy of each triple and take the average.
+
+\[ entropy(triple) = -\sum_{i=1}^{|V|}P_{i}log_{2}P_{i} \]
+\[ P_{i} = \frac{count(variant_{i})} {\sum_{j=1}^{|V|} count(variant_{j}) } \]
+\noindent
+where $V$ denotes the variant set of a triple and $count(variant_{i})$ means the number of matching sentences of $variant_{i}$.
+
+%\KZ{Give the formula how you compute the entropy. Earlier we talked about various ways of computing the sentence complexity. Here you didn't mention which way.} 
+
+Triples with no matching sentences are 
+not included for calculation. The result is in Table~\ref{table:entropy}. 
+
+\begin{table}[th]
+	\small
+	\centering
+	\begin{tabular}{|l|c|c|}
+		\hline
+		\diagbox [width=7em,trim=l] {\textbf{Type}}{\textbf{Corpus}}      & NYT         & Wiki \\ \hline
+		Factual     & 0.26&   0.50
+		\\ \hline
+		Commonsense & 1.28&    1.27
+		\\ \hline
+	\end{tabular}
+	
+	\caption{Entropy of Factual and Commonsense Relation}
+	\label{table:entropy}
+\end{table}
+
+
+We can see that entropy of commonsense relation is higher than factual relation, indicating that given a triple, the number of matching sentences across the variants distributes analogously. In other words, if one particular variant of a concept is missed, we will lose a relatively large number of matching sentences.

@@ -1,0 +1,87 @@
+\subsubsection*{Stock Trading (ST)}
+
+In this example, we set up a mini stock market which follows the prices in the public exchange 
+but is not openly available to the public. 
+Traders can join the market at any time but their trades will not affect the public market.
+Markets like this do exist in real life in the form of 
+``Dark Pools''\cite{degryse2008shedding}  
+which offers anonymous and private investors to
+trade away from the public exachanges.
+
+Our market starts with $N$ stocks, each has a fixed amount of shares dedicated for this market.
+In general, each trader has a fixed amount of money in the beginning, 
+and can buy (or sell) stocks from (or to) the market according to the public prices.
+% Each trader also has a high watermark and a low watermark of cash.
+% When the cash value is less than the low watermark (or greater than the high watermark), 
+% the trader will keep selling (or buying) stocks in order to increase (or decrease) the cash value. 
+% This strategy comes from real-world strategies where people want to control the risk.
+% Different watermarks lead to different behaviors, and for this example, 
+% the traders speculate to be either conservative or aggressive.
+Listing \ref{lst:trader} shows the trader's agent program. 
+Each trader trades several rounds until his cash value reaches the goal. 
+For each round, the trader randomly picks a stock {\tt X}, buys it as much as possible, 
+and waits for the price of {\tt X} to change. 
+$\alpha$ is a value between 0 and 1 which indicates the profit/loss margin percentage. 
+For example, if a trader buys {\tt X} at a price of {\tt P}, 
+he sells it at a price of either higher than $(1+\alpha)\times{\tt P}$ (to profit)
+or lower than $(1-\alpha)\times{\tt P}$ (to prevent further loss). 
+Different $\alpha$ values lead to different trading behaviors, and for this example,
+the traders speculate to be either 
+conservative (smaller $\alpha$) or aggressive (larger $\alpha$).
+Note that there is no atomicity guarantee between checking the price of a stock 
+and actually buying it, which is also the behavior of a real market.
+Also an intention to buy can be partially filled by the stock-serving agent
+(see Listing \ref{lst:stock}).
+The stock-serving agent also waits for price updating (i.e. {\tt (update, ...)})
+from the public exchange in a realtime fashion. 
+
+\begin{figure}[tb]
+\begin{lstlisting}[label=lst:trader,caption={Trader's Agent. Numbers are irrelevant and just for illustration purposes.}]
+Me     = unique_account_name
+Stocks = [...]  // a list of stock names
+Start  = 5000   // start with cash of $5000
+Goal   = 5500   // the goal is to end up with $5500
+
+trade(Cash, |$\alpha$|):
+  X = Stocks[rand(N-1)]
+
+  |$\Rd$|(price, X, _) = (_, _, P1)
+  Q1 = |$\lfloor$|Cash / P1|$\rfloor$|
+  |$\Out$|(buy, X, Q1, Me)
+  |$\In$|(ack, Me, _, _) = (_, _, P2, Q2)
+  C1 = Cash - P2 * Q2
+
+  |$\Rd$|(price, X, |$\lambda x.x\ge(1+\alpha)\times{\tt P2}\lor x\le(1-\alpha)\times{\tt P2}$|)
+  |$\Out$|(sell, X, Q2, Me)
+  |$\In$|(ack, Me, _) = (_, _, P3)
+  C2 = C1 + P3 * Q2
+
+  if C2 < Goal
+    trade(C2, |$\alpha$|)
+  else
+    |$\cm$|
+
+trade(Start, 0.01) |$\oplus$| trade(Start, 0.05)
+|$\exit$|
+\end{lstlisting}
+\begin{lstlisting}[label=lst:stock,caption=Stock-serving Agent. \texttt{P} is the current price of the stock while \texttt{Q} is the quantity of stocks available for sale.]
+Me = unique_stock_name
+
+serve(P, Q):
+  case |$\In$|(_, Me, _, _)
+    (update, _, NewPrc, _): |$\In$|(price, Me, _)
+                            |$\Out$|(price, Me, NewPrc)
+                            serve(NewPrc, Q)
+
+    (buy, _, Q1, X): Q2 = min(Q1, Q)
+                     |$\Out$|(ack, X, P, Q2)
+                     serve(P, Q - Q2)
+    
+    (sell, _, Q2, X): |$\Out$|(ack, X, P)
+                      serve(P, Q + Q2)
+
+|$\Out$|(price, Me, Start_Price)
+serve(Start_Price, Start_Quantity)
+\end{lstlisting}
+\vspace*{-6mm}
+\end{figure}

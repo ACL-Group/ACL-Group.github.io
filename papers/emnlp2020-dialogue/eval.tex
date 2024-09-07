@@ -1,0 +1,87 @@
+\section{Experimental Setup}
+\label{sec:eval}
+In this section, we introduce the datasets, baselines and implementation details of our model\footnote{The codes and data resources
+can be found in https://github.com/JiaQiSJTU/ResponseSelection.}.
+
+\subsection{Datasets}
+Our experiments are performed on three datasets:
+UbuntuV2, DSTC 7 and DSTC 8*.
+\itemsep0em
+\begin{itemize}
+
+\item \textbf{UbuntuV2}~\cite{LowePSCLP17} consists of two-party dialogues extracted from the Ubuntu chat logs.
+
+\item \textbf{DSCT7}~\cite{gunasekara2019dstc7} refers to the dataset for DSTC7 subtask1 consisting of two-party dialogues.
+%is the sentence selection track using a new Ubuntu corpus\cite{KummerfeldGPAGG19}. We use the dataset variant in subtask1 consisting of two-party conversations extracted from the chat logs.
+
+\item \textbf{DSCT8*} refers to the dataset for DSTC8 subtask 2, containing dialogues between multiple parties. We remove the samples without correct responses in the given candidate sets~\footnote{We do this to eliminate the controversy of solving no correct response in different ways and try to focus on dialogue context modeling.}.
+%is an extension of DSTC7 track1 where the dialogues are more difficult. We use the dataset for subtask 2, which containing dialogues between multi-parties without doing dialogue disentanglement.
+\end{itemize}
+More details of these three datasets are in Table \ref{tab:dataset}.
+
+\begin{table}[th]
+	\centering
+	\small
+	\begin{tabular}{lrrr}
+		\toprule[1pt]
+		\textbf{} & {UbuntuV2}& {DSTC7}& {DSTC8*} \\ 
+    	\midrule[1pt]
+		{Train} & 957,101 &100,000&89,813\\
+		{Valid} & 19,560 & 5,000&7,660\\
+		{Test} &18,920 &1,000&7,174\\
+		{\#Candidates} &10& 10&100\\
+		{\#Correct Response}&1&1&1 \\
+		{\#Turns } & 3-19&3-75& 1-99\\
+		\bottomrule[1pt]
+	\end{tabular}
+	\caption{The statistics of the datasets used in this paper.}
+	\label{tab:dataset}
+\end{table}
+
+
+
+\subsection{Baselines}
+We introduce several state-of-the-art baselines to compare with our results as follows.
+\begin{itemize}
+	 \item \textbf{DAM}~\cite{WuLCZDYZL18} is a hierarchical model based entirely on self and cross attention mechanisms.
+	\item \textbf{ESIM-18}~\cite{abs-1802-02614} and \textbf{ESIM-19}~\cite{abs-1901-02609} are two sequential models, which are the modifications and extensions of the original ESIM~\cite{ChenZLWJI17} developed for natural language inference. The latter one ranked top on DSTC7.
+	\item \textbf{IMN}~\cite{GuLL19} is a hybrid model with sequential characteristics at matching layer and hierarchical characteristics at aggregation layer.
+	\item \textbf{Bi-Encoder} (Bi-Enc), \textbf{Poly-Encoder} (Poly-Enc) and \textbf{Cross-Encoder} (Cross-Enc)~\cite{humeau2019poly} are the state-of-the-art models based on pre-trained model. 
+\end{itemize}
+
+
+
+\subsection{Implementation Details }
+According to Section \ref{sec:DSA}, we firstly transform the dialogue disentanglement dataset~\cite{KummerfeldGPAGG19}.
+Turns are clustered if there exists a ``reply-to'' edge, 
+and we obtain 4,444 training dialogues from the original training set and 480 test dialogues 
+from the original valid set and test set. Only 7.3\% of turns have multiple parents. 
+Since the parsing model can only deal with dependency structure with a single parent, 
+we reserve the dependency relation with the nearest parent in these cases. 
+We trained a new parser on this new dataset. The results on the new test set are shown 
+in \tabref{tab:parser}. It shows that in-domain data are useful for enhancing the 
+results for dialogue dependency prediction.
+
+\begin{table}[th]
+	\centering
+	\small
+	\begin{tabular}{lccc}
+		\toprule[1pt]
+		\textbf{} & {Precision}& {Recall}& {F1} \\ 
+		\midrule[1pt]
+		{Trained on STAC} & 67.37 &64.43&65.86\\
+		{Trained on the new dataset} & 71.44 & 68.32&69.85\\
+		\bottomrule[1pt]
+	\end{tabular}
+	\caption{The results of the dialogue dependency parser.}
+	\label{tab:parser}
+\end{table}
+
+
+For the response selection task, we implemented our experiments based on ParlAI~\footnote{\url{https://github.com/facebookresearch/ParlAI}}. Our model is trained with Adamax optimizer. The initial learning rate and learning rate decay are $5\mathrm{e}{-5}$ and $0.4$ respectively. The candidate responses are truncated at $72$ tokens, covering more than $99\%$ of them. The last $360$ tokens in the concatenated sequence of each thread are reserved. The BPE tokenizer was used. 
+We set the batch size as $32$. The model is evaluated on valid set every $0.5$ epoch. 
+The training process terminates when the learning rate is $0$ or the hits@1 on validation no longer increases within $1.5$ epochs. 
+The threshold in the Algorithm~\ref{alg:DSA} is set to $0.2$ and we preserve at most top-$4$ threads for each sample, avoiding the meaningless single turns while ensuring the coverage of original dialogue contexts. The results are averaged over three runs.
+For UbuntuV2 and DSTC7 training set, we do data augmentation: each utterance of a sample can be regarded as a potential response and the utterances in the front can be regarded as the corresponding dialogue context.
+
+Our experiments were carried out on 1 to 4 Nvidia Telsa V100 32G GPU cards. The evaluation metrics for response selection are hits@k and MRR, which are widely used and the codes can be found in ParlAI. 

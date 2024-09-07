@@ -1,0 +1,45 @@
+\section{Baseline Approach}
+\label{method}
+Our baseline approach is a supervised learning one.
+Because the dataset is not labelled with clarification questions, our first step is to create soft 
+labels in the dataset. Our basic assumption is that in such a expert-client consultation session, 
+the client is the one who comes with a question, and the expert is supposed to answer the question. 
+So any question that expert asks in the dialogue process is considered a clarification question. 
+But because in online communication, not all questions clearly end with a question mark, 
+we first need to classify which utterance from the expert are questions, and label these questions the 
+``clarification questions'' in the session.  We do not label questions from the client. 
+Once we have the labels of clarification questions in the dialogues,
+we will learn a classifier to detect the position in the dialogue that a clarification question needs to be asked (called clarification trigger detection) and further learn an encoder-decoder model to generate clarification questions.
+Next we present these tasks in more details.
+
+\subsection{Question Classification}
+\label{sec:qn}
+In this section, we describe two classifying models for classifying what the expert $E$ says in a dataset. In deep learning, TextRNN and TextCNN have gradually become the main research strategies for text classification tasks \cite{DBLP:journals/access/ChengCGPZ20}. Therefore we use TextRNN and TextCNN to do the classification.
+
+\paragraph{TextRNN.} 
+After vectorization of each word, the word vector enters the LSTM layer. We are using the standard LSTM here. The hidden layer output of each base LSTM cell is passed into the average pooling layer as input. The average pooling operation can be used to average the hidden layer state of the effective LSTM cell output, so as to obtain a unified statement feature representation. Then it is followed by a softmax classification layer to obtain a category distribution probability vector, and take the category with the highest probability value as the final prediction result \cite{DBLP:conf/aaai/LaiXLZ15}.
+
+\paragraph{TextCNN.} 
+After vectorization of each word, the word vector enters the convolution layer. Define multiple one-dimensional convolution kernels, and use these convolution kernels for the input to compute the convolution respectively. Convolution kernels with different widths may capture the relevance of different numbers of adjacent words. Pool all channels of the output at the most sequential time, and then link the pooled output values of these channels as vectors. Through the full connection layer, the connected vector is transformed into the output of the relevant class \cite{DBLP:conf/emnlp/Kim14}.
+
+\subsection{Clarification Trigger Detection}
+\label{sec:trigger}
+In this section, the main purpose is to establish a baseline to identify the circumstances under which the expert $E$ in the conversation is asked a clarification question. Although CNN based and RNN based classification models have achieved a lot of new research results, the polysemous and task-specific structure dependent problems have brought many restrictions. More recently, the method of pre-training language models on a large network with a large amount of unlabelled data and fine-tuning in downstream tasks has made a breakthrough in a couple of NLP tasks. Compared with other previous pre-trained representations, BERT adopts a fine-tuning approach that requires almost no specific architecture for each end task and has achieved great success in many NLP tasks \cite{DBLP:journals/access/YuSL19}. Therefore we describe two classifying models for clarification trigger detection, one based on RNN and the other based on BERT.
+
+The RNN-based classification model is called BLSTM-QuD. The framework is similar to the TextRNN in \secref{sec:qn}. Because of the long data processed, the classification results may depend on past and future contexts, we use BLSTM-RNN. BLSTM-RNN consists in two separate hidden layers, the forward (resp. backward) layer able to deal with past (resp. future) context. The output layer is connected to both hidden layers in order to fuse past and future contexts \cite{DBLP:conf/icann/LefebvreBMG13}.
+
+The BERT-based classification model is called BERT-QuD. BERT has recently outperformed state-of-the-art models in a number of language understanding tasks \cite{DBLP:conf/naacl/DevlinCLT19}. This approach consists of two stages: first, BERT is pre-trained on vast amounts of text, with an unsupervised objective of masked language modeling and next-sentence prediction; next, this pre-trained network is then fine-tuned on task specific, labelled data \cite{DBLP:journals/corr/abs-1904-08398}. In this section, BERT is used to represent the features of the processed dataset at the sentence level, and then the obtained feature vectors are connected to the softmax classifier for classification. 
+
+We use six different ways to model the context of the clarification trigger in the field of medical consultation.
+The first method, called \textbf{Window-top}, is to make a judgment in each dialogue based on all the Q$\&$A before each clarification question what the doctor says. The second method, called \textbf{Window-last-q}, is to make a judgment in each dialogue based on all the Q$\&$A between every two clarification questions what the doctor says (including the last clarification question). The other four methods are based on one, three, five, and ten Q$\&$A statements in each dialogue before each clarification question what the doctor says, called \textbf{Window-1}, \textbf{Window-3}, \textbf{Window-5}, and \textbf{Window-10}. All Q$\&$A in each method do not include the current clarification question. We mark a ``Y'' label where the doctor asks a clarification question and an ``N'' label where the doctor answers.
+
+\subsection{Clarification Question Generation}
+\label{sec:gen}
+In the previous approach, we have identified the circumstances under which the expert $E$ will respond. In this section, we will predict what the $E$ will ask back.
+OpenNMT (Open-Source Neural Machine Translation) is a methodology for machine translation that has been ``developed using pure sequence-to-sequence models'' \cite{DBLP:conf/acl/KleinKDSR17}. The method is successor to seq2seq-attn developed at Harvard, and has been completely rewritten for ease of efficiency, readability, and generalizability. This technology has become an effective approach in other NLP fields such as dialogue, parsing, and summarization. 
+ As long as OpenNMT-py runs a neural machine translation that uses seq2seq LSTM to render a sequence of words into another sequence of words. This section uses OpenNMT-py as a tool to input the first few rounds of Q\&A to predict what clarification question the expert $E$ will raise.
+
+This model takes a conditional language modeling view of translation by modeling the probability of a target sentence $w_{1:T}$ given a source sentence $x_{1:S}$ as 
+$p\left( w_{1:T}|x \right)$ = $\prod_{1}^{T}p\left( w_{t}|w_{1:t-1},x;\theta \right)$ where the distribution is parameterized with $\theta$. This distribution is estimated using an attention-based encoder-decoder architecture \cite{DBLP:journals/corr/BahdanauCB14}. A source encoder RNN maps each source word to a word vector, and processes these to a sequence of hidden vectors $h_{1},\cdots,h_{S}$. The target decoder combines an RNN hidden representation of previously generated words $\left( w_{1},\cdots,w_{t-1} \right)$ with source hidden vectors to predict scores for each possible next word. A softmax layer is then used to produce a next-word distribution $p\left( w_{t}|w_{1:t-1},x;\theta \right)$. The source hidden vectors influence the distribution through an attention pooling layer that weights each source word relative to its expected contribution to the target prediction. The complete model is trained end-to-end to minimize the negative log-likelihood of the training corpus.
+
+ The six methods designed in this section are the same as those in \secref{sec:trigger}, but all Q\&A contents in each method include the current clarification question. We use the first few rounds of Q\&A and the last clarification question as a Q\&A pair and train them in the model. 

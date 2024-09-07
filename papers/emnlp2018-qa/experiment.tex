@@ -1,0 +1,494 @@
+\section{Experiments}
+\label{sec:exp}
+
+In this section, we introduce the QA datasets and state-of-the-art systems
+that we compare.
+We show the end-to-end results of the KBQA task,
+and perform detail analysis to investigate the importance of different modules
+used in our approach.
+
+
+
+\subsection{Experimental Setup}
+
+%\noindent
+\textbf{QA datasets:}
+%TODO: QALD: too small, dismiss
+We conduct our experiments on ComplexQuestions~\cite{bao2016constraint},
+WebQuestions~\cite{berant2013semantic} and SimpleQuestions~\cite{bordes2015large}.
+We use CompQ, WebQ and SimpQ as abbreviations of the above datasets, respectively.
+CompQ contains 2,100 complex questions collected from Bing search query log,
+and the dataset is split into 1,300 training and 800 testing questions.
+WebQ contains 5,810 questions collected from Google Suggest API,
+and is split into 3,778 training and 2,032 testing QA pairs.
+Each question is manually labeled with at least one answer entity in both datasets.
+SimpQ consists of more than 100K questions,
+and the gold answer of each question is a gold focus entity paired with a single predicate.
+This dataset is designed mainly for answering simple questions,
+and we use it for complementary evaluation.
+
+%\noindent
+\textbf{Knowledge bases:}
+For experiments on both CompQ and WebQ,
+we follow the settings of Berant et al.~\shortcite{berant2013semantic} and
+Xu et al.~\shortcite{xu2016question} to use the full Freebase dump
+\footnote{detail information of the Freebase dump is available at
+https://github.com/syxu828/QuestionAnsweringOverFB/.}
+as the knowledge base, which contains 46M entities and 5,323 predicates.
+We host the knowledge base with Virtuoso engine
+\footnote{http://virtuoso.openlinksw.com/}.
+%\footnote{
+%We remove predicates in \textit{user}, \textit{base} and \textit{freebase} domain,
+%as well as predicates whose objects are neither entities or literals, 
+%like \textit{common.topic.article} and \textit{common.topic.image}.
+%}
+For the experiments on SimpQ, the knowledge base we use is FB2M,
+which is a subset of Freebase provided with the dataset,
+consisting 2M entities and 10M triple facts.
+
+
+\textbf{Implementation detail:}
+For all experiments in this section,
+we initialize word embeddings using GloVe~\cite{pennington2014glove} word vectors
+with dimensions set to 300, and the size of BiGRU hidden layer is also set to 300.
+We tune the margin $\lambda$ in \{0.1, 0.2, 0.5\},
+the ensemble threshold $K$ in \{1, 2, 3, 5, 10, +INF\},
+and the batch size $B$ in \{16, 32, 64\}.
+All the source codes, QA datasets, and detail results  
+can be downloaded from \url{http://202.120.38.146/CompQA/}.
+
+%We use the WebQuestions~\cite{} and ComplexQuestions~\cite{} datasets in our experiment.
+%For both datasets, we split the training questions into 80\%:20\% for validation use.
+%We use the average $F_1$ score as the evaluation metric,
+%which is computed by the official evaluation script
+%\footnote{The script is available at \url{http://www-nlp.stanford.edu/software/sempre}.}.
+
+
+%\noindent
+%\textbf{Implementation Detail}
+%
+%\noindent
+%For the step of negative QA pair sampling, we blabla \KQ{not sure what the final version is}.
+%Besides, we tune the following parameters in our model:
+%\begin{itemize}
+%\item The dimension of knowledge base embedding $D_K$ in \{0, 25, 50, 100, 200\},
+%\item The number of hidden units of RNN (for both word, name and skeleton encoding) in \{50, 100, 200\},
+%\item The hinge loss margin $\lambda$ in \{0.5, 1.0, 1.5, 2.0\},
+%\item The batch size $b$ in \{32, 64, 128, 256\},
+%\item ......
+%\end{itemize}
+%
+%\noindent{State-of-the-Art Comparisons}
+
+
+\subsection{End-to-End Results}
+
+%Part 1: WebQ / CompQ
+Now we perform KBQA experiments on WebQ and CompQ.
+%Talk about how to output the answer?
+%For providing answers only, we produce answer queried by the highest scoring query structure,
+We use the average $F_1$ score over all questions as our evaluation metric.
+The official evaluation script 
+\footnote{The evaluation script is available at http://www-nlp.stanford.edu/software/sempre/.}
+measures the correctness of output entities at string level.
+While in CompQ, the annotated names of gold answer entities
+don't match the case of their names in Freebase,
+thus we follow \citet{bao2016constraint} to lowercase
+both annotated names and the output answer names before calculating the $F_1$ score.
+% talk shorter??
+We set $\lambda=0.5$, $B=32$, $K=3$ for WebQ and $K=5$ for CompQ,
+as reaching the highest average $F_1$ on the validation set of each dataset.
+
+
+We report the experimental results in \tabref{tab:compq-e2e}.
+%we mainly compare with SP or SP + NN methods, as close to our method,
+%and competitive among various approaches.
+The result of \citet{yih2015semantic} on CompQ is reported by \citet{bao2016constraint}
+as their implemented result.
+Our approach outperforms existing approaches on CompQ dataset,
+and ranks 2nd on WebQ among a long list of state-of-the-art works.
+\citet{jain2016question} achieves highest $F_1$ score on WebQ using memory networks,
+which is not semantic parsing based, and thus less interpretable.
+We point out that \citet{xu2016question} uses Wikipedia texts as
+the external community knowledge for verifying candidate answers,
+and achieves a slightly higher $F_1$ score (53.3) than our model,
+but the performance decreases to 47.0 if this step is removed.
+Besides, \citet{yih2015semantic} and \citet{bao2016constraint} 
+used ClueWeb dataset for learning more accurate semantics,
+while based on the ablation test of Yih, 
+the $F_1$ score of WebQ drops by 0.9 if ClueWeb information is removed.
+%savenkov: degenerate into Bast's approach, not show the result.
+
+
+\begin{table}[ht]
+    \small
+    \centering
+    \begin{tabular} {l|c|c}
+        \hline
+        Method  &   CompQ  & WebQ \\
+        \hline
+        \citet{dong2015question}        &   -   & 40.8  \\
+        \citet{yao2015lean}             &   -   & 44.3  \\
+        \citet{bast2015more}            &   -   & 49.4  \\
+        \citet{berant2015imitation}     &   -   & 49.7  \\
+        \citet{yih2015semantic}         & 36.9  & 52.5  \\
+        \citet{reddy2016transforming}   &   -   & 50.3  \\
+        \citet{xu2016question} (w/o text)
+                                        &   -   & 47.0  \\
+        %\citet{xu2016question} (w/ text)
+        %                                &   -   & 53.3  \\
+        \citet{bao2016constraint}       & 40.9  & 52.4  \\
+        \citet{jain2016question}        &   -   & \textbf{55.6}  \\
+        \citet{abujabal2017automated}   &   -   & 51.0  \\
+        %TODO: Read it.
+        %Savenkov et al.~\shortcite{savenkov2016knowledge} (w/o text)
+        %                                &       & 49.4  \\
+        \citet{cui2017kbqa}             &   -   & 34.0  \\     
+        \citet{hu2018answering}         &   -   & 49.6  \\
+        \citet{talmor2018web}           & 39.7  &   -   \\
+        \hline
+        Ours (w/o linking enrich)       & 42.0  & 52.0  \\
+        Ours (w/ linking enrich)        & \textbf{42.8}  & 52.7  \\
+        \hline
+    \end{tabular}
+    \caption{Average $F_1$ scores on CompQ and WebQ datasets.}
+    \label{tab:compq-e2e}
+\end{table}
+%TODO: if time allows, stat. the F1 of simple / complex questions in WQ.
+%TODO: also try to talk about enrichment analysis.
+
+
+Our results show that entity enrichment method
+improves the results on both datasets by a large margin (0.8),
+which is a good help to our approach.
+%a good help to our approach, improving results on both datasets.
+We argue that the enriched results are directly comparable with other approaches,
+as S-MART itself is learned from semi-structured information in Wikipedia,
+such as anchor texts, redirect links and disambiguation pages,
+the enrichment step does not bring extra knowledge into our system.
+In addition, the improvements of the candidate generation step
+also show a positive effect.
+If we remove our implicit type filtering in Step 4 
+and time interval constraints in Step 5,
+the $F_1$ of CompQ slightly drops from 42.84 to 42.37.
+Although these improvements mainly concern time-related questions (around 25\% in CompQ),
+we believe these strategies can be useful tricks in the further researches.
+
+%Ablation 0: SQ (17:30)
+As a complementary evaluation,
+%to evaluate our relation matching model.
+we perform semantic matching experiments on SimpQ.
+Given the gold entity of each question,
+we recognize the entity mention in the question, replace it with $\langle E \rangle$,
+then predict the correct predicate.
+\tabref{tab:simpq} shows the experimental results.
+The best result is from \citet{qu2018question}, which learns the semantic similarity 
+through both attentive RNN and similarity matrix based CNN.
+\citet{yu2017improved} proposed another approach
+using multi-layer BiLSTM with residual connections.
+Our semantic matching model performs slightly below these two systems,
+since answering simple questions is not the main goal of this paper.
+Comparing with these approaches, our semantic matching model is light-weighted,
+with a simpler structure and fewer parameters,
+thus is easier to tune and remains effective. 
+%our model is more light-weighted and proved to be effective.
+
+\begin{table}[ht]
+    \small
+    \centering
+    \begin{tabular} {l|c|c}
+        \hline
+        Method  &   Relation Inputs     & Accuracy   \\
+        \hline
+        BiLSTM w/ words             & words         & 91.2 \\
+        BiLSTM w/ rel\_name         & rel\_name     & 88.9 \\
+        \citet{yih2015semantic}     & char-3-gram   & 90.0 \\
+        \citet{yin2016simple}       & words         & 91.3 \\
+        \citet{yu2017improved}      & words+rel\_name    & 93.3 \\
+        \citet{qu2018question}      & words+rel\_separated    & \textbf{93.7} \\
+        \hline
+        Ours                        & words+path    & 93.1 \\
+        \hline
+    \end{tabular}
+    \caption{Accuracy on the SimpleQuestions dataset.}
+    \label{tab:simpq}
+\end{table}
+
+\subsection{Ablation Study}
+In this section, we explore the contributions of various components in our system.
+
+\textbf{Semantic component representation:}
+We first evaluate the results on CompQ and WebQ under different path encoding methods.
+Recap that the encoding result of a semantic component
+is the summation of its word and id path representations (\secref{sec:schema-encoding}),
+thus we compare encoding methods by multiple combinations.
+For encoding predicate word sequence, we use BiGRU
+(the same setting as encoding question word sequence)
+as the alternative of average word embedding.
+For encoding predicate id sequence,
+we use average predicate embedding as the alternative
+of the current path-level embedding ($PathEmb$).
+
+The experimental results are shown in \tabref{tab:abl-pw}.
+The encoding method $None$ means that we don't encode the id or word sequence,
+and simply take the result of the other sequence as the representation of the whole component.
+we observe that the top three combination settings, 
+ignoring either word or id sequence,
+perform worse than the bottom three settings.
+The comparison demonstrates that predicate word and id representation 
+can be complementary to each other.
+The performance gain is not that large,
+mainly because predicate id features are largely covered by their word name features.
+%We observed that for each question, among all predicates which 
+%occurred in some candidate graph, ~75\% of them have unique names (aliases).
+%Therefore, the additional id repr. feature doesn't bring much extra information.
+
+For the encoding of id sequences, $PathEmb$ works better than average embedding,
+consistently boosting $F_1$ by 0.65 on both datasets.
+The former method treats the whole sequence as a single unit,
+which is more flexible and can potentially learn diverse representations
+of id sequences that share the same predicates.
+For the encoding of word sequences,
+the average word embedding method outperforms BiGRU on CompQ,
+and the gap becomes smaller when running on WebQ.
+This is mainly because the training set of WebQ is about 3 times larger than that of CompQ,
+making it easier for training a more complex model.
+%Since the number of distinct predicate sequences are limited,
+%leveraging both w and id outperforms other approaches.
+%Since the usage of words in FB could be slightly different from NL scenario,
+%as path embedding is fitting the residues between q and relation names,
+%and the repr of word and id are more likely to be complementary to each other.
+%Meanwhile,
+%difference B/H/R: difference not that much.
+%RH: slightly better when inputs grows up.
+%no need to learn multiple names for one FB predicate,
+%order is not so important, BOW is as good as RNN.
+%
+%
+%RNN vs. Average: more data, better
+%
+%latter 3 > top 3 since both used.
+%
+%fill the gap
+
+\begin{table}[ht]
+    \small
+    \centering
+    \begin{tabular} {c|c|c|c}
+        \hline
+        Word repr.  &  Id repr. &   CompQ $F_1$  & WebQ $F_1$ \\
+        \hline
+        None        &  PathEmb  &   41.11   & 51.86 \\      %%  XH
+        Average     &  None     &   42.18   & 51.74 \\      %   BX
+        BiGRU       &  None     &   41.80   & 51.87 \\      %   RX
+        Average     &  Average  &   42.16   & 52.00 \\      %   BB
+        BiGRU       &  PathEmb  &   41.52   & 52.33 \\      %   RH
+        Average     &  PathEmb  &   \textbf{42.84}   & \textbf{52.66} \\      %   BH
+        \hline
+    \end{tabular}
+    \caption{Ablation results on path representation.}
+    \label{tab:abl-pw}
+\end{table}
+
+
+%%Ablation 1: Bao / Sep / Comp. (20:00)
+%%Kernel: what's compact / separate / bao's difference
+%%Kernel: 
+%%Ablation 2: Q- encoding, compare with SimpQ, if possible (21:40)
+%%What dependency can do and what they can't.
+%%can: syntactic information (functional), as compression; can't: lose information
+%%Example: "end up marrying" "gain independence from" ...
+%\textbf{Question representation:}
+%\tabref{tab:abl-qw} shows the ablation result on all the datasets.
+%when dependency path information is augmented with sentential information,
+%the performance boosts by relatively xx.x on average.
+%introducing strong syntactic and functional features,
+%also local features (like attention)
+%however, performances drops by xx.x if only use dependency,
+%crucial words not in the path: such as 
+%"gain independence from"
+%"end up marrying"
+%%What dependency can do and what they can't.
+%%can: syntactic information (functional), as compression; can't: lose information
+%%Example: ``end up marrying`` ``gain independence from`` ...
+%\textbf{Question representation:}
+%\tabref{tab:abl-qw} shows the ablation result on all the datasets.
+%when dependency path information is augmented with sentential information,
+%the performance boosts by relatively xx.x on average.
+%introducing strong syntactic and functional features,
+%also local features (like attention)
+%however, performances drops by xx.x if only use dependency,
+%crucial words not in the path: such as 
+%``gain independence from``
+%``end up marrying``
+
+
+\textbf{Semantic composition and question representation}:
+To demonstrate the effectiveness of semantic composition,
+we construct a straightforward baseline,
+where we remove the max pooling operation in \eqnref{eqn:maxpool},
+and instead calculate the semantic similarity score as 
+the summation of individual cosine similarities:
+$S_{sem}(q, G) = \sum_{i}{cos(\bi{p}^{(i)}, \bi{q}_p^{(i)})}$.
+For methods of question encoding, we setup ablations 
+by turning off either sentential encoding or dependency encoding.
+
+
+
+\tabref{tab:abl-qw} shows the ablation results on CompQ and WebQ.
+When dependency path information is augmented with sentential information,
+the performance boosts by 0.42 on average.
+Dependency paths focus on hidden features at syntactic and functional perspective,
+which is a good complementary to sentential encoding results.
+However, performances drop by 2.17 if only dependency information is used,
+we find that under certain dependency structures, 
+crucial words (bolded) are not in the path between the answer and the focus mention (underlined),
+for example, ``who did \textul{draco malloy} end up \textbf{marrying}''
+and ``who did the \textul{philippines} gain \textbf{independence} from''.
+While we observe about 5\% of such questions in WebQ,
+it's hard to predict the correct query graph without crucial words.
+
+In terms of semantic composition, 
+Our max pooling based method consistently outperforms the baseline method.
+The improvement on WebQ is smaller than on CompQ, 
+largely due to the fact that 85\% questions in WebQ are simple questions~\cite{bao2016constraint}.
+%and thus no need for semantic composition.
+As a result of combination,
+our approach significantly outperforms the vanilla SP+NN approach on CompQ by 1.28,
+demonstrating the effectiveness of our approach.
+Theoretically, the pooling outcome may lead to worse end-to-end result 
+when there are too many semantic components in one graph,
+because the pooling layer takes too many vectors as input,
+different semantic features between similar query graphs become indistinguishable.
+%(large values on most dimensions of the pooling output), 
+%hence hard to find the correct graph.
+In our task, only 0.5\% of candidate graphs have more than 3 semantic components, 
+so pooling is a reasonable way to aggregate semantic components in this scenario.
+
+\begin{table}[ht]
+    \small
+    \centering
+    \begin{tabular} {c|c|c|c}
+        \hline
+        Composition     & Q\_repr   &   CompQ $F_1$   & WebQ $F_1$ \\
+        \hline
+        Baseline        &   sentential    &   41.56   & 52.14 \\
+        Baseline        &   both          &   42.35   & 52.39 \\
+        \hline
+        Ours            &   dependency    &   41.48   & 49.69 \\
+        Ours            &   sentential    &   42.59   & 52.28 \\
+        Ours            &   both          &   \textbf{42.84}   & \textbf{52.66} \\
+        \hline
+    \end{tabular}
+    \caption{Ablation results on question representation and compositional strategy.}
+    \label{tab:abl-qw}
+\end{table}
+
+
+To further explain the advantage of semantic composition,
+we take the following question as an example:
+``who is gimli's father in the hobbit''.
+Two query graphs are likely to be the final answer:
+1) ($?$, $children$, $gimli\_person$);
+2) ($?$, $fictional\_children$, $gimli\_character$) $\wedge$ ($?$, $appear\_in$, $hobbit$).
+%Since ``father'' is the crucial word of the question,
+If observing semantic components individually,
+the predicate $children$ is most likely to be the correct one
+since ``'s father'' is highly related and with plenty of positive training data.
+Both $fictional\_children$ and $appear\_in$ get a much lower similarity compared with $children$,
+hence the baseline method prefer the first query graph.
+In the meantime, our proposed method learns the hidden semantics of the second candidate 
+by absorbing salient features from both predicates,
+and such compositional representation is closer to the semantics of the entire question
+than a simple ``children'' predicate.
+That's why our method manages to answer it correctly.
+
+
+%To demonstrate the effective of this part of our model,
+%we construct two alternative baselines.
+%For the first baseline, we remove the max pooling operation (\eqnref{xx}) and
+%calculate the cosine similarity of each individual component,
+%then sum them together as the relation matching score:
+%$s(q, p) = sum blabla$.
+%The second baseline is inspired by \citet{bao2016constraint}:
+%the output of relation matching module is a 5-dim vector
+%serving as rich relation matching features in the final layer.
+%Each value in this vector indicates the sum of similarity scores
+%between the question and the semantic component in 5 different categories:
+%main, entity, type, time, ordinal, respectively.
+%As the results shown in \tabref{tab:abl-sem},
+%we observe that
+%there's a stable gap between our approach and the first baseline,
+%%TODO: t-test if possible
+%showing that our model is able to capture the semantic interaction between components,
+%rather than treating the query structure as a set of isolated components.
+%We also point out that for both baselines,
+%shared paths between positive and negative query structures are canceled out,
+%as a result, the learning step cannot make full use of training pairs.
+%% Bao lower than sep? not sure.
+%
+%%talk about "gimli's father", using figures if possible
+%
+%
+%%Ablation 2: Q- encoding, compare with SimpQ, if possible (21:40)
+%%What dependency can do and what they can't.
+%%can: syntactic information (functional), as compression; can't: lose information
+%%Example: "end up marrying" "gain independence from" ...
+%\textbf{Question representation:}
+%\tabref{tab:abl-qw} shows the ablation result on all the datasets.
+%when dependency path information is augmented with sentential information,
+%the performance boosts by relatively xx.x on average.
+%introducing strong syntactic and functional features,
+%also local features (like attention)
+%
+%however, performances drops by xx.x if only use dependency,
+%crucial words not in the path: such as 
+%"gain independence from"
+%"end up marrying"
+%
+%webq: more simple questions (80\%) not big difference between sep and comp
+%compq: significant gap
+
+
+
+\subsection{Error Analysis}
+%Analyze the cases where not the highest result is returned.
+%take compQ as example.
+%
+%1. entity linking error
+%several small categories
+%
+%2. relation matching error
+%heat map
+%
+%3. not perfect (missing edges)
+%
+%
+%percentage
+%example:
+%what's wrong
+%what's right
+%reason
+
+We randomly analyzed 100 questions from CompQ
+where no correct answers are returned.
+We list the major causes of errors as follows:
+
+\emph{Main path error} (10\%):
+This type of error occurred when the model failed to understand the main semantics
+when facing some difficult questions
+(e.g. ``What native american sports heroes earning two gold medals in the 1912 Olympics''); %10/100 e.g. 1417
+
+\emph{Constraint missing} (42\%): These types of questions involve implicit constraints,
+for example, the question ``Who was US president when Traicho Kostov was teenager''
+is difficult to answer because it implies an implicit time constraint ``when Traicho Kostov was teenager''; %35/100, e.g. 1930 1843
+
+\emph{Entity linking error} (16\%): This error occurs due to the highly ambiguity of mentions.
+For example, the question ``What character did Robert Pattinson play in Harry Potter'' expects the film ``Harry Potter and the Goblet of Fire'' as the focus,
+while there are 7 movies in Harry Potter series;  %15/100  e.g. 2064 1664
+
+\emph{Miscellaneous} (32\%): This error class contains questions with semantic ambiguity or not reasonable.
+For example, the question ``Where is Byron Nelson 2012'' is hard to understand,
+because ``Byron Nelson'' died in 2006 and maybe this question wants to ask where did he die. %25/100 e.g. 1301 1947
+
+%where is byron nelson 2012?

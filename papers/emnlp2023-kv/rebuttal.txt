@@ -1,0 +1,70 @@
+Official Review of Submission1375 by Reviewer xYfS:
+
+We appreciate the valuable feedback provided by the reviewers. Our responses to Reviewer's questions are listed below:
+
+**Q**: "A. Why were these baseline chosen? Aren't there baselines to compare to from previous papers?"
+**A**: The inference process of LLMs is inherently memory-bound. In the context of auto-regressive decoding, the predominant latency bottleneck is not attributed to actual computations, but rather to the repetitive movement of an increasingly expansive key-value cache. This cache is transferred from the High Bandwidth Memory (HBM) to the on-chip computation unit. Our proposed approach, alongside the sparse attention baselines we have selected, shares a common goal: enhancing the ratio of computation to memory access by curtailing the stored key-value cache.
+
+While Multi-query attention primarily concentrates on diminishing the count of attention heads, an endeavor that complements our approach, FlashAttention, introduces IO-aware modifications to the query-key computation scheme. Notably, both these methods run parallel to our aim of compressing the key-value pairs. In a subsequent version of our work, due credit will be given to these two aforementioned papers through proper citations.
+
+**Q**: "Not clear how the context compression is done at inference time? Are random spans of tokens are chosen?"
+**A**: During training, as stated in Section 3.1, we employ a random strategy to select spans of tokens to be compressed. We acknowledge that though more systematic span selection strategy may exist, randomly choosing compression target has sufficient flexibility and variability, thereby enabling language model to compress diverse range of contextual information. At inference time, we currently adopt the same random strategy as training time.
+
+**Q**: "Can this method play well with Flash Attention to improve inference even further? If no, how your method compare with flash attention?"
+**A**: The original Flash Attention implementation requires the attention mask matrix to be lower triangular, meaning that it is not directly compatible with our method due to the sparse attention mask. To combine our method with efficient attention implementation, we need to use more advanced kernels that support sparsity patterns in attention masks. One such implementation is sparse flash attention[1]. Xformers[2]' implementation of memory-efficient attention also supports an arbitrary attention mask, one can directly use it to replace the default attention implementation in HuggingFace.
+References:
+[1] Faster Causal Attention Over Large Sequences Through Sparse Flash Attention.
+[2] xFormers: A modular and hackable Transformer modeling library.
+
+**Q**: "No mention of open-sourcing implementation"
+**A**: We have uploaded the source code in the supplementary material, including the main Python files and Bash scripts. We will open-source it after the paper is accepted.
+
+
+
+Official Review of Submission1375 by Reviewer dqav:
+
+We appreciate the valuable feedback provided by the reviewers. Our responses to Reviewer's questions are listed below:
+
+**Q**: "Rationale for model selection?"
+**A**: Our primary deliberation revolves around encompassing various model scales, ranging from 1.3 billion to 2.7 billion parameters. Additionally, we take into account diverse position encoding schemes: absolute position encoding, as featured in OPT, and rotary position encoding, as employed in RedPajama, to demonstrate the generality of our approach. Extending to other LLMs is straightforward.
+
+**Q**: "Why is code not open source?"
+**A**: We have uploaded the source code in the supplementary material, including the main Python files and Bash scripts. We will open-source it after the paper is accepted.
+
+
+
+Official Review of Submission1375 by Reviewer UZc8
+
+We appreciate the valuable feedback provided by the reviewer. Our responses to Reviewer's questions are listed below:
+
+**Q**: "relation between compression ratio and throughput"
+**A**: Among methods that reduce the length of key-value cache, the notable contribution of our proposed KV Compression is that it offers the flexibility to compress selected spans of tokens(in contrast to all past information beyond the window size in the Local Attention method), therefore resulting in better language modeling ability(reflected by PPL) and generation quality(reflected by PPL, ROUGE, and BERTScore). In Section 4.3, we profile the gain of throughput(the number of tokens generated per second) by compressing the key-value cache of prefix tokens, which essentially decreases the Memory Access Cost(MAC) of repeatedly reading from/writing to HBM. Specifically, we use different methods to encode the prefixing 800 tokens and only keep (1-compression_ratio) of the key-value cache. Therefore, the change of reported throughput only reflects the impact of reduced MAC and is the same of different methods under the same compression ratio. The specific CUDA kernels for efficient attention implementation contribute to the inference efficiency from another aspect. our proposed KV Compression can be readily combined with existing implementation, e.g., xformers' memory_efficient_attention, which we observe empirically offers more than 2x speed up than vanilla attention implementation.
+
+**Q**: "Do you think it would be easy to write an efficient CUDA kernel for your specific method?"
+**A**: One can implement a specific CUDA kernel for our proposed method based on the existing Flash Attention kernel. The modification involves the outer-loop logic, i.e., for token spans enclosed by sentinel tokens, subsequent tokens except the ending sentinel token can be skipped.
+
+**Q**: "Did you run experiments to verify how the randomness of the selection process impacts the variability of the performance?"
+**A**: Yes. To examine how the randomness in the selection process influences the generation quality, we ran our experiments on open-ended generation five times with different random seeds. The standard deviations for ppl, Rouge-L, and BERTScore across different compression ratios are 1.3, 0.6, and 0.5 respectively.
+
+
+
+Official Review of Submission1375 by Reviewer BNcU
+
+We appreciate the valuable feedback provided by the reviewer. Our responses to Reviewer's questions are listed below:
+
+**Q**: "The caption in Figure 1 does not clearly indicate the color encodings of the attention mask."  
+**A**: We apologize for the confusion and will fix it in the revision. In Figure 1, the color in $i$-th row indicates whether one token can be attended by the $i$-th token or not. Green-colored tokens are allowed to be attended to while grey-colored tokens are disallowed. For example, for the token 'carpet', there are five tokens that it can attend to: 'A', 'cat', '<CR>', 'a', and 'carpet'.
+
+**Q**: "The proposed method is compared against two methods only, any reason for not considering more methods?"  
+**A**: The end goal of our proposed method is to curtail the length of the key-value cache so that both memory access cost and memory footprint are ameliorated. Therefore, our method is directly comparable to sparse attention-based methods that restrict the receptive field of each token to a smaller subset of tokens, thus reducing the size of the key-value cache required to be stored. We didn't compare against methods that reduce key-value cache from orthogonal perspectives, e.g., decrease the number of attention heads.
+
+
+**Q**: "The proposed method is only experimented on one dataset, Wikitext-2. Do you expect a different result if you conduct your experiment on prompts dataset, like chatgpt-prompts? Do you think your result will be comparable with the work of “Learning to Compress Prompts with Gist tokens” by Jesse Mu, Xiang Lisa Li, Noah Goodman."  
+**A**: In addition to using WikiText-2 for language modeling experiments, we also used C4 to evaluate the effectiveness of different context compression methods on open-ended generation using C4. Language modeling dataset like WikiText contains data with presumably more inherent variations than prompts dataset. Thus, we expect our method to work comparably well on domains beyond the general language modeling corpus. To validate this point, we report here additional results(ppl) on WritingPrompts dataset using Redpajama-3B under compression ratios of 0.7, 0.8, and 0.9:
+
+| Method/Compression Ratio | 0.7 | 0.8 | 0.9 |
+| ----  |  ----  | ----  |  ----  |
+| Local Attention | 23.1 | 25.2 | 29.5 |
+| KV Compression | 21.8 | 22.0 | 22.5 |
+
+The gist token method proposed by Mu et at. is restricted to compressing a moderate-length prefix, e.g., prompt/instructions for supervised instruction tuning. When the target compression ratio is high, such prefix compression methods can hardly retain information needed for subsequent processing. In contrast, our method is more flexible and can retain much coherent information flow even under high compression ratio.

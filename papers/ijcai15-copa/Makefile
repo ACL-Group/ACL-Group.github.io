@@ -1,0 +1,11 @@
+all:
+	latex paper
+	latex paper
+	bibtex paper
+	latex paper
+	latex paper
+	dvipdf paper
+#	dvipdfm -p letter paper.dvi
+
+clean:
+	rm -f *.bbl *.blg *.aux *.dvi *.log *.ent *.pdf *.gz *.fdb_latexmk

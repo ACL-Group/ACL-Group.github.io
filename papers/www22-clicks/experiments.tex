@@ -1,0 +1,248 @@
+\section{Experiments}
+
+\subsection{Datasets Description}
+
+Wikimedia provides public dumps for content on Wikipedia. We refer to both Wikipedia pages and clickstream as the datasets. Due to the large volume of data on Wikipedia, these two datasets are representative. On Wikipedia, different articles are written by different editors, and get viewed by different readers. Wikipedia datasets are released monthly. In this work, we focus on the English version release in March 2021.
+
+\subsubsection {Wikipedia Pages}
+
+The page contents on Wikipedia are available in the format of public dumps. We process all the English articles from Wikipedia XML dump \footnote{https://dumps.wikimedia.org/backup-index.html}. We focus on all articles contained in the main namespace of the English Wikipedia. There are more than 5 million articles in the March 2021 release, reaching 60GB of text in total. To obtain rendered visual features in \cite{dimitrov2017makes}, we retrieved the Html pages through a public Wikipedia API \footnote{https://www.mediawiki.org/wiki/API:Main\_page}.
+
+\subsubsection{Wikipedia Clickstream}
+
+We refer to the Wikipedia clickstream dataset \footnote{https://meta.wikimedia.org/wiki/Research:Wikipedia\_clickstream} for click counts of the hyperlinks. The clickstream dataset contains transition data extracted from Wikipedia request logs. To be specific, there are many (referrer, resource) pairs in this dataset, and each one shows raw counts on the volume of traffic between the article pairs. A referrer is an HTTP header field that identifies the address of the webpage that is linked to the resource being requested. To reduce noise, any (referrer, resource) pair with 10 or fewer observations was removed from the dataset.
+
+We are only interested in the internal navigation in Wikipedia. We exclude all the outside transitions from the dataset. The clickstream dataset can be modeled as a graph, where nodes are the articles and edges represent the transitions between articles. There are total of 32M (referrer, resource) pairs in the March 2021 release \footnote{https://dumps.wikimedia.org/other/clickstream/2021-03}.
+
+\subsection{Experimental Setup and Metrics}
+
+As our dataset, we pick the top 50000 most frequently clicked articles. To obtain experimental results under different domains, we partition the article according its categories. There are 41 main categories on Wikipedia. We construct a graph to represent the category structure on Wikipedia and then assign each article to one of the 41 categories according its shortest category path. In our experiments, we only pick the category with more than 10000 articles. we refer to the category tree structure on Wikipedia. Each of the ten datasets is randomly partitioned for different purposes. To be specific, 60\% of articles are used for training, 20\% for validation, and the rest 20\% is for testing. Table \ref{table_partition} provides detailed stats.
+
+For Learning to Rank, we adopt a Python implementation \footnote{https://github.com/jma127/pyltr} of LambdaMart \cite{wu2010adapting} in our experiments. Two metrics are used for testing different features: Normalized Discounted Cumulative Gain (NDCG) and Expected Reciprocal Rank (ERR). Let's first define Discounted Cumulative Gain (DCG) and then NDCG:
+
+\begin{align*}
+DCG@k & = \sum_{i=1}^{k} \frac{2^{F(i)} - 1}{\log_{2} (i+2)} \\
+IdealDCG@k & = \sum_{i=1}^{k} \frac{2^{\pi(i)} - 1}{\log_{2} (i+2)} \\
+NDCG@k & = \frac{DCG@k} {IdealDCG@k}
+\end{align*}
+
+where $F$ is the permutation of articles given by ranking model and $\pi$ is the permutation for perfect ranking by ground truth label. The suffix $@k$ means we are interested in only the top $k$ items. The NDCG metric yields values between 0, meaning a bad ranking, and 1, a perfect ranking.
+
+The second metric ERR is common for evaluating ranking problems, which is defined as the average of the reciprocal ranks of results for a sample of queries $Q$:
+\begin{align*}
+    ERR = \frac{1}{|Q|} \sum_{i=1}^{|Q|} \frac{1}{F(i)}
+\end{align*}
+
+Similar to NDCG, the ERR metric takes a value between 0 and 1. The higher the metric is, the better performance the model achieves.
+
+\begin{table}[t]
+\centering
+\begin{tabular}{|l|c|c|c|}
+\hline
+Category & Training & Validation/Testing & Total \\
+\hline
+People & 7419 & 2473 & 12365\\
+\hline
+Mass media & 3526 & 1175 & 5876 \\
+\hline
+Culture & 2847 & 949 & 4745 \\
+\hline
+Entertainment & 2564 & 854 & 4272 \\
+\hline
+Sports & 1468 & 489 & 2446 \\
+\hline
+Society & 1060 & 354 & 1768 \\
+\hline
+Government & 985 & 329 & 1643 \\
+\hline
+Military & 850 & 283 & 1416 \\
+\hline
+Events & 782 & 260 & 1302 \\
+\hline
+Politics & 724 & 241 & 1206 \\
+\hline
+
+\end{tabular}
+%}
+\caption{Dataset Stats}
+\label{table_partition}
+\end{table}
+
+\subsection{Baselines}
+
+We introduce two baselines \cite{thruesen2016link, dimitrov2017makes} for comparison. To be specific, \cite{dimitrov2017makes} use textual feature \#1,2 in Section 3.3, graph-based features \#1,2,3 in Section 3.4 and all the render features in Section 3.5. Besides, \cite{dimitrov2017makes} utilized  textual features \#3,4,5,6 and graph-based features \#3,4,5,6,7. As for our method, we adopt all the visual features, textual features and graph-based features.
+
+\subsection{Results}
+
+\begin{table*}[]
+\begin{tabular}{|l|cc|cc|cc|}
+\hline
+\multicolumn{1}{|c|}{\multirow{2}{*}{Category}} & \multicolumn{2}{|c|}{\citet{dimitrov2017makes}} & \multicolumn{2}{|c|}{\citet{thruesen2016link}} & \multicolumn{2}{|c|}{Ours} \\
+\multicolumn{1}{|l|}{} & \multicolumn{1}{|c}{NDCG} & \multicolumn{1}{c|}{ERR} & \multicolumn{1}{|c}{NDCG} & \multicolumn{1}{c|}{ERR} & \multicolumn{1}{|c}{NDCG} & \multicolumn{1}{c|}{ERR} \\
+\hline 
+People & 0.393 & 0.387 & 0.509 & 0.510 & 0.528 & 0.516 \\
+
+Mass media & 0.436 & 0.409 & 0.592 & 0.560 & 0.624 & 0.595 \\
+
+Culture & 0.429 & 0.432 & 0.524 & 0.515 & 0.529 & 0.547 \\
+
+Entertainment & 0.387 & 0.348 & 0.558 & 0.537 & 0.589 & 0.575 \\
+
+Sports & 0.445 & 0.460 & 0.525 & 0.529 & 0.516 & 0.527 \\
+
+Society & 0.355 & 0.348 & 0.481 & 0.474 & 0.467 & 0.454 \\
+
+Government & 0.436 & 0.424 & 0.553 & 0.549 & 0.565 & 0.559 \\
+
+Military & 0.370 & 0.366 & 0.483 & 0.477 & 0.488 & 0.479 \\
+
+Events & 0.408 & 0.392 & 0.507 & 0.493 & 0.543 & 0.530 \\
+
+Politics & 0.400 & 0.392 & 0.478 & 0.478 & 0.536 & 0.517 \\
+\hline
+Average & 0.406 & 0.396 & 0.521 & 0.512 & \textbf{0.538} & \textbf{0.530} \\
+\hline       
+\end{tabular}
+\caption{Experimental results compared with previous methods}
+\label{table_cmp1}
+\end{table*}
+
+\begin{table*}[]
+\begin{tabular}{|l|cc|cc|cc|cc|}
+\hline
+\multicolumn{1}{|c|}{\multirow{2}{*}{Category}} & \multicolumn{2}{|c|}{Text} & \multicolumn{2}{|c|}{Graph} & \multicolumn{2}{|c|}{Render} & \multicolumn{2}{|c|}{Visual} \\
+\multicolumn{1}{|l|}{} & \multicolumn{1}{|c}{NDCG} & \multicolumn{1}{c|}{ERR} & \multicolumn{1}{|c}{NDCG} & \multicolumn{1}{c|}{ERR} & \multicolumn{1}{|c}{NDCG} & \multicolumn{1}{c|}{ERR} & \multicolumn{1}{|c}{NDCG} & \multicolumn{1}{c|}{ERR} \\
+\hline 
+People & 0.427 & 0.429 & 0.287 & 0.290 & 0.183 & 0.169 & 0.260 & 0.211 \\
+
+Mass media & 0.478 & 0.457 & 0.284 & 0.266 & 0.186 & 0.159 & 0.301 & 0.243 \\
+
+Culture & 0.442 & 0.450 & 0.276 & 0.302 & 0.187 & 0.172 & 0.249 & 0.208 \\
+
+Entertainment & 0.445 & 0.416 & 0.326 & 0.318 & 0.179 & 0.161 & 0.313 & 0.247 \\
+
+Sports & 0.409 & 0.426 & 0.239 & 0.243 & 0.216 & 0.223 & 0.298 & 0.251 \\
+
+Society & 0.433 & 0.416 & 0.196 & 0.190 & 0.156 & 0.151 & 0.254 & 0.227 \\
+
+Government & 0.478 & 0.477 & 0.215 & 0.213 & 0.181 & 0.160 & 0.263 & 0.240 \\
+
+Military & 0.350 & 0.348 & 0.204 & 0.183 & 0.117 & 0.107 & 0.216 & 0.200 \\
+
+Events & 0.395 & 0.381 & 0.227 & 0.225 & 0.107 & 0.096 & 0.240 & 0.209 \\
+
+Politics & 0.410 & 0.395 & 0.211 & 0.212 & 0.157 & 0.144 & 0.238 & 0.203 \\
+\hline
+Average & \textbf{0.427} & \textbf{0.419} & 0.247 & 0.244 & 0.167 & 0.154 & 0.263 & 0.224 \\
+\hline           
+\end{tabular}
+\caption{Experimental results with different feature groups. Render features are obtained under 1366$\times$768 resolution}
+\label{table_cmp2}
+\end{table*}
+
+\begin{table*}[]
+\begin{tabular}{|l|cc|cc|cc|cc|}
+\hline
+\multicolumn{1}{|c|}{\multirow{2}{*}{Category}} & \multicolumn{2}{|c|}{Base + Render(1366)} & \multicolumn{2}{|c|}{Base + Render(1536)} & \multicolumn{2}{|c|}{Base + Render(1920)} & \multicolumn{2}{|c|}{Ours} \\
+\multicolumn{1}{|l|}{} & \multicolumn{1}{|c}{NDCG} & \multicolumn{1}{c|}{ERR} & \multicolumn{1}{|c}{NDCG} & \multicolumn{1}{c|}{ERR} & \multicolumn{1}{|c}{NDCG} & \multicolumn{1}{c|}{ERR} & \multicolumn{1}{|c}{NDCG} & \multicolumn{1}{c|}{ERR} \\
+\hline 
+People & 0.484 & 0.490 & 0.496 & 0.505 & 0.500 & 0.512 & 0.528 & 0.516 \\
+
+Mass media & 0.510 & 0.486 & 0.578 & 0.529 & 0.566 & 0.533 & 0.624 & 0.595 \\
+
+Culture & 0.463 & 0.476 & 0.559 & 0.566 & 0.548 & 0.549 & 0.529 & 0.547 \\
+
+Entertainment & 0.476 & 0.445 & 0.505 & 0.447 & 0.514 & 0.488 & 0.589 & 0.575 \\
+
+Sports & 0.421 & 0.437 & 0.518 & 0.524 & 0.508 & 0.518 & 0.516 & 0.527 \\
+
+Society & 0.411 & 0.410 & 0.437 & 0.436 & 0.430 & 0.434 & 0.467 & 0.454 \\
+
+Government & 0.527 & 0.526 & 0.547 & 0.539 & 0.529 & 0.522 & 0.565 & 0.559 \\
+
+Military & 0.382 & 0.377 & 0.419 & 0.424 & 0.408 & 0.405 & 0.488 & 0.479 \\
+
+Events & 0.474 & 0.465 & 0.537 & 0.541 & 0.514 & 0.495 & 0.543 & 0.530 \\
+
+Politics & 0.485 & 0.477 & 0.493 & 0.490 & 0.461 & 0.452 & 0.536 & 0.517 \\
+\hline
+Average & 0.463 & 0.459 & 0.509 & 0.500 & 0.498 & 0.491 & \textbf{0.538} & \textbf{0.530} \\
+\hline               
+\end{tabular}
+\caption{Experimental results compared under different resolutions. Render(1366), Render(1536) and Render(1920) respectively refers to the render features obtained under resolution setting 1366$\times$768, 1536$\times$864 and 1920$\times$1080.}
+\label{table_cmp3}
+\end{table*}
+
+\begin{table*}[]
+\begin{tabular}{|l|cc|cc|cc|cc|cc|cc|}
+\hline
+\multicolumn{1}{|c|}{\multirow{2}{*}{Category}} & \multicolumn{2}{|c|}{Text + Visual(-1)} & \multicolumn{2}{|c|}{Text + Visual(-2)} & \multicolumn{2}{|c|}{Text + Visual(-3)} & \multicolumn{2}{|c|}{Text + Visual(-4)} & \multicolumn{2}{|c|}{Text + Visual(-5)} & \multicolumn{2}{|c|}{Text + Visual}\\
+\multicolumn{1}{|l|}{} & \multicolumn{1}{|c}{NDCG} & \multicolumn{1}{c|}{ERR} & \multicolumn{1}{|c}{NDCG} & \multicolumn{1}{c|}{ERR} & \multicolumn{1}{|c}{NDCG} & \multicolumn{1}{c|}{ERR} & \multicolumn{1}{|c}{NDCG} & \multicolumn{1}{c|}{ERR} & \multicolumn{1}{|c}{NDCG} & \multicolumn{1}{c|}{ERR} & \multicolumn{1}{|c}{NDCG} & \multicolumn{1}{c|}{ERR}\\
+\hline 
+People & 0.465 & 0.472 & 0.504 & 0.535 & 0.510 & 0.525 & 0.448 & 0.458 & 0.518 & 0.529 & 0.500 & 0.516 \\
+
+Mass media & 0.473 & 0.443 & 0.545 & 0.512 & 0.499 & 0.454 & 0.550 & 0.516 & 0.505 & 0.483 & 0.527 & 0.508 \\
+
+Culture & 0.488 & 0.507 & 0.451 & 0.455 & 0.501 & 0.502 & 0.553 & 0.562 & 0.471 & 0.467 & 0.511 & 0.516 \\
+
+Entertainment & 0.488 & 0.473 & 0.505 & 0.475 & 0.498 & 0.470 & 0.502 & 0.470 & 0.464 & 0.441 & 0.521 & 0.498 \\
+
+Sports & 0.492 & 0.498 & 0.501 & 0.500 & 0.487 & 0.499 & 0.458 & 0.474 & 0.439 & 0.443 & 0.498 & 0.520 \\
+
+Society & 0.410 & 0.400 & 0.443 & 0.448 & 0.445 & 0.434 & 0.443 & 0.435 & 0.492 & 0.495 & 0.462 & 0.472 \\
+
+Government & 0.540 & 0.541 & 0.481 & 0.470 & 0.529 & 0.528 & 0.503 & 0.482 & 0.531 & 0.520 & 0.506 & 0.505 \\
+
+Military & 0.408 & 0.396 & 0.395 & 0.390 & 0.398 & 0.385 & 0.406 & 0.383 & 0.398 & 0.402 & 0.403 & 0.403 \\
+
+Events & 0.482 & 0.474 & 0.509 & 0.510 & 0.482 & 0.472 & 0.482 & 0.463 & 0.449 & 0.424 & 0.458 & 0.440 \\
+
+Politics & 0.475 & 0.481 & 0.498 & 0.503 & 0.455 & 0.439 & 0.477 & 0.467 & 0.459 & 0.460 & 0.487 & 0.475 \\
+\hline
+Average & \underline{0.472} & \underline{0.468} & 0.483 & 0.480 & 0.481 & 0.471 & 0.482 & 0.471 & \underline{0.473} & \underline{0.466} & 0.487 & 0.485 \\
+\hline               
+\end{tabular}
+\caption{Ablation tests of individual visual features. Visual Features 1-5 refer to \textit{section position, distance to the nearest picture, distance to the nearest subtitle, distance to nearest table} and \textit{within table}, respectively.}
+\label{table_cmp4}
+\end{table*}
+
+First, we compared our results with previous works. As is shown in Table \ref{table_cmp1}, our feature can achieve the best result in the majority of the categories (except Sports and Society). Then, we run Learning to Rank algorithm with each group of feature alone. The results are given in Table \ref{table_cmp2}. As we can see from the table, the group of textual features achieves the best result. As text is one of the basic components of a web page, textual features are very effective in predicting click frequencies of hyperlinks. Besides, visual features can yield better results than the rest two feature groups, which suggests that visual information is actually very effective in this task. It is also worth mentioning that the render feature group gets the worst result. Therefore,  it might be sub-optimal to incorporate such features in the LTR model. We further compare the effectiveness between our visual features and render features under different resolution settings. Here, we use textual features and graph-based features as the base for comparison. According to Table \ref{table_cmp3}, our visual feature outperforms render feature under all resolutions ($1366x768$, $1536x864$ and $1920x1080$).
+
+\subsection{Feature Analysis}
+
+We conduct ablation tests to quantitively analyze the influence of each visual feature.
+Recall that we have proposed five visual features in Section \ref{sec_approach}: \emph{section position}, \emph{distance to the nearest picture}, \emph{distance to the nearest subtitle}, \emph{distance to nearest table} and \emph{within table}.
+
+We can analyze each one of the five visual features by removing them from the visual feature group. To better compare the effectiveness of different visual features, we only use textual features as the baseline. The feature group \emph{Text} and \emph{Text + Visual} can thus be considered as a lower bound and upper bound for evaluation. Table \ref{table_cmp4} presents the results. In Table \ref{table_cmp4}, \emph{Text + Visual(-1)} means that the first visual feature, namely \emph{section position}, has been removed from the visual feature group. According to the experimental results, the performance of \emph{Text + Visual(-1)} and \emph{Text + Visual(-5)} are relatively lower, meaning that \emph{section position} and \emph{within table} are more important than other three features. Also statistically, the hyperlink placed in the first several sections usually ranked higher. Table \ref{table_cnt1} shows that the majority of the highly-ranked hyperlinks are placed in the first sections.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|c|c|c|c|}
+\hline
+Section Position & 10\% & 20\% & 50\%  \\
+\hline
+1 & 17306 & 27298 & 43229 \\
+\hline
+2 & 1770 & 3868 & 9873 \\
+\hline
+3 & 1506 & 3531 & 9535 \\
+\hline
+4 & 947 & 2491 & 8084 \\
+\hline
+5 & 1015 & 2572 & 8243 \\
+\hline
+6 & 657 & 1888 & 6282 \\
+\hline
+7 & 728 & 1855 & 5834 \\
+\hline
+8 & 483 & 1316 & 4522 \\
+\hline
+9 & 513 & 1273 & 4203 \\
+\hline
+10 & 437 & 1149 & 3889 \\
+\hline
+\end{tabular}
+%}
+\caption{Number of hyperlinks in different section positions ranked in first 10\%, 20\% and 50\%}
+\label{table_cnt1}
+\end{table}

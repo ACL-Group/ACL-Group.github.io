@@ -1,0 +1,417 @@
+\section{Framework}
+\label{sec:algo}
+
+%\KZ{Put comments in all algos to say what the input parameters are.}
+
+In this section, we introduce a novel image clustering framework
+based on conceptualization of contexts.
+Our input is a set of images along with their hosting HTML pages,
+and our output is a number of clusters of images, each containing images
+of the same entity and each tagged with a concise list of
+most representative concepts. For example, the first
+cluster of \figref{fig:demo-bean} is tagged with ``Mr. Bean'', ``Rowan Atkinson'', etc.
+
+%First, we extract related context
+%using a refined sibling based algorithm. Second, with those high quality
+%context, we perform conceptualization process on the context
+%to represent plain texts with a set of concepts.
+%Third, we cluster images using a tri-stage clustering algorithm.
+
+\begin{figure}[th]
+\begin{center}
+\centering
+\includegraphics[width=\columnwidth]{framework.eps}
+\caption{The Architecture of Image Clustering by Conceptualization}
+\label{fig:frame}
+\end{center}
+\end{figure}
+
+The architecture of our framework is shown in \figref{fig:frame}.
+The framework is divided into two parts: online and offline components.
+The offline components extract the meta data of the image and
+conceptualize all of the text in the source page. Online components 1) extracts
+the surrounding text context of the image and query from the conceptualized source page and
+then uses concepts in the context to construct the concept vector
+representation of the image context; 2) clusters the images using
+a tri-stage clustering algorithm; and 3) merges outlying small clusters
+into major clusters by visual features. We put the context extraction process
+online because the query context cannot be extracted before the user
+submit the query. In the following sub-sections, we introduce the technical
+details of each component in our framework.
+
+\input{context}
+
+\input{conceptualize}
+
+
+\subsection{Image Clustering}
+%The goal of image clustering is to find a division on all of the images to form groups
+%such that images in each group depict the same thing. We use semantic similarity to measure
+%whether two images are the same thing. We assume that if the context of two images are semantically similar
+%enough, they are usually the same thing. Thus, the image clustering problem is
+%converted to the short text clustering problem. We can have a formal definition of our problem:
+%Given a set of images $P=\left\{p_1, p_2, ... , p_n\right\}$, find division
+%$D=\left\{G_1, G_2, ... , G_k\right\}$, where $G_j, \left\{j=1,2,..,3\right\}$ is a subset of $P$, satisfying
+%$\cap_{j=1}^k{G_j}=\emptyset$, $\cup_{j=1}^k{G_j}=P$ and maximize the in-cluster similarity:
+%$\sum_{j=1}^{k}{\sum_{p,q\in G_j}{Sim(p,q)}}$, while minimum the cross-cluster similarity:
+%$\sum_{j=1}^{k}{\sum_{l,1\leq l\neq j\leq k}{\sum_{p\in G_j,q\in G_l}{Sim(p,q)}}}$.
+%$Sim(p,q)$ is the similarity function.
+In this subsection, we first introduce the context representation and the modified
+hierarchical clustering algorithm. Then we propose a tri-stage clustering algorithm
+based on a modified HAC algorithm. Finally, we discuss how to use visual features
+to complement text-based clustering.
+
+\subsubsection{Context Representation}
+With concepts extracted from the context, we can draw a
+concept histogram for each image, which represents the image's semantic
+information. We use this \emph{vector space model} (VSM) to represent the
+context in our image clustering algorithm. We further define a CF-IDF score
+for each dimension in the concept vector of a textual context. The
+CF-IDF score of the concept $c$ in context $d$'s concept vector
+is adapted from the well-known TF-IDF score in information retrieval,
+and is defined as:
+\begin{equation}
+\label{cfidf}
+\mbox{CF-IDF}(c, d)= CF(c, d) \times log\frac{N}{DF(c)}
+\end{equation}
+where $CF(c,d)$ is the concept frequency of $c$ in $d$, $N$ is the
+total number of articles from which we compute the document frequency
+of each concept (i.e., the total number of Wikipedia articles)
+while $DF(c)$ is document frequency of $c$. We compute the document
+frequency of $c$ by counting the number of documents which have links
+to $c$.
+
+\subsubsection{HAC with Cluster Conceptualization}
+Similar to many other VSM based
+clustering works, we apply \emph{Cosine Similarity} to compute
+pairwise similarity of contexts.
+We use a modified HAC algorithm for our purpose.
+There are two reasons for using HAC:
+One is we don't need to know the number of clusters in advance,
+which is supposed to be prior knowledge in some clustering algorithm like K-means.
+In the image clustering scenario, the number of clusters are unknown before clustering;
+The other is that HAC holds a hierarchy structure of clustering.
+It is easy to divide HAC into different stages where within each stage
+we can apply different features for the clustering.
+
+In HAC algorithm, each data point is initialized as a cluster,
+then agglomeratively combine the clusters
+until all points are appointed to one cluster.
+The two most similar clusters are combined each time.
+There are four common ways to compute cluster similarity:
+\emph{Single-link}, \emph{Complete-link},
+\emph{Group Average}, \emph{Centroid}.
+These methods compare the individual data points in each
+cluster without summarizing the characteristics of the clusters.
+In this paper, we adopt a new method to compute cluster similarity.
+Different from the above methods,
+our method summarizes the semantic information in each cluster and
+build a concept histogram for each cluster.
+As more data points are added to a cluster,
+the characteristics (the shape of the histograms)
+of the cluster will be more explicit.
+In detail, we add together histograms of all of the data points in a cluster.
+Given a cluster $C=\left\{d_1, d_2, \ldots, d_n\right\}$,
+each image $d$ in $C$ is represented
+as a vector of concepts ${c_1, c_2, \ldots, c_m}$,
+the value of each dimension (concept) in
+the vector of cluster $C$ is computed in the following way:
+\begin{equation}
+\label{comv}
+Score(c, C)=\sum_{d_i\in C}{\mbox{CF-IDF}(c, d_i)}
+\end{equation}
+
+This means we treat every cluster as a new data point.
+We keep top $K$ concepts with highest score described in \equref{comv}
+and drop the rest, due to the observation that
+concepts with low scores are usually noise.
+The $K$ selected concepts would then represent the semantics of the cluster.
+This process is called cluster conceptualization.
+The complete HAC with cluster conceptualization (HAC\_CC) is shown
+in Algorithm \ref{haccc}. $D$ is the set of images, $\Pi$ is the set of resulting clusters,
+$N$ is the number of images, $C_i$ is an image
+cluster, $Vector(C)$ is the concept vector of a given cluster $C$,
+$Sim$ is the function computing the cosine similarity of the two vectors,
+$S$ is the similarity matrix of images,
+and $\tau_t$ is the threshold that control the clustering granularity.
+
+%\KZ{Some variables appear out of the blue such as $V_{ci}$ and $V_{cj}$. If they
+%mean the vector for concepts $C_i$ and $C_j$, then you need a function
+%that converts from concepts to vectors. In $combine$, top $K$ concepts of $V$
+%are assigned to $V_{c_j}$, then where are the weights in the vector?}
+\renewcommand\algorithmicrequire{\textbf{Input:}}
+\renewcommand\algorithmicensure {\textbf{Output:}}
+\begin{algorithm}[th]
+\caption{Clustering with Cluster Conceptualization}
+\label{haccc}
+\begin{algorithmic}[1]
+\Require {Set of images D}
+\Ensure {Image cluster $\Pi$}
+\Function{HAC\_CC}{$D$}
+\State {$\Pi\leftarrow \left\{C_i=\left\{d_i\right\}|d_i\in D\right\}$}
+\For {$i\leftarrow 1\;to\;N$} \Comment{N is the number of images}
+\For {$j\leftarrow 1\;to\;N$}
+\State {$S[i,j]\leftarrow Sim(Vector(C_i),Vector(C_j))$}
+\EndFor
+\EndFor
+\For {$n\leftarrow 1\;to\;N-1$}
+\State {$max\_sim=\max_{C_i\neq C_j\in C}{S[C_i,C_j]}$}
+\If {$max\_sim<\tau_t$}
+\State \textbf{return} $\Pi$
+\EndIf
+\State {$C_i,C_j\leftarrow argmax_{C_i\neq C_j\in C}{S[C_i,C_j]}$}
+\State {$C_i\leftarrow \textbf{Combine}(C_i,C_j,S)$}
+\State {$C_j\leftarrow \emptyset$}
+\EndFor
+\State \textbf{return} $\Pi$
+\EndFunction
+\Statex
+\Function{Combine}{$C_i,C_j,S$}
+\State {$V\leftarrow Vector(C_i) + Vector(C_j)$}
+\State {$Vector(C_i)\leftarrow top\;K\;concepts\;of\;V$}
+\For {$m\leftarrow 1\;to\;n$}
+\If {$m\neq i\;and\;m\neq j$}
+\State {$S[i,m]\leftarrow Sim(Vector(C_i),Vector(C_m))$}
+\State {$S[m,i]\leftarrow S[i,m]$}
+\EndIf
+\EndFor
+\State \textbf{return} {$C_i\cup C_j$}
+\EndFunction
+\end{algorithmic}
+\end{algorithm}
+
+The advantage of this method is,
+we can boost the important signals while ignoring noisy ones.
+On the other hand, since we just keep $K$ concepts,
+both cluster similarity and the generation
+of cluster histogram can be computed in constant time,
+while HAC using \emph{Group Average} or
+\emph{Centroid} has a quadratic time complexity.
+
+\subsubsection{Tri-stage Clustering}
+As discussed in \secref{sec:context}, there are two kinds of context for a given image:
+meta context and text context. Meta context is most reliable since it is guaranteed to be
+about the image, whereas the text context may contain noise. Base on this observation,
+we use these two context at different stages of clustering. Further,
+to avoid the common case of insufficient signals, we expand the context by
+using the external knowledge base Wikipedia, and perform the third stage of clustering.
+The result is a tri-stage clustering algorithm and three stages are {\em meta context clustering},
+{\em text context clustering} and {\em expansion clustering}.
+
+For the first stage, we construct the concept vector of each images
+using the concepts extracted from URL and anchor texts,
+then apply the HAC\_CC algorithm on the images. Although the signals
+from meta data is reliable, useful signals are limited.
+Thus, in the first stage, only few images are grouped
+together with very high purity.
+
+At the second stage, we use the concept vector built from the text context to
+expand the concept vector for each image and update the cluster vectors
+by combining the concept vector of all images in the cluster(See \equref{comv}). 
+We continue the HAC\_CC algorithm on output of the first stage with these 
+new concept vectors. Since similar context tends to have some common concepts/topics, 
+we combine the concept vectors of individual image context to make the related concepts 
+ranked higher than noise and then keep to top 50 concepts to further filter the noise.
+%\KZ{Don't understand this, rephrase: Since the meta context clustering generate more pure
+%clusters, the conceptualization on each pure cluster can boost
+%the important signal and remove some noise from the text context,
+%i.e. the input of text context clustering is more clean
+%due to meta context clustering stage.}
+
+The final stage takes the output of the second stage as input, and expand the
+context of each cluster in an attempt to merge disjoint clusters which should be
+together.
+For each of the top $K$ concept in a cluster, we pick the top 50 concepts ranked
+by CF-IDF included in the Wikipedia article of that concept to replace the concept
+in the context.  The score of the concept $c$ in the new vector is thus defined as:
+\begin{equation}
+\label{expv}
+Score(c, C)=\sum_{c_i\in V_C}\left({Score(c_i, C) \times \mbox{CF-IDF}(c, d_{c_i})}\right)
+\end{equation}
+where $V_C$ is the concept vector of cluster $C$, $c_i$ is one of the concept in
+$V_C$, and $d_{c_i}$ is the Wikipedia article of $c_i$.
+After reconstructing the concept vector,
+HAC\_CC continues to compute the final clusters.
+
+\subsubsection{Incorporating Visual Features}
+Visual features are used as a complementary signals in our framework.
+%Only when the context of an image has no or limited textual signals, do we
+%incorporate visual signals.
+After clustering the images by textual features,
+there could still some outlier clusters which contain a couple of images and
+can be merged into their closest neighboring cluster by visual similarity.
+We define outlier clusters as clusters have fewer than $\omega$ images.
+We merge the outlier clusters as follows:
+1)For each image $d$ in a small cluster $C_{source}$,
+we can find out the most visually similar image $d_{sim}$;
+2) If all these $d_{sim}$s are in the same cluster $C_{target}$,
+merge $C_{source}$ to $C_{target}$.
+Otherwise, we keep $C_{source}$ as a independent cluster.
+Algorithm \ref{visualMerge} gives the details.
+The algorithm takes the clustering result $\Pi$ of tri-stage clustering
+and the visual similarity matrix $Sim$ as input, and reorganizes $\Pi$.
+%$\omega$ is the threshold to define outlier clusters, which is a
+%tunable parameter in our framework.
+$Cluster(d)$ is the function which returns which cluster $d$ belongs to.
+This integration of visual features works well when different
+entities of the query are visually different (e.g. ``kiwi'').
+
+%\KZ{improve this algo.}
+
+\begin{algorithm}
+\caption{Merging Outlier Clusters by Visual Signals}
+\label{visualMerge}
+\begin{algorithmic}[1]
+\Require {Image clusters $\Pi$, Visual similarity matrix $Sim$}
+\Ensure {Merged clusters $\Pi$}
+\Procedure{Merge}{$\Pi$, $Sim$}
+\For {$C_{source} \in \Pi$}
+\If {$C.ImageCount<\omega$}
+\State {$C_{target}\leftarrow \emptyset$}
+\State {$IsMerge\leftarrow TRUE$}
+\For {$d \in C_{source}$}
+\State {$d_{sim}\leftarrow \argmax_{d_i\in D}{Sim[d, d_i]}$} \Comment{$D$ is the set of images}
+\If {$C_{target} = \emptyset$}
+\State {$C_{target}\leftarrow Cluster(d_{sim})$}
+\EndIf
+\If {$C_{target} \neq Cluster(d_{sim})$}
+\State {$IsMerge\leftarrow FALSE$}
+\EndIf
+\EndFor
+\If{$C_{target}\neq \emptyset\; and\; IsMerge$}
+\State {$C_{target}\leftarrow C_{target} + C_{source}$}
+\EndIf
+\EndIf
+\EndFor
+\EndProcedure
+\end{algorithmic}
+\end{algorithm}
+%To incorporate the visual features,
+%we clustering with textual and visual features separately,
+%and assign the cluster labels of both textual and visual runs to each
+%image. We extract visual vectors from the images and apply
+%HAC on the visual vectors since visual signals can not be
+%aggregated with textual signals directly.
+%With the textual and visual clusters,
+%we build a weighted visual label vector for each textual
+%cluster using a voting mechanism:
+%\begin{equation}
+%\label{expv}
+%Score(l, C)=\sum_{d\in C, l_d = l}{Dist(V_d, V_C)}
+%\end{equation}
+%where $l$ is a visual label, $C$ is a textual cluster,
+%$l_d$ is the visual label of document, $V_d$ and $V_C$ is
+%the textual concept vector of image $d$ and the concept vector of $C$ respectively,
+%and function $Dist$ compute the cosine similarity of $V_d$ and $V_C$.
+%The intuition behind this voting mechanism is that the nearer to the
+%cluster center, the more important the vote of the image is.
+%\KZ{Give a concrete example to illustrate this voting mechanism.}
+%We then apply HAC based on the output of textual tri-stage clustering result.
+
+%\subsection{Incremental Clustering}
+%Processing large scale of data using HAC is not applicable on real image search system since the time complexity is high,
+%and cannot handle updates of images in the world wide web. We propose an incremental version of HAC based on our
+%cluster similarity metric. For each user query, we automatically learn a classifier in our clustering process. When we discover new
+%images for that query, classify the images to the current clusters or create new clusters, and then update the classifier.
+%
+%Suppose we have clusters $\left\{C_1, C_2, ... , C_k\right\}$, given a new image,
+%there are two strategies we can make: 1. Create a new cluster for the new image. 2. Assign the image to one
+%of the clusters and update the hierarchy structure.
+%We can apply the same threshold of HAC to decide whether which strategy we make.
+%The main problem of incremental clustering is to efficiently update the hierarchy structure of HAC.
+%We define two update operations: \emph{Assignment} and \emph{Combination}.
+%
+%\textbf{Assignment:}
+%When a cluster has similarity 2 times higher than other clusters to the new image, and the second
+%highest similarity is above a similarity ${T_{combine}}$,
+%we directly assign the new image to that cluster. This operation is based on an
+%heuristic that if one cluster is dominantly similar to the new image, most likely
+%they are depicting the same thing.
+%
+%\textbf{Combination:}
+%The context of the same image can be in different aspects which lead to a low similarity between those concepts.
+%We need a context covers different aspects of the image to merge context in different aspect.
+%Before the arrival of the image whose context is cross-aspects, the contexts are clustered in different aspect.
+%Once the cross-aspect context comes, it plays a role of bridge connecting cluster in different aspects.
+%We combine all the clusters with similarity higher than a threshold $T_{combine}$ to the cross-aspect.
+%
+%An example for the two operations are shown in \figref{op}. Here, the $T_{combine}$ is set to 0.2. In \figref{assign},
+%the new cluster is combined to \emph{cluster 1}, since their similarity is 2 times higher than that between the new
+%cluster and \emph{cluster 2}. Although after the new cluster added to \emph{cluster 1}, similarity between \emph{cluster 1}
+%and \emph{cluster 2} increases, it is not go above $T_{combine}$. This is the reason why we need the \emph{Assignment} operation.
+%It is a technique to slow down the combination speed, and prevent the quick spread of noise in the \emph{Combination} step.
+%In \figref{combine}, the three clusters are combined and form a new cluster.
+%
+%\begin{figure}
+%\begin{subfigure}[t]{\columnwidth}
+%\centering
+%\epsfig{file=op_assign.eps,width=\columnwidth}
+%\caption{Assignment}
+%\label{assign}
+%\end{subfigure}
+%\begin{subfigure}[t]{\columnwidth}
+%\epsfig{file=op_combine.eps,width=\columnwidth}
+%\caption{Combination}
+%\label{combine}
+%\end{subfigure}
+%\caption{Two operations of updating clustering hierarchy with $T_{combine=}=0.2$}
+%\label{op}
+%\end{figure}
+%
+%The details of our incremental HAC(IHAC) method is shown in Algorithm \ref{ihac}.
+%
+%\begin{algorithm}
+%\caption{Incremental HAC}
+%\label{ihac}
+%\begin{algorithmic}[1]
+%\Procedure{IHAC}{$D\left\{d_1,...,d_n\right\}$}
+%\State {$C\leftarrow \left\{d_1\right\}$}
+%\For {$i\leftarrow 2\;to\;n$}
+%\State {$C\leftarrow Append(\left\{d_i\right\},C)$}
+%\EndFor
+%\State \textbf{return} $C$
+%\EndProcedure
+%\Statex
+%\Function{Append}{$c_{new},C$}
+%\State {$L\leftarrow \emptyset$}
+%\State {$c_{max},c_{second}$}
+%\State {$s_{max}\leftarrow 0, s_{second}\leftarrow 0$}
+%\For {$c_j\;in\;C$}
+%\If {$Sim(V_{c_{new}},V_{c_j})>T_{combine}$}
+%\State {$L.Add(c_j)$}
+%\EndIf
+%\If {$Sim(V_{c_{new}},V_{c_j})>s_{max}$}
+%\State {$s_{max}\leftarrow Sim(V_{c_{new}},V_{c_j}),\;c_{max}\leftarrow c_j$}
+%\ElsIf {$Sim(V_{c_{new}},V_{c_j})>s_{second}$}
+%\State {$s_{second}\leftarrow Sim(V{c_{new}},V_{c_j}),\;c_{second}\leftarrow c_j$}
+%\EndIf
+%\EndFor
+%\If {$L=\emptyset$}
+%\State {$C\leftarrow C\cup \left\{c_{new}\right\}$}
+%\ElsIf {$s_{max}>2s_{second}$}
+%\State {$c_{add}\leftarrow c_{max}\cup d_i$}
+%\State {$C.Remove(c_{max})$}
+%\State {$C.Append(c_{add},C)$}
+%\Else
+%\State {$c_{add}\leftarrow Combine(L)$}
+%\State {$c_{add}.AddRange(c_{new})$}
+%\State {$C.Remove(L)$}
+%\State {$Append(c_{add},C)$}
+%\EndIf
+%\State \textbf{return} {$C$}
+%\EndFunction
+%\end{algorithmic}
+%\end{algorithm}
+%
+%In Algorithm \ref{ihac}, we process each document one by one, each document is still initialized as a cluster.
+%The function $Append$ is to add a cluster $c_{new}$ to the current cluster set $C$. To append the new cluster, we first find
+%out the most and second similar clusters to $c_{new}$, and collect the cluster set $L$ in which all the clusters
+%have a similarity above $T_{combine}$ to $c_{new}$. Then, we apply the \emph{Assignment} and \emph{combination} operations
+%to the cluster set. The \emph{Combine} function in the \emph{combination} part is very similar to that mentioned in Algorithm \ref{haccc},
+%We combine all the clusters in $L$ and generate a cluster vector from all the clusters in $L$ in the same manner as Algorithm \ref{haccc}.
+%After we generate a new cluster from \emph{Assignment} or \emph{combination}, update the
+%clustering hierarchy by recursivly invoke the function \emph{Append}. Each run of the function \emph{Append} cost
+%$O(k^2)$, where k is the current number of clusters in the cluster set $C$. Such that the complexity of this algoirthm is
+%$O(nk^2)$, with n being the number of documents to be processed. This algorithm is a approximation of the original HAC, since
+%we do not really keep all the document vectors in the clustering process. Instead, we only keep latest vector of each vector. We
+%guarantee an approximate result to HAC by accurately generate representative concepts for each cluster.

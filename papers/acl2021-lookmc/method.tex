@@ -1,0 +1,203 @@
+\section{Approach}
+%We first present our methods for testing short circuits in
+%models, then modify some of these methods to create
+%training data to reverse the short circuit problem
+%and enhance the robustness of the models.
+% 
+%\subsection{Proxy Test for Short Circuit}
+%We propose two types of approaches that can be used as proxy test for short circuits.
+%One is through inspecting attention maps in
+%the models under a white-box setting.
+%The other is to generate new test cases by applying different operations on correct choices under a black-box setting.
+%
+%
+%\subsubsection*{White-box Attention Weights~(AW)}
+%One intuitive way to detect if an attention-based model is 
+%exploiting short circuits is to visualize its attention map. 
+%Given a well-trained model and a correctly answered MCQ  in the 
+%form of \textit{[CLS] premise [SEP] choice [SEP]}, 
+%where \textit{[CLS]} and \textit{[SEP]} are model-dependent 
+%delimiters and \textit{choice} refers to the correct choice, 
+%we first tokenize the input, feed the token sequence into the model, 
+%and extract the attention map of all attention heads from the 
+%last encoder layer.
+%
+%The attention maps are visualized through off-the-shelf tool~\cite{vig-2019-multiscale}
+%into user-friendly demo as shown in \figref{fig:att-goodex}. 
+%Human annotators are then asked to determine whether there exists 
+%strong attention connections from the correct choice to the premise. 
+%We consider the MCQ is solved without short-circuiting only if 
+%over half of the annotators label it as having strong attention 
+%connections. 
+%
+%Though accurate, such manual annotation is cost-prohibitive to be 
+%scaled to larger tests. To remedy this issue, we propose 
+%a rule-based procedure to automatically detect the short circuit 
+%behavior of a model on MCQ. Specifically, we aggregate the 
+%attention maps into one individual map by max-pooling over all 
+%attention heads. Then we check if there exists at least one 
+%attention score between token in the choice and token in the premise 
+%higher than threshold $t_1$ or at least two higher than threshold 
+%$t_2$, excluding special tokens like comma and period. 
+%We consider that the model not short-circuiting on this MCQ if 
+%neither of the two conditions is met. In practice, the 
+%threshold $t_1$ and $t_2$ are tuned so as to maximally simulate 
+%human annotation. The pseudo-code is shown in Algorithm \ref{AW}.
+%
+In this section, we first present our methods for testing short circuits in models, and then modify some of these methods to create training data to address the short circuit problem and enhance model robustness.
+
+\subsection{Proxy Test for Short Circuit}
+Since no existing method can definitively prove if a model is short-circuiting on a question, we propose two types of approaches that serve as proxy tests for short circuits. These approaches reveal the effects of model short-circuiting, though they can't directly prove the short-circuit itself, similar to dark matter. One approach involves inspecting attention maps in models under a white-box setting, while the other generates new test cases by applying different operations on correct choices under a black-box setting.
+
+\subsubsection*{White-box Attention Weights~(AW)}
+
+One intuitive way to detect if an attention-based model is exploiting short circuits is to visualize its attention map. Given a well-trained model and a correctly answered MCQ in the form of \textit{[CLS] premise [SEP] choice [SEP]}, where \textit{[CLS]} and \textit{[SEP]} are model-dependent delimiters and \textit{choice} refers to the correct choice, we first tokenize the input, feed the token sequence into the model, and extract the attention map of all attention heads from the last encoder layer.
+
+The attention maps are visualized through an off-the-shelf tool~\cite{vig-2019-multiscale} into a user-friendly demo, as shown in \figref{fig:att-goodex}. Human annotators are then asked to determine whether there exists strong attention connections from the correct choice to the premise. We consider the MCQ to be solved without short-circuiting only if over half of the annotators label it as having strong attention connections.
+
+Although accurate, such manual annotation is cost-prohibitive to be scaled to larger tests. To remedy this issue, we propose a rule-based procedure to automatically detect the short circuit behavior of a model on MCQ. Specifically, we aggregate the attention maps into one individual map by max-pooling over all attention heads. Then we check if there exists at least one attention score between a token in the choice and a token in the premise higher than threshold $t_1$, or at least two higher than threshold $t_2$, excluding special tokens like comma and period. We consider the model to not be short-circuiting on this MCQ if neither of the two conditions is met. In practice, the thresholds $t_1$ and $t_2$ are tuned to maximally simulate human annotation. The pseudo-code is shown in Algorithm \ref{AW}.
+
+
+\begin{algorithm}
+\small
+	\caption{Attention Weight Thresholding}
+	\label{AW}
+\hspace*{0.02in} {\bf Input:} 
+premise $P$, correct choice $C$, model $M$,  threshold $t_1$ and $t_2$. \\
+\hspace*{0.02in} {\bf Output:}
+binary 0/1 label $L$.
+	\begin{algorithmic}[1]
+		\State initialize counters $c_1$ and $c_2$ to 0.
+		\State tokenize the formatted input as sequence of tokens $S$.
+		\State feed $S$ into $M$ and extract the last layer's attention maps $Attn_{all}$.
+		\State aggregate $Attn_{all}$ into $Attn_{max}$ by max-pooling over all attention heads.
+		\For{$w_1$ in $C$}
+		\For{$w_2$ in $P$}
+		\If{$Attn_{max}(w_1, w_2)> t_1$}
+				$c_1$ += 1
+		\EndIf
+		\If{$Attn_{max}(w_1, w_2) > t_2$}
+				$c_2$ += 1
+		\EndIf
+		\EndFor
+		\EndFor
+		\State output 1 if $c_1>0$ or $c_2\geq 2$ and 0 otherwise.
+	\end{algorithmic}
+\end{algorithm}
+
+\subsubsection*{Black-box Choice Operator}
+\label{sec:proxy}
+While attention-based testing methods can detect short circuits within the encoder directly, they don't directly detect short circuits in the end-to-end MCQ model, which also includes a linear layer above the attention-based pretrained language model. Additionally, these methods are limited to a family of models with inherent attention mechanisms.
+
+A more desirable approach is an automatic end-to-end black-box test that is model-independent. In black-box testing, if a model correctly answers an MCQ, we slightly modify the MCQ by applying a certain``operation'' on the original correct choice to produce another wrong choice. The newly generated MCQ must share the same correct choice as the original question. By observing the model's response to the second MCQ, we can infer whether the model short-circuits on the original MCQ.If the model still selects the correct choice, then we consider it to have passed the test and not short-circuited on the original MCQ. The challenge now is how to construct the new wrong choice by implementing the operation in various ways.
+
+In this paper, we consider the operations listed in \tabref{table:proxyop}. Some of the operations were mentioned in previous literature, while others are proposed here (marked with *).
+The first line in each cell describes the operation, and the next two lines provide an example of constructing a false choice from a choice in the original question. An operation may either preserve (p) the truth value (\crosssymbol $\rightarrow$ \crosssymbol) or change (c) the truth value of the choice (\checksymbol $\rightarrow$ \crosssymbol).
+
+\begin{table}[th]
+        \centering
+        \scriptsize
+        \begin{tabular}{l|l}
+                \toprule
+                \textbf{Oper.} &\textbf{Description and Example}\\
+                \hline
+                \multirow{3}{*}{Neg+} & Add negation (c) \\
+                & \textit{They called the police to come to my house. \checksymbol} \\
+                & \textit{They {\color{olive}{didn't}}  called the police to come to my house. \crosssymbol} \\
+                \hline
+                \multirow{3}{*}{Neg-} &Remove negation (c) \\
+                & \textit{Ben {\color{olive} never} starts working out. \checksymbol} \\
+                & \textit{Ben starts working out. \crosssymbol}\\
+                \hline
+
+                \multirow{3}{*}{NER} &Randomly replace person names (c)\\
+                 & \textit{A big wave knocked {\color{olive} Mary} down . \checksymbol} \\
+                & \textit{A big wave knocked {\color{olive} Kia} down . \crosssymbol} \\
+                \hline
+                \multirow{3}{*}{PR*} & Switch pronoun by gender or quantity (c)\\
+        &\textit{{\color{olive} She} had a great time .\checksymbol} \\
+        &\textit{{\color{olive} He} had a great time . \crosssymbol} \\
+                \hline
+                \multirow{3}{*}{PI*} &Instantiate pronoun by randome person (c) \\
+        &\textit{{\color{olive} They} gave Tom a new latte with less ice . \checksymbol}\\
+        &\textit{{\color{olive} Nathanael} gave Tom a new latte with less ice . \crosssymbol}\\
+                \bottomrule
+%               \hline
+                \multirow{3}{*}{Adv} &Add adverbs for emphasis (c) \\
+                &\textit{The ocean was a calm as a bathtub .\crosssymbol} \\
+                &\textit{{\color{olive} In fact} the ocean was a calm as a bathtub .\crosssymbol} \\
+                \hline
+               \multirow{3}{*}{CO*} & Crossover: Swap the true choices between two questions (p)\\ 
+	&\textit{\color{olive}Josh got sick . \checksymbol} \\
+	&\textit{\color{olive}{She had a great time .\crosssymbol}}  \\
+\hline
+                \multirow{3}{*}{Syn} &Replace adj/adv with synonym (p) \\
+                &\textit{Dawn felt {\color{olive} happy} about getting away with it . \crosssymbol} \\
+                &\textit{Dawn felt {\color{olive} glad} about getting away with it . \crosssymbol} \\
+
+		\bottomrule
+               \multirow{3}{*}{MT*} & Mutate: Swap two consecutive words (c) \\
+		& \textit{Deb said yes {\color{olive} to} {\color{olive} Tim} 's marriage proposal. \crosssymbol} \\
+		& \textit{Deb said yes {\color{olive} Tim} {\color{olive} to} 's marriage proposal .\crosssymbol} \\
+               \hline
+\multirow{3}{*}{Voice} &Swap subject and object (c) \\
+        & \textit{{\color{olive}{Kara}} asked {\color{olive}{the neighbors}}  not to litter in their yard . \checksymbol} \\
+        &\textit{{\color{olive}{the neighbors}} asked  {\color{olive}{Kara}}  not to litter in their yard . \crosssymbol}\\
+                \bottomrule
+        \end{tabular}
+        \caption{A number of operations considered for proxy testing. 
+First line in each cell describes the operation, the next two lines
+give an example of how to construct a false choice from a choice of
+the original question. An operation may either 
+preserve (p) the truth value (\checksymbol $\rightarrow$ \checksymbol, \crosssymbol $\rightarrow$ \crosssymbol) or change (c) the truth value of
+the choice (\checksymbol $\rightarrow$ \crosssymbol).  }
+        \label{table:proxyop}
+\end{table}
+
+Inspired by boundary testing in software engineering, we can classify these operations into three equivalent classes (three vertical sections in \tabref{table:proxyop}), depending on the nature of the \textit{false} choice constructed:
+\begin{enumerate}
+\item The syntax and semantics are correct, and the \textit{false} choice appears similar to the \textit{true} choice.
+\item The syntax and semantics are correct, and the \textit{false} choice appears distinct from the \textit{true} choice.
+\item Either syntax or semantics is incorrect.
+\end{enumerate}
+
+The last class is not suitable for testing short circuits because the model may answer the proxy question correctly by eliminating the false choice due to errors in it, not by considering the premise.
+
+We focus on perturbations on negation~\cite{checklist2020acl}, NER~\cite{checklist2020acl}, and pronouns in the first class and adverbial~\cite{wsp2020acl}, crossover, and synonym~\cite{checklist2020acl,wsp2020acl} in the second class.
+
+While most of the operations are self-explanatory, the \textit{crossover} operation is unique and deserves special attention. Inspired by molecular biology, for each MCQ in the dataset that the model answers correctly, we substitute the original false choice with the true choice from another randomly sampled MCQ. The substituted choice remains false in the proxy question. The operation can be visually explained in \figref{fig:cross}.
+
+\begin{figure}[th]
+\centering
+\includegraphics[width=\columnwidth]{figure/cross.eps}
+\caption{The Crossover Operation: the true choice of both questions
+are used to replace the false choices of these questions to create
+two new proxy questions.}
+\label{fig:cross}
+\end{figure}
+
+Compared to all other operations in classes 1 and 2, the crossover provides a proxy question that is most different from the original one but easier from a human perspective. This is because the two choices may be quite unrelated. If the model does not handle it correctly, it may be more indicative of a short circuit. As a result, the crossover is potentially a better short circuit test than others.
+
+Another advantage of the crossover operation is that we can generate multiple false choices for an original question at a low cost, allowing us to test each original question more thoroughly. In contrast, most other operations cannot produce an adequate number of different variants of the original choice.
+
+In summary, the proposed black-box choice operator provides a more generalizable and model-independent method for detecting short circuits in MCQ models. By applying various operations to create proxy questions, we can assess the model's performance and robustness more accurately, contributing to the development of better and more reliable models in the future.
+
+\subsection{Improving Model Robustness by Data Augmentation}
+
+If a model is shown to short-circuit by the proxy tests, its performance may decline, especially when applied to out-of-domain test data. To make models more robust, one natural thought is to generate more data to encourage models to focus on the relation between the premise and choices. While the operations used to generate proxy tests can also be utilized for data augmentation, not all of them are scalable or able to generate enough data for training.
+
+The two operations that can generate a substantial amount of data are crossover and mutation. These operations can be applied to the training data to enhance the model's robustness.
+
+\subsubsection*{Crossover for Data Augmentation}
+
+Crossover is a good option for data augmentation because the two choices were originally true answers in their respective questions and presumably carry spurious features if the model was short-circuiting. By incorporating crossover into the training data, the model is forced to consider the premise in order to determine which choice is better.
+
+\subsubsection*{Mutation for Data Augmentation}
+
+Mutation has two flavors: (1) swap the words only in the true choice; (2) swap the words both in the true and the false choice. Compared to crossover, mutation has the potential to be more effective at improving model robustness. It not only forces the model to look into the premise due to its two very similar choices (same set of tokens), but also makes the model more sensitive to fine differences in word orders and enhances the model's prior grammatical knowledge.
+
+\subsubsection*{Differentiating between Proxy Test and Data Augmentation}
+
+It is essential to differentiate between the use of crossover and mutation operations in proxy tests and data augmentation. In proxy tests, these operations are used to modify the test data to assess the model's short-circuiting behavior. In contrast, when applied for data augmentation, the same operations work on the training data to enhance the model's robustness and generalization capabilities.
+
+In conclusion, data augmentation through crossover and mutation operations can contribute to improving model robustness by encouraging models to focus on the relationship between the premise and choices. By incorporating these operations into the training data, models are forced to consider the premise and become more sensitive to the fine differences in word orders, leading to better performance and reliability in real-world applications.

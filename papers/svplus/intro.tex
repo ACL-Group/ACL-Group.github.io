@@ -1,0 +1,128 @@
+\section{Introduction}\label{sec:intro}
+Hardware description language (HDL)\cite{intro:HDL} based IP synthesis has been the
+industry standard in recent years.
+However, it has a number of problems.
+First, Verilog and VHDL are so low level that they are often compared to assembly languages
+in terms of programability. The absence of advanced data types and control mechanisms makes
+programming in these languages tedious and error-prone. For example, to program complex
+circuits, one often has to write massive amount of boilerplate code. Some
+designers go as far as using Perl to generate repeated Verilog code fragments.
+Second, the simulation and verification
+is the most time-consuming step in IP design cycle. For industry-strength design,
+this loop can go on for weeks and even months. This lengthy process is in part due to
+the lack of static checks at compile time in most HDLs and the difficulty in formal
+verification.  Third, while most HDLs offer design libraries of basic building blocks,
+these are largely limited to the hardware circuit level, and are often inadequate for programming
+large, complex but common algorithms such as those used in cryptography and image processing.
+Today, designs for these algorithms require thousands of lines of Verilog code which is
+extremely expensive to produce, debug and maintain. Last, because HDLs do not offer the
+capability of high level abstraction, it is not easy to reconfigure the functionality of an
+existing design. For example, for a given design of an AES algorithm, if the user prefers
+to trade die space for speed, a common approach is to unroll a loop a number of times
+and execute it in parallel within a clock cycle. Such unrolling cannot be achieved
+in Verilog without substantial code change.
+
+To address some of these problems, a range of new solutions have been
+proposed.
+%SystemC and SystemVerilog were two of the most prominent attempts to
+%simplify IP designs, albeit in opposite directions.
+SystemC\cite{Grotker-sysC} gives software engineers access to hardware
+design by
+introducing an event-driven simulation
+kernel and some ability in describing hardware in C.
+SystemVerilog\cite{Sutherland-systemverilog}, on the other hand, aids hardware designers by raising
+the abstract level of Verilog with convenient programming constructs and
+some object-oriented concepts. None of these
+languages allows the specification of a design at the algorithmic level.
+%In attempt to improve productivity and to simplify design verification,
+%Accella developed
+Property Specification Language (PSL) let the designers
+add assertions in their HDL code about certain properties.
+%These assertions assist the verification tool in proving some
+%otherwise unprovable properties.
+It is nonetheless the user's responsiblity to add correct assertions
+at the appropriate places. Another approach to the verification
+problem is equipping the HDL with a type system and providing static checks.
+A number of HDLs, most notably Bluespec \cite{Arvind03:bluespec},
+are designed as sublanguages or
+libraries of strongly typed functional programming languages like Haskell\cite{HaskellBook} and ML\cite{ML:Milner}.
+While the type system in these languages eliminates some design errors at early stage,
+it does not make the coding of a design any easier. To the contrary, hardware
+engineers have to learn another potentially unfamiliar language such as Haskell.
+This is perhaps why Bluespec now uses a SystemVerilog syntax.
+Probably the most relevant work to this paper is the Spiral project \cite{NordinMHP05:Spiral}
+which developed systems that translate high level mathematical representations
+(in the SPL language)
+of certain DSP transforms into hardware designs.
+The work identifies a number of one-to-one correspondence between DFT formulas to
+combinatorial data paths, and hence makes the abstraction of functional components possible.
+
+
+Take another examplme from Verilog, when designing a calculator to compute equation\eqref{eq:intr} using sequential circuit, we need to divide the mathematical expression into tiny steps and figure out the operations in each step.
+%
+\begin{equation}\begin{array}{lr}
+y = 29 * x \\
+\:\:\:\:= 16 * x + 8 * x + 4 * x + x
+\end{array}
+\end{equation}
+%\vspace{-2ex}
+or
+%\vspace{-2.5ex}
+\begin{equation}
+y =  2^4 * x + 2^3 * x + 2^2 * x + x
+\label{eq:intr}
+\end{equation}
+%
+There are different methods to compute this formular\eqref{eq:intr}, here are two.
+%
+%\setlength{mathindent}{0cm}
+%\noindent
+%\begin{flalign}
+%\vspace{2ex}
+%\hrule
+%\vspace{-3ex}
+\begin{verbatim}
+M1:                     |  M2:
+  STEP1:                |    STEP1:
+    y1 = x << 4;        |      temp = x << 4;
+    y2 = x << 3;        |    STEP2:
+    y3 = x << 2;        |      sum = sum + temp;
+    y4 = x;             |    STEP3:
+  STEP2:                |      temp = x << 3;
+    sum = y1+y2+y3+y4;  |    STEP4:
+                        |      sum = sum + temp;
+                        |    STEP5:
+                        |      temp = x << 2;
+                        |    STEP6:
+                        |      sum = sum + temp;
+                        |    STEP7:
+                        |      temp = x;
+                        |    STEP8:
+                        |      sum = sum + temp;
+\end{verbatim}
+%\end{flalign}
+We can see that M1 and M2 have different numbers of steps, and the resource costs also vary. In M1 it needs 4 shifters as well as 4 regs to hold the part summation results in STEP1, and 3 adders in STEP2 to get the final summation. On the other side, M2 just needs 1 shifter, 1 reg and 1 adder, since STEP1, STEP3, STEP5 and STEP7 can share the same shifter, as well as STEP2,STEP4, STEP6 and STEP8 reuse the same adder.
+In short, they have different circuit architecture, and different controllers to generate signals. So their implementation in Verilog may vary significantly in details.
+
+In order to free designers from detail things and dig out all the possible implementations with different architectures, we need to express this kind of circuit in higher level description and make it easy to instantiate a different implementation.
+
+\subsection{Contributions}
+In our work, we proposed some functional language-like syntaxes, named SV+, that can be used to describe reconfigurable structures in hardware circuits. Unlike existing HDL languages that may describe circuit in behavior level at most, SV+ depicts the mathematical computation meaning of some circuits. What's more, these lnaguage contructs can be embedded with traditional Verilog code. An interactive precompiler was constructed to translate SV+ program into Verilog RTL code. With the precompiler, the designer gets chances to do circuit optimizations during the compiling process. Our contributions are:
+
+\begin{itemize}
+    \item Mathematical meaning has higher abstract level than behavior description.
+          Thus SV+ partly makes it easier to design some circuits, especially
+          complex ones. Designers don't have to concern too much about low level details, such as
+          wire connection and module schedule.
+    \item SV+ precompiler interacts with the user while compiling when optimization opportunity
+          been found. So that people even don't have sound knowledge on hardware circuit are
+          able to produce, in some degree, nice designs.
+    \item For different live optimization choices, we can gain a set of circuits that vary in
+          architecture, which is not just trivial changes, as well as resource consuming and
+          time cost. This really make good sense if the user wants to seek trade-offs between
+          circuit space and running speed.
+    \item No modification on the source code is needed if the user would like to synthesis a
+          different IP core. And for every re-configurable circuit structure, user has some
+          options on optimizing it. So, when it comes to several such structures in a design, the number
+          of IP cores we can gain is significant. We may get twice the result with half the effort
+\end{itemize}

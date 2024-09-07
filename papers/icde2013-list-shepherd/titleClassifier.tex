@@ -1,0 +1,387 @@
+\subsection{Title Classifier}
+\label{sec:title}
+
+The title of a web page (string enclosed in {\tt<title>} tag) helps us
+identify a top-$k$ page.  There are several reasons for us to utilize
+the page title to recognized a top-$k$ page.  First, for most cases,
+page titles serve to introduce the topic of the main body.  Second,
+while the page body may have varied and complex formats, top-$k$ page
+titles have relatively similar structure.  Also, title analysis is
+lightweight and efficient. If title analysis indicates that a page is
+not a top-$k$ page, we chose to skip this page.
+This is important if the system has to scale to billions of web pages.
+
+\begin{figure}
+\centering
+\epsfig{file=pics/pageTitle2.eps,width=0.9\columnwidth}
+\caption{A Sample Top-K Title}
+\label{fig:title}
+\end{figure}
+
+%We now discuss what a top-$k$ title should look like.
+%In general, a top-$k$ title represents the topic of a top-$k$ list.
+Figure \ref{fig:title} shows a typical top-$k$ title.  Note that the title
+may contain multiple segments, and usually only one segment describes
+the topic or concept of the list.  In addition to the value of $k$
+(e.g, 10) and the head concept (e.g, ``podcasts''), a top-$k$ title
+may include some other elements, such as the ranking criteria (e.g,
+``top'', ``most memorable'', etc.) and other modifiers (e.g, ``.net
+Awards'' and ``2011'').
+
+\ZZX{
+Note that a web page with a top-$k$ title may not contain a top-$k$ list.
+A typical case is shown in Figure \ref{fig:slideshow}. Here the top-$k$ list
+is divided into multiple interlinked pages, instead of being on a single page.
+Extracting such lists requires that all relevant pages are in
+the corpus and are properly indexed which increases the cost of the solution
+significantly. Base on our observations, such multi-page top-$k$ lists
+account for about 5\% of the total number of top-$k$ lists on the web,
+we therefore choose to ignore this type of pages in this paper.
+%additional crawling (because it is not
+%certain that each of the page is in the web corpus) and it is too
+%costly given that we need to handle billions of pages already.
+}
+
+We build a classifier to recognize top-$k$ titles.
+Specifically, we train a Conditional Random Field (CRF)
+\cite{CRFLafferty} model from a labeled dataset of both
+positive titles and negative titles (negative titles also contain a
+number).  We use lexical features such as {\em word}, {\em lemma}, and
+{\em POS tag}\cite{santorini1990part} to form the basic feature set.  The classifier also
+returns additional information such as the list size $k$ and a set of
+concepts (recorded by a knowledge base such as Probase)
+which are mentioned in the title.
+\ZZX{We prefer to optimize the classifier for higher recall rather
+than precision at this step, because some false positives pages,
+which cannot be recognized through titles alone,
+can be easily filtered out by validating against other properties
+during the List Extraction phase.}
+%
+%Since we have additional mechanisms that help us filter out
+%false positives pages (i.e, pages that are wrongly recognized as
+%top-$k$ pages), we optimize the classifier for getting higher recall.
+%\KZ{What additional mechanism?}
+
+\begin{figure}
+\centering
+\epsfig{file=pics/page4.eps,width=0.8\columnwidth}
+\caption{A Slide-show Page Snapshot\cite{TopFootball}}
+\label{fig:slideshow}
+\end{figure}
+
+\subsubsection{The CRF model}
+We convert the problem of recognizing top-$k$ titles to the problem of
+recognizing the number $k$ in a top-$k$ context. For example, in
+Figure \ref{fig:title}, ``10'' is the $k$ in the top-$k$ context,
+while ``2010'' is not a $k$ even though it is also a number.
+
+We consider the ``$k$ recognition task'' as a sequence labeling
+problem: Each word in the title is considered a token in a sequence,
+and is either $k$ or {\em not k}.
+%The \emph{TRUE} label means the corresponding token is the $k$, and
+%the title sequence is therefore recognized as a top-$k$ title.
+CRF is well suited to such tasks.
+The main idea of CRF is to calculate the
+conditional probability of the whole label sequence given the
+observation sequence.  We define $X=(X_{1}, X_{2}, X_{3}, ..., X_{n})$ as
+a word sequence of length $n$, and $Y=(Y_{1}, Y_{2}, Y_{3}, ..., Y_{n})$
+as a label sequence, where $Y_{i} \in \{TRUE, FALSE\}$.  The CRF model
+calculates the conditional distribution $P(Y|X)$, and then selects the
+$Y$ that maximizes the probability.
+
+We use the linear chain as the undirected statistical graphical model,
+which is based on the assumption that each label $Y_{i}$ only depends on
+its immediate neighbors ($Y_{i+1}$ and $Y_{i-1}$).
+For linear chain CRF, the conditional probability can be calculated as:
+\begin{equation*}
+    P(Y|X)=\frac{1}{Z(x)}\exp(\sum_{i=1}^{n}\sum_{j=1}^{m}\lambda_{j}f_{j}(y_{i-1},y_{i},x,i))
+\end{equation*}
+where $Z(x)$ is a normalization factor, $f_{j}$ is one of the $m$
+functions that describes a feature, and $\lambda_{j}$ is the feature
+weight to be trained.
+To build an effective CRF model, we need to collect training data and
+design a feature set, which is discussed below.
+
+%We can build an undirected graph $G(V,E)$ to represent each $Y_{i} \in Y$
+%according to the independency relations
+%(in other words, if $Y_{i}$ and $Y_{j}$ depend on each other,
+%there is an edge connecting the two nodes).
+%Therefore, the overall probability $P(Y|X)$ is equal to
+%the product of the potential functions of all the maximal cliques in $G(V,E)$.
+
+
+%For web titles,
+%The structure of the label sequence can be an arbitrary undirected graph,
+%which is different from hidden Markov model\cite{HMMBaum}.
+%For title recognition, the graph of interest is linear chain.
+%
+%
+%Since in normal NLP tasks (including the title classifier in our system), the graph of interest is usually a linear chain. We will focus on this model in the following discussion.
+%
+%, or CRF\cite{CRFLafferty},
+%is a probabilistic model based on undirected graphs.
+%
+%
+%We can convert the original problem of Title Classifier
+%into to a $k$ recognition task,
+%The task is to find a proper number word in title,
+%of which the context conveys a top-$k$ topic.
+%
+%
+%Therefore the task becomes a sequence segmentation problem:
+%each word in the title is a token in sequence to be assigned
+
+
+\subsubsection{Creating a training dataset}
+\label{sec:titleDataSet}
+Creating a large, high quality training dataset is costly. The
+challenge mainly lies in collecting positive cases, as top-$k$ pages
+are sparse on the web (approx. 1.4\textperthousand{} of total web pages, see
+Section \ref{sec:eval}). Filtering out pages without a number in
+the title narrows our candidates down, but the number of candidates
+is still massive.
+%Although narrowing down the target to those whose titles contain at
+%least a number, it is still difficult to manually collect enough
+%positive cases.
+In our approach, we first tokenize the titles to add POS
+tags, and then we adopt the following simple rules to identify
+or create positive training samples.
+\begin{itemize}
+\item \textbf{``top CD''}: If a title contains the word ``top''
+  followed by a number, it is likely to be top-$k$ title. For example,
+  ``top 10 NBA players who could be successful general managers''.
+\item \textbf{``top CD'' without ``top''}: A title which satisfies the
+``top CD'' rule is still a top-$k$ title with the word ``top'' removed.
+\item \textbf{``CD JJS''}: ``JJS'' stands for superlative adjectives.
+  If a title contains a number followed by a superlative adjective, it
+  is likely to be a top-$k$ title.  For example, ``20 tallest
+  buildings in China''.
+\item \textbf{``CD RBS JJ''}: ``RBS'' and ``JJ'' stand for superlative
+  adverbs and adjectives, respectively.  If a title contains a number,
+  followed by a superlative adverb, and followed by an adjective, it is
+  likely to be a top-$k$ title.  For example, ``5 most expensive
+  watches in the world''.
+\end{itemize}
+
+%We consider pages that satisfy any of the three rules above.  The
+%three rules can only cover about 50\% of top-$k$ titles.  But in fact,
+%it is unnecessary that the top-$k$ titles in the training dataset must
+%be titles of real web pages: We can simply ``make up'' these titles,
+%or create positive top-$k$ titles on our own.
+
+% In fact, we can automatically generate ``top-$k$ like'' titles
+% that satisfy none of the rules above from the ``top-$k$ like'' titles
+% that satisfy the first rule, according to the following observation.
+%We can directly build a classifier based on the three rules. About this rule-based classifier, there is good news and bad news.
+%The good news is that the precision of the classifier is very high. The bad news is that there are still many ``top-$k$ like'' titles that do not satisfy the three rules, such as ``10 movies that you should not miss''. In fact, these rules can only cover half of all the ``top-$k$ like'' titles, in other words, the recall is only about 50\%.
+%Since we put the recall performance of the title classifier in the first place, this rule-based approach is not completely qualified.
+%But at least, these rules solve half of the problem, so now we can focus on the remaining ``top-$k$ like'' titles.
+
+%The true reason that we have such a bottleneck is that we make an unnecessary assumption, that the titles in the training data set must be titles of real web pages. Instead of collecting titles of top-$k$ pages, we can just ``make up'' these titles, which is much easier.
+%In fact, we can automatically generate ``top-$k$ like'' titles that satisfy none of the rules above from the ``top-$k$ like'' titles that satisfy the first rule, according to the following observation.
+
+%In fact, we have the following observation: {\it For a title that
+%  satisfies the rule ``top CD'', it will still be a top-$k$ title if
+%  we remove the word ``top''.} For example, for the title ``top 10 NBA
+%players who could be successful general managers'', we can delete
+%``top'' to get ``10 NBA players who could be successful general
+%managers'', which is still a top-$k$ title.  This is true for most
+%cases, as ``top'' is the default criteria when making a top-$k$
+%list.  With this method, we increase the number of positive
+%cases.
+% generate the $N$ positive cases in a full automatical manner:
+% first we obtain $N/2$ titles using the ``top CD'' rule; then we remove
+% the ``top'' in each title and get $N/2$ new titles.  Combined with $M$
+% negative cases, we finally have a large enough training data set.
+
+\subsubsection{Extracting features}
+We now discuss how we extract features from a title.  As we see in
+Figure \ref{fig:title}, a title may contain multiple segments, which
+are separated by separators like ``-'' or ``$|$''.  Among these
+segments, only the main segment (e.g, Segment 1 in Figure
+\ref{fig:title}) gives us the topic of the page, while other
+segments show additional information such as the name of the site,
+which is not of interest. We therefore split the title and retain
+only segments that contain a number.
+
+Instead of extracting features from a title as a whole, we focus on a
+fixed-size window centered around the number $k$ in the title. We argue
+that the number $k$ serves as an anchor to a phrase that represents
+a top-$k$ concept or topic.
+For a window of large enough size $n$, the $n$-gram is
+sufficient to make a correct judgement.  With this observation,
+we transform the original task into the task of recognizing the
+number $k$ with a proper context,
+which is much easier and more suitable for CRF
+learning.  % Last but not the least, if we use the whole sentence as the
+% model pattern, we have to manually solve the number ambiguity if the
+% title contains multiple numbers.  While for $n$-grams, we only label
+% the center number word that satisfy the rule ``top CD'', so that we
+% can do labeling automatically.
+  % as ``TRUE'', otherwise ``FALSE''.
+% Furthermore, since
+% with Unlike other model pattern that use the whole sentences, our
+% model pattern only pick a fixed-length context of a number word.
+% \ref{tab:modelPattern}.
+
+
+  %If we use the whole sentence as the model pattern,
+  %  . Otherwise
+
+%With the training data set, we would like to use the tool CRF++\cite{crfppHome} to generate the classifier model.
+%Before we do that, we have to design the model pattern first. The model pattern is the input format for CRF++ to learn or test data,
+%including used features, meaning of tokens, set of answer tags and so on. Figure \ref{fig:crfpp}(a) shows a sample model pattern.
+
+%We use a model pattern as a $n$-gram centering on a number word.
+Table \ref{tab:modelPattern} shows an example of feature extraction
+with a window size $n=9$.  If there are not enough words before or
+after the centered number, we just fill up the vacancies with the null
+token. We select four features: \emph{word}, \emph{lemma},
+\emph{POS tag} and \emph{concept}.  The {\it lemma} feature gives the original
+form of the word.  For example, the lemma for ``podcasts'' is
+``podcast''.  The {\it POS tag} feature indicates the part-of-speech
+of a word.  The {\it concept} feature indicates whether the word
+forms a string suffix of a concept in a knowledge base.
+The $i$th bit of the concept feature value is set to 1 if the
+$i$-gram that ends with the word is a concept.
+  %, especially the first bit is the case for the word itself.
+In Table \ref{tab:modelPattern}, the concept value for
+``podcasts'' is 1, which means ``podcast'' is a concept.
+For a phase ``Asia companies'', the concept value for
+``companies'' is 3, because both ``companies'' and ``Asia companies''
+are concepts from the knowledge base.
+
+
+% Using the pattern above,
+% we successfully trained a CRF model with the training data ,
+% now we can build the outside title classifier.
+
+\begin{table}
+\centering
+\caption{Feature extraction from a window of  size 9. (Vacancies are filled with the null token.)}
+\begin{tabular}{|l|l|l|l|l|}
+\hline
+\textbf{word}    &\textbf{lemma}   &\textbf{POS}    &\textbf{concept}   &\textbf{tag} \\ \hline
+.net        &net        &JJ	    &1  &FALSE\\
+awards      &award      &NNS	&1  &FALSE\\
+2011        &2011       &CD	    &0  &FALSE\\
+top         &top        &JJ	    &1  &FALSE\\
+10          &10	        &CD     &0  &TRUE\\
+podcasts	&podcast    &NNS	&1  &FALSE\\
+NULL        &NULL       &NULL	&NULL  &FALSE\\
+NULL        &NULL       &NULL	&NULL  &FALSE\\
+NULL        &NULL       &NULL	&NULL  &FALSE\\
+\hline
+\end{tabular}
+\label{tab:modelPattern}
+\end{table}
+
+\subsubsection{Using the classifier}
+
+
+\begin{figure}
+\centering
+\epsfig{file=pics/TitleClassifier.eps,width=0.9\columnwidth}
+\caption{The Flow Chart of the Title Classifier}
+\label{fig:titleClassifier}
+\end{figure}
+
+Figure \ref{fig:titleClassifier} shows how we use the classifier.  (1)
+The preprocessor generates features.  (2) The classifier labels the
+$n$-gram pattern as \emph{TRUE} or \emph{FALSE}.  (3) If it is
+identified as a top-$k$ title, the postprocessor extracts additional
+information from the title, which includes the value of $k$, the
+ranking criterion, and
+the concepts mentioned in the title.  For example, in this case, the
+concepts include $\{``.net'',``awards'', ``podcasts''\}$. These
+information is used in the subsequent list extraction process.
+In addition, to extract optional information like time and location,
+the title is further processed by Content Processor which will be discussed
+later.
+%
+%Before the title splitter, we need to filter ill-formatted
+%writing in the title and lowercase all the words.
+%%in order to optimize the performance of Stanford Parser.
+%
+%The model will label the $n$-gram pattern with \emph{TRUE} or \emph{FALSE},
+%just like the last column in Table \ref{tab:modelPattern}.
+%A \emph{TRUE} means the corresponding word is a proper number $k$,
+%thus the corresponding title is a ``top-$k$ like'' title.
+
+%The model will attach an additional column to the input 9-gram as the answer tag. The answer tag is either ``TRUE'' or ``FALSE''.
+%We are only interested in the 5th tag, which indicates whether this title is a ``top-$k$ like'' title.
+%If the 5th tag is ``TRUE'', the input is then a ``top-$k$ like'' title.
+
+
+%is  {``scientist'',``influential scientist'', ``today''}.
+
+%In Subsection \ref{sec:evalTitle}, we make an experiment to test the performance of the title classifier.
+%The result is satisfying: the precision is over 75\% while the recall is over 90\%. As a conclusion, the model-based classifier is qualified for our system.
+
+
+%
+%The goal of the classifier is to recognize ``top-$k$ like'' titles,
+%the likely name of a top-$k$ page. In general,
+%a ``top-$k$ like'' title represents the topic of top-$k$ list.
+%Figure \ref{fig:title} shows a typical ``top-$k$ like'' title.
+%Note that a ``top-$k$ like'' title may contain multiple segments, and
+%usually only one segment describes the topic or concept of the list.
+
+%Besides the features we mentioned in Subsection \ref{sec:intro}
+%(concept and number $k$),
+%a ``top-$k$ like'' title could include some other elements;
+%also as a web page, it may contain multiple segments,
+%among which only one segment is the main part.
+
+%Therefore, the actual task for Title Classifier is
+%trying to recognize a proper number k with proper context in the title.
+%If no such k is found, we consider the title not a ``top-$k$ like'' title.
+
+%In our implementation, we build our classifier using a supervised machine-learning method.
+
+%We trained a Conditional Random Fields (CRF) \cite{CRFLafferty} model
+%from 4000 negative titles (titles that contains a number but
+%are not actually ``top-$k$ like'') and 2000 positives titles. The number $k$
+%is especially important because it serves as an anchor to a phrase that
+%represent a ``top-$k$ like'' concept or topic.
+%We use \textit{word, lemma,} and \textit{POS tag} \cite{StanfordParser}
+%as the basic feature set.
+
+%Among these features, the number k is especially important for
+%our system for the following reasons:
+%\begin{enumerate}
+%\item The number k is the common feature among all ``top-$k$ like'' titles,
+%while other features may omit in some titles
+%\item The number k is indispensible for following components in our system:
+%we need to extract a list with exact k items.
+%\item We can reduce our target page group to
+%``those pages whose title contains at least one number''.
+%\end{enumerate}
+
+%Before we test an input title with the model we learned,
+%%we need to tranfer it to the format that our model can recognize
+%%(the same format for training data).
+%%Thus
+%the following preprocessing steps are needed:
+%
+%\begin{enumerate}
+%\item \textit{Normalizer}:
+%Fix some ill-formatted writting in the title and lowercase all the words.
+%\item \textit{Title Splitter}:
+%Split the title into segments by splitters such as ``|'' and ``-'',
+%and select the longest one with a number as the main segment.
+%\item \textit{Feature Generater}:
+%Generate mentioned features for each word in the main segment.
+%We use Standford Parser \cite{StanfordParser} to get the lemma and POS tag features.
+%After this, we can get a table with words as rows and features as columns.
+%\end{enumerate}
+%
+%After that, we can test the feature table of the input title.
+%The model will label the number in the title with ``T'' or ``F'',
+%where ``T'' means the whole title is ``top-$k$ like''.
+
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: "paper"
+%%% End:

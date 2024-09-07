@@ -1,0 +1,363 @@
+\section{Introduction}
+\label{intro}
+
+%{\bf OUTLINE}
+%
+%\begin{enumerate}
+%
+%%\item The background of image search and image clustering
+%%(cite some related work in this space here). Basically there are three
+%%kinds: (1) using contextual info (2) using visual attributes and (3) both.
+%%What's the state of the art technique and result? Show some example (figs).
+%%
+%%\item  What are the challenges in image search: (1) right context (2) context
+%%representation (bag of words, bag of concepts, topics, etc.) (3) clustering
+%%algo (4) presentation (diversification?) (5) performance
+%%(incremental, caching).
+%%
+%%\item What are the problems in existing solutions.
+%%
+%%\item Briefly describe our approach, why it works, and summarize our results.
+%\item Motivation: traditional image search is by relevance only and ignore
+%the semantics of the image and doesn't disambiguate images of different
+%entities. As a result, search results can be either highly ``mixed'', or
+%highly ``uniform'' and missing the diversity. (Give a screen shot of google
+%image here.)
+%\item What do we want to do? A succinct problem statement here.
+%\item Existing techniques:
+%\begin{enumerate}
+%\item visual based -- visual features and machine learning:
+%visual similarity have low precision, needs labeling, and what else??
+%\item context based -- bag of words: bag of words can't adequately capture
+%the meaning of context; contexts are not easy to define.
+%3) hybrid approach: the gap between the visual semantics and the text
+%semantics; slow!
+%\end{enumerate}
+%Give some concrete examples for each of these cases to illustrate why
+%they don't work or insufficient.
+%%\item Getting signals from images themselves are difficult so context of images
+%%can be used to identify and cluster images
+%%\item Bag-of-word based contexts are insufficient
+%%\item Concept-based contexts carries better semantics
+%%\item Clustering is hard because the relateness among sub-clusters may not be
+%%obvious: a special similarity method has to be used
+%%\item Incremental cluster helps to scale
+%\item Our approach:
+%\begin{enumerate}
+%\item it's a flexible framework that can incorporate both text and visual
+%signals, but with emphasis on text (reason is text sigals are easier to
+%pick up and more explicit);
+%\item use conceptualization by wiki concepts to better understand the concept
+%before clustering them;
+%\item provide a topic for each cluster
+%\item tripple clustering algo to improve both purity and inverse purity;
+%\item online and offline division to make it much much faster,
+%and practical for image search!
+%\end{enumerate}
+%
+%\item Key contributions of this paper:
+%\begin{enumerate}
+%\item design and implement a framework of clustering images by
+%context conceptualization outperforms peers by significant margins in
+%terms of f-measure;
+%
+%\item online-offline split make the framework feasible for web search
+%(1 sec response time!)
+%
+%\item extensive comparisons to show that our algo outperforms peers.
+%\end{enumerate}
+%\end{enumerate}
+
+%Here is the general introduction to our project.
+%
+%We are dealing with the search result of Google Image search engine. We catch the original webpage of each search result item, and then extract the context of each webpage with given keyword. At last, we extract the semantic information for contexts and do cluster on the search result.
+Images are one of the most abundant multimedia resources on the Web.
+Most commercial search engines offer image search today,
+which enables the user to retrieve images by a search term.
+%Along with the development of image searching techniques,
+%one can easily retrieve concerned images by specifying a keyword.
+Almost all existing image search engines rank the returned images
+by the relevance of their contexts (i.e. the web pages they are
+embedded in) to the query keyword. \figref{fig:search-bean-on-google}
+shows the result of the search for ``bean'' on
+\textit{Google Image}\cite{google}.
+The result appears to be a mix of many different entities related
+to the keyword ``bean'', e.g.,
+``Mr. Bean (comedian)'', ``Sean Bean (actor)'',
+``beans (the crop)'', etc. Ambiguous search terms like this
+are not rare: Google Image results include at least two different entities for
+``kiwi'', three for ``explorer'', six for ``Anderson'' and over ten different
+persons  for a common Chinese name ``Lei Zhang''!
+
+The current result delivery strategy of image search engines has 
+the following problems:
+First, if the user is looking for a particular ``bean'' without knowing the
+full name, e.g., Sean Bean, it is actually not easy for her to
+navigate through the myriads of pictures to find the portraits she wants.
+If the entity that the user is looking for is not popular, its images
+can be ranked low and hence excluded from the first set of results.
+Second, if the user doesn't know how Sean Bean looks,
+\footnote{For the record, Sean Bean appears in the first, fifth images
+of the first row and first, forth and seventh images in the second row
+in \figref{fig:search-bean-on-google}.} then
+she has to click open every possible image to check the description on
+the web page, which is very tedious and time consuming.
+Finally, if the search term has a very dominant meaning, e.g.,
+``galaxy'', then almost all the images in top results
+are about this very concept or entity (e.g., the system of stars),
+with the images of other entities (e.g. the phone or the sports team)
+buried deep in the results. Such image search results
+are less diverse or interesting.
+
+\begin{figure}[th]
+	\centerline{\psfig{figure=screen_bean3.eps,width=\columnwidth}}
+	\caption{Search Result of Keyword ``bean'' on Google Image}
+	\label{fig:search-bean-on-google}
+\end{figure}
+
+
+%a list of images relevant to the keyword. However, this kind
+%of result is always a mixture of many kinds of entities.
+%For example, if you search for ``bean'' in \textit{Google Image} \cite{google},
+%you will get a list of images that are related to ``bean'' (See
+% \figref{fig:search-bean-on-google}). The keyword ``bean''
+%may refer to The resulting list is mixed
+%with these different entities. This result is very unfriendly to
+%users, since it is difficult to find out an entity from these mess results,
+%e.g. ``Sean Bean''. This kind of ambiguous search queries are very
+%common.
+This paper is concerned with the problem of clustering web images
+according to their semantics, that is, the entity or concept they
+represent. Once the images are clustered, the search engine can
+return results classified by different unique entities,
+offering easier accessibility and more diversity.
+%current search engines described above. We reorganize the search results
+%and divide them into several semantic clusters. Within each cluster, the images
+%are about the same entity.
+In the past, there has been numerous research efforts on image clustering. These
+efforts can be roughly divided into three categories.
+
+The first and obvious approach is called visual-based or
+``content-based'' approach. This kind of
+approaches only takes the visual features into account \cite{Fu2011, ZhongLL11}.
+The visual features used in these techniques are usually divided into two
+classes: local features and global features. Local features are extracted
+from the surrounding pixels for each points, such as SIFT descriptor, edge
+histogram, etc. Global features are color, brightness, contrast, gray scale,
+etc. Content-based image clustering uses local, global or hybrid of these
+features to construct vector representation of the images and then evaluates
+the similarity among these vector representations. 
+The problem with content-based image clustering
+is that the visual effects of the same entity may be diverse while different
+entities may share similar visual cues. For example, some images of ``Mr. Bean''
+in \figref{fig:search-bean-on-google} are very different by the look.
+The fourth one in the third row is more like a baby while
+the second one in the last row is similar to the Pope!
+However, when you look at the some of images in the second row,
+``Mr. Bean'' is visually similar to ``Sean Bean'',
+since they are both in suits. For these reasons, low level 
+visual features are usually inadequate for understanding of 
+the meaning of the images.
+On the other hand, existing high level visual recognition
+techniques are not powerful enough to accurately identify images at entity
+or object level. For example, state-of-the-art object annotation technique has
+a humble accuracy of 0.34 \cite{Li09scene}. 
+
+The second approach is context-based image clustering using only
+textual information in the context of the image.
+The textual information refers to URL, descriptive tags for the image,
+the surrounding text and even search result snippets \cite{Jing2006}. 
+With these contextual signals, a bag-of-words vector space model can be built
+to capture the pairwise similarity of the images. Methods in this approach
+often follow two main steps: identifying a meaningful context
+and representing the context. To identify the context, most of the existing
+work uses text within a limited window around the image or
+extracted visual blocks that contains the image \cite{VIPS}. To represent
+the context, all previous work use bag-of-words or n-grams model \cite{Jing2006}.
+The bag-of-words model can not capture the semantics of the context
+in an accurate way for three reasons.
+First, limited length of context provide insufficient signals
+for bag-of-words model. Second, in many occasions, phrases are more
+reasonable and accurate semantic unit than words.
+For example, bag-of-words model divides the term ``Research in Motion''
+into ``research'' and ``motion'', which destroys the original meaning of
+the term. Third and finally, natural language is ambiguous. ``apple'' may refer
+to an IT company or a kind of fruit. Bag-of-words model treats every ``apple'' term
+equally, so that text which talks about ``Apple Inc.'' and text about
+``apple fruit'' are more similar than the truth. Similar arguments
+hold for n-gram models.
+
+The third approach is a hybrid approach combining the visual features
+with textual features. Some researchers tried to achieve this combination by
+producing a similarity score from the weighted sum of these two types
+of features \cite{LeukenPOZ09}.
+However, visual features are quite different from textual ones,
+and there's no explicit relation between them, hence no good ways of
+determining the weights. The semantic gap between the visual and textual features
+makes it difficult to directly combine them into one uniform similarity measure.
+For this reason, some hybrid algorithms resort to co-clustering on
+visual and text simultaneously such as MMCP \cite{Fu2011}. 
+But such approach is iterative, time consuming and
+thus not suitable for online applications such as image search.
+
+In this paper, we propose a flexible framework that can incorporate both
+textual and visual signals. Different from the previous hybrid approaches,
+we emphasize on textual signal understanding and use visual signals
+as {\em complements} when there is insufficient textual signals. 
+The reason to focus on text is that, unlike visual signals, 
+textual signals from the right context explicitly reveal the semantics of the image.
+%The key is of course to get the correct context.
+Our approach is different from the existing context-based image clustering
+in three aspects. First, we explicitly disambiguate the context text
+by converting each phrase to an unambiguous concept in an external knowledge base.
+We call this process ``conceptualization''. In this paper, we use
+Wikipedia \cite{wikipedia} as our knowledge base,
+and conceptualize the phrases by linking the phrases to
+Wikipedia concepts/articles. Conceptualization is a better way to understand
+textual signals than traditional bag-of-words model \cite{Song11:Conceptualize,
+WangWWZ12:tables,WangLWZ12:topic}.
+Second, our method provides a set of ranked concepts to annotate
+each cluster of images by accumulating the concepts in the contexts from the clusters.
+With the set of ranked concepts, users can conveniently grasp what each
+cluster is about. Third, we propose a modified version of
+hierarchical agglomerative clustering (HAC), which is more robust to noises
+and apply it to a tri-stage clustering framework.
+The tri-stage clustering can guarantee the purity of each cluster while
+improving the inverse purity, i.e. forming as large clusters as possible.
+The experimental result shows that our approach significantly outperforms
+the state-of-the-art peers, and reaches very high purity, F-measure and
+NMI scores.
+
+In addition, we separate the system into online and offline
+components to make the framework more practical to include in a search engine.
+Offline component conceptualize source pages of the images.
+Online component extracts the image and query contexts (in terms of
+concepts) and clusters the contexts.
+Query context is the text surrounding each occurrence of the query term
+in the host web page, whose extraction can be accomplished in linear time.
+To minimize the response time to users' query,
+we propose to cluster images incrementally, that is,
+page by page, where each page has a limited number
+(e.g. 100) of images. Such arrangement is lightweight and is
+able to deliver clustered search result in 1 second. 
+A partial result of searching for ``bean'' on our prototype image search system
+is shown in \figref{fig:demo-bean}. In the current interface, every cluster shows the
+most relevant images about a unique entity, and each cluster is tagged with
+the top 5 concepts associated with the images in that cluster. For example, 
+the four clusters in \figref{fig:demo-bean} have been correctly identified
+as {\em Mr Bean}, {\em Sean Bean}, {\em Frances Bean Cobain} and {\em Phaseolus vulgaris}
+(the official name for ``common bean'').
+
+\begin{figure}[th]
+\centerline{\psfig{figure=proto_bean.eps,width=\columnwidth}}
+\caption{Partial Search Result for ``bean'' on Prototype System}
+\label{fig:demo-bean}
+\end{figure}
+%need to clustering all of the images offline which is not practical and inaccurate.
+
+In sum, this paper makes the following contributions.
+\begin{enumerate}
+\item We design and implement a framework of clustering images by
+conceptualizing their text contexts, and the framework
+outperforms the existing state-of-the-art systems by significant margins
+and achieves high accuracies
+\footnote{Our prototype system is wrapped in a web demo 
+at \url{http://202.120.38.145:4081/}.};
+\item By conceptualizing the clusters, we can generate representative
+ranked list of concepts (i.e., semantics tags) to annotate each image cluster;
+\item The online-offline split in the architecture reduces the online
+processing time which makes our framework feasible for real time web image search.
+\end{enumerate}
+
+The rest of the paper is organized as follow.
+\secref{sec:algo} presents the structure and each component of our
+framework;
+\secref{sec:implement} discusses some implementation
+details and optimizations;
+\secref{sec:eval} demonstrates the experimental results;
+\secref{sec:related} introduces some related work while
+\secref{sec:conclude} concludes the paper.
+
+%But there may be multiple entities that corresponding the same queries practically
+%thus the search result is blended with different families.
+%Most existing web image search engine return a list with very large number of images
+%instead of classifying the mixed result.
+%It will be more convenient for the users to distinguish from the result get what
+%they desire if we divided the result into individual clusters further.
+
+%\hyphenation{spe-ci-fying}
+%
+%Images are the most abundant multimedia data on the Internet.
+%Along with the development of image searching techniques,
+%we can easily retrieval concerned images by specifying a keyword.
+%But there may be multiple entities that corresponding the same queries practically
+%thus the search result is blended with different families.
+%Most existing web image search engine return a list with very large number of images
+%instead of classifying the mixed result.
+%It will be more convenient for the users to distinguish from the result get what
+%they desire if we divided the result into individual clusters further.
+%
+%Here is an simple example. Searching for the keywords ``kiwi'' on Google image search engine
+%we got a result contains two entities: one is the kiwi bird, and one is the kiwi
+%fruit (shown in Fig. \ref{search-kiwi-on-google}).
+%
+%\begin{figure}[h]
+%	\centerline{\psfig{figure=search_kiwi.eps,width=90mm}}
+%	\caption{Search result of keyword ``kiwi'' on Google Image}
+%	\label{search-kiwi-on-google}
+%\end{figure}
+%
+%All images belong to these two sorts of entity are mixed and disorderly placed as the search engine
+%doesn't know what's in the image on earth. But for the user requesting for ``kiwi'',
+%he must be intrested in a single entity sharing this keyword such as the kiwi bird.
+%At this moment all kiwi fruit images are useless because what he want is the
+%bird. He has to through over all the result and filter out the unwanted items
+%manually.
+%% {\it Apple is not a extremly example here because it is easy to distinguish any ``apple'' from two.
+%% Some other cases to show this?}
+%
+%Most of the previous work about image search results clustering
+%\cite{Chang1984,Smith1996,ZhongLL11,Fu2011} were using the
+%method of context-based information retrieval (CBIR). The mainly problem of
+%these algorithms is the gap between visual and textual information. These
+%algorithms could extract some low-level visual signal of the images, but it's
+%not so easy to obtain the textual signals from the visual ones. This is the
+%``semantic gap''.
+%
+%However, there are some novel image search results clustering algorithms which
+%made use of textual informations of the images \cite{Cai2004b,Cai2004,Feng2004,Gao2005,Jing2006}.
+%They extract some textual signals to obtain semantic information, some of these
+%researches even use both visual and textual information and then combine them.
+%The most popular textual signals are surrounding texts, URLs, image descriptions
+%and so on.
+%
+%But it's not enough for us. All these researches were just using the plain
+%surrounding text, and they didn't move forward much step to process the plain
+%text. It's somehow insufficient, because traditional bag-of-word method could
+%not exactly show the meaning of a passage, especially when the passage is short.
+%
+%To address this problem, we extract the context with a refined sibling
+%algorithm, and then perform a \textit{Conceptualization} method on these text.
+%Then we could get a concept vector for each concept, which will contain much
+%more semantic information than the word itself.
+%
+%Although we have had the concept vector, it's still a difficult problem to
+%cluster the search results. Since we will never know the number of clusters,
+%we choose \textit{Hierarchical Agglomerative Clustering} (HAC) algorithm in
+%our work. The other reason we use HAC is, as HAC holds a hierarchy structure
+%of clustering, it's easy to expand it to an incremental version.
+%
+%The other question is, how to determine the similarity between the search
+%results. Here we use a \textit{Vector Space Model} (VSM), and use
+%\textit{Cosine Similarity} to compute pairwise similarity.
+%% TODO: expand this part.
+%
+%(Paragraph for IHAC)
+%% TODO: IHAC should be mentioned here.
+%
+%
+%
+%% The challenges in image clustering:
+%% Some work have been done relative to this problem: JIA[x] YI[y] BING[z], why aren't they good enough
+%% Our approach:
+%% Our contribution:

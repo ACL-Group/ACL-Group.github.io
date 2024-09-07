@@ -1,0 +1,147 @@
+------------------------------------------------------------------------------------------------------------------------
+Review #210384:
+The paper presents the design for a causal knowledge representation scheme based on logic rules that capture structured events.  Additionally, a rule learning framework is proposed that automatically acquires a large number of rules from unstructured text.  The framework is evaluated through an experimental analysis.
+
+At the start of the paper the authors set out clearly the problem being addressed: how to represent causal knowledge for machine reasoning and how to automatically acquire a large volume of such knowledge.  The research topic clearly falls within the remit of IJCAI.  The evaluation setting is specifically the financial domain, which may appeal to a subset of the IJCAI audience, but the work could also be applied more generally in other domains.  
+
+The overall framework being proposed is communicated clearly, ##but some of the details are less so; to take one example, the causal reasoning process is described in section 2.3 but this is at a high level, lacking details of the steps.  It would be difficult to reproduce the work without such specifics.  Another example of unclarity is exactly how the translation of the external knowledge bases is conducted.## 
+
+For the evaluation, the setting and corpus is described clearly.  <It wasn't clear at the start of the paper that the dataset used for the evaluation is financial articles written in Chinese, though this does become clearer in section 3>. ##For the rule evaluation, it is stated that 200 learned rules were manually divided into three levels (good, bad and fair) but it is not clear what the criteria are for assignment to these categories. Furthermore, 29% seems a high proportion for 'bad' rules.##  
+
+For the application to futures price prediction, promising results are reported in terms of prediction accuracy over existing models, ##but again, details of how the approach is actually applied within the domain are described at a high level.## 
+
+In terms of related work, there is a section dedicated to this, but not all works are critically analysed: the paragraph within section 4 on financial market price prediction just mentions existing work and ##does not compare and contrast this with the current work.##   
+
+Finally, in terms of presentation, there are a number of grammar errors throughout that contribute to a lack of clarity on specific points.  Furthermore, ##Figures 2 and 3 are not easy to read and labelled axes are missing from Figure 5##.  ##It's also not helpful that figures and tables do not appear close to where they are first mentioned within the text.##
+
+Overall, the paper is on a topic of relevance for AI and a general approach to tackling the problem of learning rules is set out.  However, clarity is lacking in a number of places, including within the evaluation, and as such  it is difficult to firmly establish the significance of the work. 
+
+================================ 
+Q1:Details about causal reasoning process
+A tiny executable example:
+Suppose we have a rule base with only one following rule. ((Z,price,rise,'',''):-('',X,suffer,Y,attack),isA(X,country),isA(Y,disaster),isA(Z,product),atLocation(Z,X) conf:0.84)     
+1.Given a query sentence: "Thailand suffered an earthquake attack"
+2.Extract the quintuple event: ('',Thailand,suffer,earthquake,attack)
+3.Search the related rules and facts to reduce inference time in Prolog. When searching rules, specific events match the cause or effect(abstract event) via Probase. Related facts can be isA(thailand,country),isA(earthquake,disaster), atLocation(rice,thailand),isA(rice,product).
+4.Convert them into standard Prolog code.
+
+isA(thailand,country).
+isA(earthquake,disaster).
+isA(rice,product).
+cutoff(X):- X>0.3.
+atLocation(rice,thailand).
+rise(_,_,_,_,[],_,[]).
+suffer(-,X,Y,attack,Es,C,Cs):-rise(Z,price,-,-,EIs,CI,CIs),isA(X,country),isA(Y,disaster),isA(Z,product),atLocation(Z,X),is(CI,0.84*C),cutoff(CI),append(EIs,[rise(Z,price,-,-)],Es),append(CIs,[0.84],Cs).
+
+5.Query "suffer(-,thailand,earthquake,attack,Es,1,Cs)." in SWI-Prolog.
+Get predicted events with confidences:
+Es=[rise(rice,price,-,-)],
+Cs=[0.84];
+
+Besides, if we search these facts: isA(rubber,product),atLocation(rubber,thailand), we can also predict the price of rubber will rise.
+In addition, refer to Q2 in Review #252380
+
+Q2:Evaluation criteria
+Refer to Q3 in Review #252380.
+
+Q3:Knowledge base translation
+We use the Google translator to translate both English ConceptNet and English Probase. We concatenate the two terms from the triple into one phrase and throw this phrase to Google translator, and then split the translated result string into two separate Chinese terms.
+
+Q4:Detail in financial price prediction
+The major part about financial price prediction is to apply our learned rules to do uncertainty reasoning in SWI-Prolog, and then combine multi prediction results to get the final prediction.
+
+------------------------------------------------------------------------------------------------------------------------
+Review #250832:
+The authors of this paper propose a scheme for acquiring causal knowledge from natural language texts and modeling it as logical rules. Firstly, they employ pattern matching to the natural language to identify and create rule instances while filtering out any poor rules. ##It is not clear if these patterns are written by hand, but I believe they are - so, this is not very interesting##. They describe the format as (Modifier of Subj, Subj, Predicate, Modifier of Obj, Obj), but then they use only (Subj, Predicate, Object) like in RDF triples in all examples. However, some other format is used then for rules like: ('铜/copper','价格/price','上涨/rise','','') - ##what are the last 2 strings "'',''"? Probably they are the modifiers (like number)##. Next, predicates are normalized, constraints are added, the rules are generalized, and a confidence value assigned weight is assigned to the said rule (##the procedures are sound, but very simplistic - more efficient ILP methods could be applied here##). The assumptions make reasoning poorly while the authors recognize that they limit “γ to 0.3 to control the Prolog engine to reason around two steps, since more than two steps lead to obviously unreasonable results.” The authors then discuss their results in predicting the price of futures.
+
+================================
+Q1: Extract the causation with handcrafted patterns is not clear.
+Yes, patterns are explicitly written by hand, and this is a common approach to extract causation from massive free texts. 
+
+Q2: Event format 
+We use the quintuple, consistently, to describe each event that exists in the rules. 
+In fact, many of the events in the example look like triples, but they are actually not. 
+Instead, they are (Modifier of Subj,Subj,Predicate, None,None) or (None,None,Predicate,Modifier of Obj, Obj).
+
+Q3:Approach is simplistic and can be replaced with ILP
+We are faced with Chinese text. Since linguistic resources, especially open-domain knowledge graphs for Chinese are extremely scarce, the used Chinese Probase and Chinese ConceptNet in our work are also translated from the English ones. Open Event extraction tools or open information extraction tools for Chinese are also rare. These two aspects make our approach seem simplistic. We can not get the negative rule instances by open information extraction from the free Web text, so we can not use the ILP methods mentioned in Section 1.2.
+
+Q3:The assumptions make reasoning poorly
+The threshold has two effects: it can prevent the Prolog from reasoning too deep to get the unreasonable predictions, and it also can avoid the endless reasoning loop since our rules learned automatically can be mutual-boosting causal relation.
+
+------------------------------------------------------------------------------------------------------------------------
+Review #252380:
+This paper describes an approach to learn Prolog rules for causal reasoning from unstructured text. These Prolog rules are annotated with confidence scores. Regular expressions are used for matching causal patterns, the Stanford parser is used for rule instance extraction, and then some additional heuristics are employed to eliminate certain rule instances. I have a number of problems with this paper. First, ##I do not understand the rule format, since some predicate names are missing; the format is not in standard Prolog notation. Why do you use this format?## Second, ##and this is the most important flaw, the paper does not describe in detail how the annotated Prolog rules are actually processed; are they processed with the help of a meta-interpreter?## Third, the authors mention a human evaluation of the top 1000 rules, ##but they do not provide any details about how this evaluation has been conducted##. Fourth, ##why does the rule with the highest confidence score (0.791) in Figure 3 only belong to the class "fair"?## Fifth, ##the author say that pronouns in events are meaningless; yes, I agree, if you do not resolve these pronouns.## Sixth, ##a number of references are missing; for example, a reference to MDL, and a reference to David Hume.## Apart from that I found the novelty of the presented approach modest and the paper not particularly well-written.
+
+================================ 
+
+Q1: Do not understand rule format
+What we show in the paper is not standard Prolog notation, which is readable to humans and is the original look we have learned from the text. We convert this sort of human-readable rules into standard Prolog code when we do causal reasoning, especially when we generate Prolog code, refer to Q1 in Review #210384.
+
+Q2:Causal reasoning Process
+Refer to Q1 in Review #210384, we don't need the meta-interpreter, because we exploit the IsA relation in Chinese Probase to instantiate the concepts(namely variables) that exist in a rule, exploit the binding mechanism in Prolog to realize reasoning from one part(cause or effect) to the other part(effect or cause) within a rule and exploit matching the mechanism in Prolog to realize reasoning between different rules.
+
+Q3: The criteria about the three level of the rule and the result.
+The 'good' means the rules are causally correct, 'bad' means the rules are causally incorrect(e.g., an event should cause the price of something to rise, but its price falls.) and 'fair' means that the causality in the general rule is vague and hard to tell. We will add the following results to the revised version: in the first 10,000 rules, a total of 42,037 rules have been learned, good: 50.5%, Fair: 39.5%, bad: 10%.
+
+Q4: Why does the rule with the highest confidence score (0.791) in Figure 3 only belong to the class "fair"
+Because the confidence of the rule is automatically obtained by the four features of the rule, it can only reflect the approximate confidence of the rules, which is not very precise. Otherwise, as long as we get the rules at the top of the ranked list, we can get 100% of the good results.
+
+------------------------------------------------------------------------------------------------------------------------
+Review #255407:
+Relevance: The paper is certainly addressing a relevant and important problem, and shows the application of AI in an important domain.
+
+
+Significance: The approach presented in the paper is certainly very interesting and so worth reading and being cited. ##My main concern is that the goal and part of the solution very closely resemble prior work in this area##. In particular, a set of papers by Radinsky et al. including the following JAIR paper, address the same problem:
+[M1] Kira Radinsky, Sagie Davidovich, Shaul Markovitch:Learning to Predict from Textual Data. J. Artif. Intell. Res. 45: 641-684 (2012)
+Still, the solution presented in this paper is designed for Chinese and uses different sources of knowledge and so solves a few new challenges.
+
+
+Originality: As mentioned above, I am concerned about the similarity to Radinsky et al.'s work
+[M2] Kira Radinsky, Sagie Davidovich, Shaul Markovitch:Learning causality for news events prediction. WWW 2012: 909-918
+also see:
+[M3] Chikara Hashimoto, Kentaro Torisawa, Julien Kloetzer, Jong-Hoon Oh:Generating Event Causality Hypotheses through Semantic Relations. AAAI 2015: 2396-2403
+[M4] Canasai Kruengkrai, Kentaro Torisawa, Chikara Hashimoto, Julien Kloetzer, Jong-Hoon Oh, Masahiro Tanaka:Improving Event Causality Recognition with Multiple Background Knowledge Sources Using Multi-Column Convolutional Neural Networks. AAAI 2017: 3466-3473
+
+
+Technical Quality: The solution is technically very interesting and the results seem promising based on the examples shown. ##The evaluation however has issues. Table 1 compares with other causal knowledge bases and it seems that the main advantage is regarding how "rich" the information is, and the solutions are labeled as "rich", "richer", "richest". This is not acceptable in a research track paper and an example of many statements in the paper that are informal and not scientific##.
+
+
+Clarity and quality of writing: There are numerous language issues in the paper. Most importantly, there are many vague and informal statements. Again, you need to avoid informal statements. Part of this doesn't affect readability and is only a matter of technical writing in English (e.g. you should avoid "By the way"). Others affect readability, e.g. ##I don't really understand Section 2.3.##
+
+
+Scholarship: There are two issues with respect to positioning in the literature:
+1) As mentioned above, there are a number of missing related work that can be directly compared with or are relevant. Another work missed, with respect to source of knowledge, is:
+[M5] Jesse Dunietz, Lori S. Levin, Jaime G. Carbonell:The BECauSE Corpus 2.0: Annotating Causality and Overlapping Relations. LAW@ACL 2017: 95-104
+2) Comparison with cite related work is very informal in parts, especially comparison in Section 1.1. For example, these statement are very vague, informal, and not acceptable in a research paper:
+"this kind of knowledge is usually less expressive and less informative"
+"These structures are usually too abstract or vague to be understood"
+"However, it not only has the problems of interpretability and reusability but also has the problem of weak reasoning ability"
+At the very least you need examples to clarify what you mean, but ideally you need strong scientific arguments and/or experiments showing the issues stated.
+
+
+Overall Score: In summary, my main concerns for accepting this paper are as follows: 1) missing a discussion of and/or comparison with the approach of Radinsky et al., and other missing references of recent related work 2) poor quality of writing 3) experiments and results that may hardly be reproducible unless source code is shared.
+
+I strongly recommend a demo submission at IJCAI or a similar venue given that you seem to have a running demo out of this work.
+
+================================
+Q1:Evaluation in Table 1 and comparison BECauSE Corpus 2.0
+In table 1, we want to emphasize that our learned causal knowledge is rich in information and is obtained automatically. The mentioned BECauSE Corpus 2.0 is really a valuable dataset for us to study causality and a fly in the ointment is that it is handcrafted.
+
+Q2:Causal reasoning process
+Refer to Q1 in Review #210384 and Q2 in Review #252380
+
+Q3:Experiments and results that may hardly be reproducible unless the source code is shared.
+We will release the code, together with the demo.
+
+
+Q4:Main concerns about the work buy Radinsky et al:
+It is really an important omission of the work by Radinsky et al.
+We were unaware of their work. We read it and found out some main differences which we will include in the final version:
+
+Regarding representation: Their general causal knowledge is implicit in each cluster of rule instances, and the boundaries of rule instances in each cluster are not clear. However, our explicit causal knowledge logical form clearly describes the extent of each rule and the confidence of each rule describes their quality. In addition, manual rule modifications are also important, including rule addition, rule deletion, rule editing, etc. In their approach, if we want to manually modify a rule in the HAC hierarchical clustering result, we need to rerun the algorithm to obtain the new clustering result, while our approach is less sensitive to manual modifications.
+
+Regarding learning: These two algorithms can learn general rules, their methods based on HAC algorithm can get all granularity clustering results from bottom to top, and our algorithm can automatically learn the proper granularity from the given dataset by controlling generalization and specialization. 
+
+Regarding reasoning: Our reasoning mechanism is more straightforward and automatical. We can easily get the chain prediction from Prolog, Refer to Q1 in Review #210384 and Q2 in Review #252380.
+

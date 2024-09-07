@@ -1,0 +1,790 @@
+\section{Evaluation}
+\label{sec:eval}
+In this section, we introduce the dataset and experimental setup.
+We compare our proposed framework, along with its variants,
+with existing summarizaiton models 
+and demonstrate the advantages of our keyword aware models
+~\footnote{The data and source code
+are released on \url{https://github.com/YizhuLiu/SetKE_ABS}.}
+trained on set-level pseudo summaries.
+
+\subsection{Datasets}
+In this experiment, we use 5 datasets which are either 
+news, web pages or user generated QAs on the web for training and test.
+
+\textbf{CNN/Daily Mail}~\cite{HermannKGEKSB15} (CNNDM)
+is a popular summarization dataset, 
+which contains 286,817 training pairs,
+13,368 validation pairs and 11,487 test pairs.
+We follow Nallapati~\shortcite{NallapatiZSGX16} with the data preprocessing
+and use the non-anonymized version as See et al.~\shortcite{SeeLM17}.
+
+\textbf{Webis-TLDR-17 Corpus}~\cite{tldr17} (Web17), one of the first large-scale summarization datasets from social media domain, contains 3 million pairs of content and self-written summaries from Reddit.
+
+\textbf{Webis-Snippet-20 Corpus}~\cite{AbsSnippet20} (Web20) contains approximately 
+3.5 Million (webpage content, abstractive snippet) 
+triples for the task of abstractive snippet generation of web pages. 
+The corpus is compiled from the DMOZ Open Directory Project.
+
+\textbf{WikiHow Corpus}~\cite{wikihow} (Wiki) is a large-scale dataset using the online WikiHow 
+knowledge base. Each article consists of multiple paragraphs and each paragraph starts with a sentence summarizing it. The dataset contains 200,000 long-sequence pairs.
+
+\textbf{DUC-2002} (DUC) is a test set of 567 document-summary pairs for 
+single-document summarization. We use the models trained on CNNDM
+to do the test on DUC, which can evaluate the generalizability 
+of the models.
+
+\subsection{Experimental Setup}
+\subsubsection{Implementation details}
+We set batch size as $32$ for all training processes.
+All models are optimized by Adam optimizer.
+In extractor, we take a single-layer CNN model with 100 dimensions
+as keywords encoder whose input are randomly initialized with $128$-dimensional 
+vectors.
+For pointer network decoder, we employ LSTM
+models with 256-dimensional hidden states.
+We implement our document encoders, BiLSTM encoder and HIBERT encoder,
+as described by Chen~\shortcite{FastAbs18} and Zhang ~\shortcite{HiBert19}.
+We fine-tune HIBERT encoder with {\em learning rate} ({\em lr}) $5e-5$ and warmup steps $4,000$.
+We set $\lambda_{c}=1.0$, 
+$\lambda_{k} = 0.5$,
+$\lambda_{s} = 0.5$ (Eq. \ref{func:loss}).
+For abstractor, the {\em lr} of PG is $1e-03$.
+We follow Lewise~\shortcite{BART19} in fine-tuning BART with
+$lr=3e-05$ and warmup $=500$.
+For RL, the {\em lr} of RL as $1e-04$. 
+We set $\gamma_{sen} = 0.5$, 
+$\gamma_{set} = 1.0$,
+$\gamma_{sum} = 1.0$ (Eq. \ref{func:reward}) with grid
+search on validation set.
+
+\subsubsection{Models under comparison}
+In this experiments, we evaluate different methods on above datasets.
+The brief description of these methods are shown in \tabref{tab:baselines}.
+
+\begin{table}[th]
+    \small
+	\centering
+	\begin{tabular}{|l|l|}
+		\hline
+		\textbf{Abbrev.} & \textbf{Description} \\ \hline
+        \multicolumn{2}{|c|}{\textbf{Extractive Summarization}}\\
+	    \hline
+	    	PN~\cite{FastAbs18} & BiLSTM encoder with pointer decoder\\
+		\hline
+		PN$_{ad}$ & BiLSTM encoder with aligned pointer decoder\\
+		\hline
+		KE & Keyword-based extractor with BiLSTM encoder \\
+		\hline
+		KE$_{cl}$ & \tabincell{l}{Keyword-based extractor \\ with BiLSTM encoder and combinatorial loss}\\
+		\hline
+	    	HIBERT~\cite{HiBert19} & Pretrained HIBERT model\\
+		\hline
+		HIBERT$_{ad}$ & HIBERT encoder with aligned decoder \\
+		\hline
+		KE$_{HI}$ & \tabincell{l}{Keyword-based extractor with HIBERT encoder }\\
+		\hline
+		KE$_{HIcl}$ & \tabincell{l}{Keyword-based extractor \\ with HIBERT encoder and combinatorial loss}\\
+		\hline
+
+        \multicolumn{2}{|c|}{\textbf{Abstractive Summarization}}\\
+	    \hline
+	    PG~\cite{SeeLM17,FastAbs18} & Pointer generator\\
+		\hline
+	    PG$_{sl}$	&PG in parallel with special loss\\
+		\hline
+	    BART~\cite{BART19} & BART model\\
+		\hline
+	    BART$_{sl}$	& BART in parallel with special loss\\
+		\hline
+	    KE$_{cl}$-PG$_{sl}$	& 2-stage KE$_{cl}$ and PG$_{sl}$\\
+		\hline
+	    KE$_{HIcl}$-BART$_{sl}$	& 2-stage KE$_{HIcl}$ and BART$_{sl}$\\
+		\hline
+	    FastAbs~\cite{FastAbs18} & \tabincell{l}{Ext-Abs framework training on \\ sentence-level pseudo summaries}\\
+		\hline
+	    FastAbs$_{HB}$ & \tabincell{l}{Replace extractor and abstractor in FastAbs to \\ HIBERT and BART} \\
+		\hline
+	    X-RL$_{sen}$	& 2-stage model \textit{X} training on sentence-level reward\\
+		\hline
+	    X-RL$_{sum}$	& 2-stage model \textit{X} training on summary-level reward \\
+		\hline
+	    X-CRL& 2-stage model \textit{X} training on CRL\\
+		\hline
+	\end{tabular}
+	\caption{The abbreviation and description of different methods.}%in our experiments.}
+	\label{tab:baselines}
+\end{table}
+
+\subsubsection{Evaluation Metrics}
+We evaluate the performance of our method by {\em automatic metrics}
+and {\em human evaluation}.
+
+\textbf{Automatic Metrics.}
+\textbf{ROUGE} scores (F1) include
+ROUGE-1 (R-1), ROUGE-2 (R-2) and
+ROUGE-L(R-L)~\cite{rouge}.
+
+\textbf{Human Evaluation.}
+%\par{
+We randomly select 100 samples from each dataset
+and average the scores by three human annotators who are
+native or proficient English speakers.
+\footnote{
+The Cohen's Kappa coefficient between annotators 
+are $0.68$ (manAlign), $0.72$ (KC) and $0.64$ (Read), indicating 
+substantial agreement.}
+\itemsep0em
+\begin{itemize}
+\item 
+
+\textbf{Manual Alignment Accuracy} (manAlign).
+We rank and score pseudo summaries with three-scale scores
+based on the informativeness and redundancy of pseudo summary with respect to reference,
+i.e., better (2.0), equal (1.0) and worse (0.0). 
+
+\item 
+\textbf{Keyword Coverage}
+reflects the accuracy of keywords in generated summary.
+Given a pair of generated summary and reference summary, we manually
+extract their keywords and sequence these keywords based on their locations in source. 
+Keyword coverage is computed as the ROUGE-1 precision
+between generated and reference keywords sequences.
+
+\item 
+\textbf{Readability}.
+We rank summaries 
+generated by our best model and that of
+BART according to logical consistency with source document and informativeness.
+The summary should be labeled as better, equal or worse.   
+includes the percentage of the number of summaries 
+with different label to the total summaries.
+\end{itemize}
+
+
+\subsection{Results}
+\label{sec:results}
+
+\subsubsection{Pseudo Summary}
+\label{sec:evpseudo}
+%which extract the document sentence with the highest ROUGE score  
+%for each reference sentence.
+%However, the abstractive sentences are generated by summarizing multiple sentences of source.
+%The sentence-level method cannot deal with the crossing information among multiple sentences.
+%which is the feature of abstractive summarization.
+%Summary-level methods
+%select the best combination of document sentences
+%that maximizes ROUGE score with reference summary. 
+%As a result, the importance of each token in summary are regarded the same, causing information loss in pseudo summary.
+In a two-stage framework, the pseudo summaries 
+is critical to the training and testing of the model.
+Better intermediate summaries can enhance the alignment between 
+inputs and outputs of the abstractor during training and 
+generate more accurate abstractive summaries during testing.
+As shown in \tabref{tab:align}, 
+our set-level keyword-based matching heuristics outperforms 
+sentence-level and summary-level heuristics, achieving the best manAlign score.
+%Because our pseudo summaries contains more complete information of reference summaries.
+As shown in \tabref{tab:align_exp}, 
+the sentence-level pseudo summaries always
+ignore cross-sentence information. 
+Summary-level pseudo summaries capture the information among sentences
+and get better ROUGE scores than sentence-level pseudo summaries.
+However, summary-level pseudo summaries cannot recognize important 
+information in reference summary, which bring noise to the pseudo summaries. 
+%Unlike sentence-level matching sentence one-to-one, 
+The proposed set-level heuristic extracts the most aligned multi-sentence set 
+for one or more reference sentences,
+which can better align the reference sentences abstracted from 
+multiple source sentences. As the set-level method is based on keywords, 
+the pseudo summaries cover all keywords in reference summaries,
+significantly reducing salient information lose.
+
+\begin{table*}[ht!]
+	\centering
+	\small
+	\begin{tabular}{|l|l|c|c|c|c|c|c|c|c|c|c|c|c|c|}
+		\hline
+		\multirow{2}{*}{Data} &\multirow{2}{*}{\tabincell{l}{Pseudo \\summary}} &\multicolumn{4}{|c|}{R-1} &\multicolumn{4}{|c|}{R-2}& \multicolumn{4}{|c|}{R-L}& \multirow{2}{*}{manAlign}\\ 
+		%\hline
+		\cline{3-14}
+		 & & PG & PG$_{sl}$ & BART & BART$_{sl}$ & PG & PG$_{sl}$ & BART & BART$_{sl}$ & PG & PG$_{sl}$ & BART & BART$_{sl}$ & \\
+		\hline
+		\multirow{3}{*}{CNNDM} & sentence & 48.75 & 49.70 & 50.55 & 50.64 & 26.16 & 26.63 & 27.34 & 27.60 & 45.98 & 46.94 & 47.02 &47.59 & 0.65 \\
+		%\cline{2-8}
+		&summary & 48.98 &-& 51.20 &- & 26.85 &-&28.32 &- &46.41 &- &48.43 &- & 0.70 \\
+		%\cline{2-8}
+		&set & \bf 49.31 & \bf 50.2 & \bf 52.02 &\bf 52.53 & \bf 27.12&\bf 27.64 & \bf 28.66 &\bf 28.83 & \bf 49.34 &\bf 49.88& \bf 48.72&\bf 49.12& \bf 1.65 \\
+		\hline
+		\multirow{3}{*}{Web17} & sentence & 19.20 & 19.44 & 19.77 & 20.01 & 5.04 & 5.16 & 5.87 & 5.98 & 16.12 & 16.26 & 17.02 & 17.64 & 0.75  \\
+		&summary & 19.51 &- & 19.82 & -& 5.13 &-& 5.66 &-& 16.38 &- & 17.11 &-& 0.85\\
+		&set & \bf 20.34 & \bf 20.75 & \bf 21.19 & \bf 22.02 & \bf 5.28 & \bf 5.65 & \bf 5.97 & \bf 6.10 & \bf 16.76 & \bf 16.92 & \bf 17.24 & \bf 17.80  & \bf 1.40 \\
+		\hline
+		\multirow{3}{*}{Web20} & sentence & 19.26 & 19.24 & 19.55 & 19.61 & 5.07 & 5.50 & 6.12 & 6.14 & 17.56 & 17.96 & 18.21 & 18.37 & 0.94   \\
+		&summary & 19.28 &- & 20.70 & -& 5.03 &-& 6.21 &-& 17.27 &- & 18.26 &-& 0.97\\
+		&set & \bf 19.30 & \bf 19.46 & \bf 21.22 & \bf 21.43 & \bf 5.32 & \bf 5.67 & \bf 6.34 & \bf 6.54 & \bf 17.58 & \bf 18.02 & \bf 18.27 & \bf 18.45 & \bf 1.09 \\
+		\hline
+		\multirow{3}{*}{WiKi} & sentence & 27.01 & 28.17 & 28.74& 29.02 & 10.40 & 11.06& 11.98 & 11.75 & 20.79 & 21.76 & 21.22 &22.78 & 0.78 \\
+		&summary &32.28  & - & 33.47 & -& 11.27 &- & 12.32 & - &25.25 & - & 26.12 & - & 0.86\\
+		&set & \bf 34.07 & \bf 34.76 & \bf 35.06 & \bf 35.45 & \bf 11.76 & \bf 12.16 & \bf 12.37 & \bf 12.94 & \bf 26.22 & \bf 27.61 & \bf 27.33 & \bf 28.02 & \bf 1.36 \\
+		\hline
+	\end{tabular}
+	\caption{The ROUGE scores of abstractors trained on pseudo summaries at different levels.}
+	\label{tab:align}
+\end{table*}
+
+%\KZ{Because there are many variants with our methods, the notations are
+%quite complicated. I think we need to think carefully how to denote these
+%variants. Make sure they are consistent and easy to recognize. $Abs_{sl}$ e.g., in Table 4 can't be found in the text... Don't know what it is.}
+
+%To examine the automatic alignment accuracy of different pseudo summaries, we directly use the aligned pseudo summaries of training set and test set as the input to the abstractor. The results as listed in \tabref{tab:align}, showing the optimal scores for different alignment settings.
+In order to examine the effects of different pseudo summaries on the model,
+we assume that the extractor is perfect and directly input 
+three kinds of pseudo summaries to train and test the abstractors 
+respectively.
+%we train different abstractors on pseudo summaries
+%and reference summaries of training set. 
+%Then, suppose that the extractor is perfect and extracts the sentences that are exactly the same as pseudo summaries,
+%we input pseudo summaris of test set to abstractor to generate summaries.
+As shown in \tabref{tab:align}, the ROUGE scores between these generated 
+summaries and references 
+denote the upper bound of models on different pseudo summaries, 
+which can reflect the alignment between pseudo summaries and reference summaries.
+The higher ROUGE scores, the more aligned dataset.
+The ROUGE scores of CNNDM dataset in \tabref{tab:align} are much better than ROUGE scores of other dataset.
+Since some sentences in reference summaries of CNNDM dataset are extracted from the source documents,
+the quality of intermediate results has a greater impact on CNNDM dataset.
+The improvement of ROUGE scores reflects the enhancement of alignment.
+Compared with other datasets, the improvement of ROUGE score on Web20 is minimal.
+The reason is that the length of reference summaries of Web20 dataset is shorter than others,
+causing the similar pseudo summaries extracted through different heuristics.
+%As we directly use the aligned pseudo summaries of training set and test set as the input to the abstractor, 
+%the results listed in \tabref{tab:align} show the optimal scores for different alignment 
+%settings.
+%The results listed in \tabref{tab:align} show the optimal scores for different alignment settings.
+%As for the automatic alignment accuracy,
+%we generate summaries by abstractor models
+%(Base-Abs and Pre-Abs) 
+%training on competitive pseudo summaries and their corresponding reference summaries of training set.
+%As shown in \tabref{tab:align},
+%the ROUGE scores shows the optimal results of ext-abs framework based on different pseudo summaries
+%because we use pseudo summaries of test set as input to generated abstractive summaries, which
+%means that the extractor is perfect.
+
+The models trained on set-level pseudo summaries achieve the highest ROUGE scores on all of the datasets.
+This denotes that the abstractor models 
+can benefit from training on set-level pseudo summaries.
+Thus, our proposed set-level matching heuristics can produce more aligned training pairs
+for generation and make the abstractor better.
+%Our propsed models are trained on pseudo summaries based on set-level keywords-enhanced
+%matching heuristics in the following experiments.
+
+
+\subsubsection{Results for the framework}
+We compare our proposed models with existing models.
+%and show the effectiveness in terms of architectures.
+%The {\em Base-} and {\em Pre-} denote non-pretrained model
+%and pretrained model respectively.
+Following previous work, we take reference summaries in datasets as
+the ground truth of extractive summaries and abstractive summaries. 
+
+\begin{table*}[ht!]
+	\centering
+	\small
+	%\setlength{\tabcolsep}{1mm}{
+	\begin{tabular}{|l|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|}
+        \hline
+		\multicolumn{2}{|c|}{\multirow{2}{*}{Models}} &\multicolumn{3}{|c|}{CNN/DM} & \multicolumn{3}{|c|}{Web17} & \multicolumn{3}{|c|}{Web20} & \multicolumn{3}{|c|}{Wiki} & \multicolumn{3}{|c|}{DUC}\\ 
+        \cline{3-17}
+		\multicolumn{2}{|c|}{} &  R-1 & R-2 & R-L & R-1 & R-2 & R-L &  R-1 & R-2 & R-L & R-1 & R-2 & R-L & R-1 & R-2 & R-L \\
+        \hline
+        \multicolumn{17}{|l|}{\bf Only Extractor}\\
+        \cline{3-17}
+        \hline
+		\multicolumn{2}{|l|}{PN$_{ad}$} & 37.02 & 16.62 & 33.78 & 16.17& 3.13 &10.55 & 7.81 & 1.40 & 7.02 & 18.65 & 3.99 & 14.88 & 35.43 & 15.20 & 32.72\\
+		\multicolumn{2}{|l|}{KE} & 40.25 & 18.15 & 36.46 & 16.34 & 3.51 & 10.39 & 7.90& 1.43 & 7.10 & 18.83 & 4.01 & 15.07 & 38.02 & 16.35 & 34.81 \\
+		\multicolumn{2}{|l|}{KE$_{cl}$} & \bf 41.78 & \bf 18.95 & \bf 37.33 & \bf 17.00 & \bf 3.83 & \bf 10.76 & \bf 8.04 & \bf 1.50 & \bf 7.33  & \bf 19.50 & \bf 5.35 & \bf 15.62 & \bf 38.94 & \bf 17.73 & \bf 35.75 \\
+        \hline
+		\multicolumn{2}{|l|}{HIBERT$_{ad}$} & 41.71 & 19.35 & 38.44 & 18.25 & 3.95 & 14.20 & 7.93 & 1.55 & 7.72 & 20.78 & 5.79 & 16.27 & 38.63 & 18.04 & 36.27\\
+		\multicolumn{2}{|l|}{KE$_{HI}$} & 41.70 & 19.50 & 38.57 & 18.32 & 4.11 & 14.34& 9.01 & 1.97 & 8.62 & 21.22 & 5.84 & 16.44 & 39.17 & 18.45 & 36.20 \\
+		\multicolumn{2}{|l|}{KE$_{HIcl}$} & \bf 43.01& \bf 20.04 & \bf 39.02 & \bf 18.69 & \bf 4.17 & \bf 14.34 & \bf 9.34 & \bf 2.44 & \bf 8.75& \bf 22.50 & \bf 5.92 & \bf 16.62 & \bf 40.07 & \bf 18.78 & \bf 36.34\\
+        \hline
+        %\multicolumn{16}{|c|}{\bf Only Abstractor}\\
+        %\hline
+        %\cline{2-16}
+        %\hline
+		%Base-Abs & 0.17 & 0.56 & 0.39 & 0.12 & 0.60 & 0.32 & & & & & & & & & \\
+		%Base-Abs$_{sl}$ & 0.25 & 0.56 & \bf 0.43 & 0.28 & 0.60 & \bf 0.38 & & & & & & & & & \\
+        %\hline
+		%Pre-Abs & 0.17 & 0.56 & 0.39 & 0.12 & 0.60 & 0.32 & & & & & & & & & \\
+		%Pre-Abs$_{sl}$ & 0.25 & 0.56 & \bf 0.43 & 0.28 & 0.60 & \bf 0.38 & & & & & & & & & \\
+        %\hline
+        \multicolumn{17}{|l|}{\bf Extractor-Abstractor w/o RL}\\
+        \hline
+		\multirow{2}{*}{PN$_{ad}$} & PG$_{sl}$ & 32.75 & 14.03 & 30.32 & 15.88 & 3.01 & 10.47 & 7.65& 1.39& 7.13 & 12.71& 3.12& 9.11 & 29.07 & 13.74& 24.11\\
+        %\cline{2-17}
+		& BART$_{sl}$ & 40.12 & 17.71 & 32.35 & 16.04 & 3.48 & 10.95 & 8.15 & 1.50 & 8.28 & 19.11 & 4.92 & 16.80 & 36.20& 16.38& 29.67\\
+        \hline
+		\multirow{2}{*}{KE} & PG$_{sl}$ & 37.42 & 15.70 & 34.83 & 15.66 & 3.31 & 10.00 & 7.38 & 1.41 & 7.33 & 14.83 &3.87 & 13.91 &34.20 &14.03 & 29.70\\
+		& BART$_{sl}$ & 40.65 & 18.29 & 33.32 & 16.14 & 3.72 & 12.31 & 7.65 & 1.44 &7.13 & 19.66 & 5.12 & 16.82 &37.20 &16.76 & 30.28 \\
+        %\cline{2-17}
+        \hline
+		\multirow{2}{*}{KE$_{cl}$} & PG$_{sl}$ & 38.09 & 16.61&35.64 & 16.55 & 3.75 & 10.77 & 7.25 & 1.44 &7.36& 18.85 & 4.23 & 16.52 & 34.88 & 15.23 & 31.00 \\
+        %\cline{2-17} 
+		& BART$_{sl}$ & 40.70 & 19.27 & 36.23 & 17.74 & 4.05 & 13.69 & 9.73 & 2.12& 10.07 & 20.32 & 5.77 & 16.80 & 34.97 & 17.21 & 31.37 \\ 
+		\hline 
+		\multirow{2}{*}{HIBERT$_{ad}$} & PG$_{sl}$ & 38.45 & 16.03 &33.85 & 16.78 & 3.21 & 10.98 & 7.36 & 1.40 & 7.52 & 18.83 & 4.75 & 16.27 & 32.16 & 15.74 & 33.11 \\ 
+		& BART$_{sl}$ & 42.48 & 19.61 & 39.02 & 17.77 & 4.11 & 14.07 & 8.13 & 1.59 & 7.82 & 20.03 & 5.94 & 16.99 & 38.76 & 17.95 & 36.11 \\
+        %\cline{2-17}
+        \hline
+		\multirow{2}{*}{KE$_{HI}$} & PG$_{sl}$ &39.62  & 18.07 & 33.29 & 16.22 & 3.38 & 11.11 &8.47 &1.60 & 8.01 & 19.14& 5.08 &16.25 & 35.18 & 16.34 & 34.01 \\
+        %\cline{2-17}
+		& BART$_{sl}$ & 42.19 &  19.82 & 38.57 & 18.53 & 4.16 & 14.27 & 12.16 & 2.53 & \bf 11.58 & 22.17 & 6.82 & 18.24 & 39.73 & 18.94 & 36.38\\
+        \hline
+		\multirow{2}{*}{KE$_{HIcl}$} & PG$_{sl}$ & 40.63 & 18.11  & 36.34 & 18.59 & 3.66 & 12.52 & 8.37 & 1.67 & 7.90 & 20.47 & 5.66 & 16.27 &35.66 & 17.12 & 34.09 \\
+        %\cline{2-17}
+		& BART$_{sl}$ & \bf 43.12 & \bf 20.13 & \bf 39.08 & \bf 18.75 & \bf 4.20 & \bf 14.66  & \bf 12.71 & \bf 2.89& 11.55 & \bf 25.70 & \bf 7.52 & \bf 20.08 & \bf 40.24 & \bf 19.01 & \bf 36.79 \\
+        \hline
+	\end{tabular}
+    %}
+    \caption{The ROUGE scores of extractor and extractor-abstractor without RL.}
+	\label{tab:extabs}
+\end{table*}
+
+\textbf{Extractor.}
+%The extractor used in our ext-abs framework
+%consists of two encoders, document encoder and keywords encoder.
+We train the extractor on (source document, pseudo summary) pairs.
+%As our set-level pseudo summaries are obtained based on keywords,
+%the keywords encoder (KE) is useful to guide 
+%extractor to select more accurate sentences.
+As shown in \tabref{tab:extabs}, the keyword-based extractor 
+achieves higher ROUGE scores on various datasets.
+The basic models (PN$_{ad}$ and HIBERT$_{ad}$) with only one document encoder 
+have been improved on ROUGE scores by adding keyword encoder (KE),
+which demonstrates that KE is useful to guide extractor to select more accurate sentences.
+After adding combinatorial loss (CL), the ROUGE scores
+become higher.
+The reason is that the composition of CL is consistent with 
+the extraction of pseudo summaries and the structure of extractor.
+Besides, CL containing keywords loss can help extractor to select sentences with more keywords.
+The ROUGE scores of extracted summaries generated by HIBERT$_{ad}$
+are higher since the HIBERT$_{ad}$ is fine-tuned on a pretrained model which
+can enhance the language modeling ability.
+Compared with PN$_{ad}$, the HIBERT$_{ad}$ can capture
+more information about the relationship between inputs of the encoder and the decoder,
+including keyword information.
+Therefore, the improvements on different datasets of 
+HIBERT document encoder (HIBERT$_{ad}$)
+are always less than 
+BiLSTM document encoder (PN$_{ad}$).
+As shown in \tabref{tab:refextabs},
+compared with the extractor without keyword encoder,
+the sentences extracted from our keyword-based extractors can capture
+more keywords of reference summary.
+However, the extractor without CL always generates duplicate keywords.
+As shown in \tabref{tab:rouge} and \tabref{tab:refextabs}, 
+KE$_{HIcl}$ 
+performs better than KE$_{HI}$ as the sentences extracted by KE$_{HIcl}$
+contain more keywords with less repetition.
+The reason is the loss function of KE$_{HIcl}$
+considers the accuracy of the extracted keywords. 
+
+As the extractor is the first step of ext-abs framework, 
+the output of the extractor is very important.
+As shown in \tabref{tab:extabs}, with the same abstractor, 
+the ext-abs frameworks with keyword-based extractor get higher ROUGE scores.
+This shows that the keyword-based extractor can provide better input to abstractor.
+ %and generate high quality abstractive summaries.
+ \begin{table*}[th]
+ 	\begin{center}
+ 		\small
+ 		\subtable[Reorganized reference summary.]{
+ 			\begin{tabular}{|l|}%{|p{7cm}|rl|}
+ 				%\hline \bf Reorganized Reference summary \\
+ 				\hline \textit{Set 1.} federal \textbf{education minister} smriti irani was visiting a \textbf{fabindia} outlet in the tourist resort state of goa on friday when she discovered \\
+ 				a surveillance \textbf{camera} pointed at the \textbf{changing room}. state \textbf{authorities} 
+ 				found an overhead \textbf{camera} that the minister had spotted and determined \\
+ 				that it was indeed able to take \textbf{photos} of customers. \\
+ 				\textit{Set 2.} four employees of the store have been \textbf{arrested}. if \textbf{convicted}, 
+ 				they could spend up to \textbf{three years} in jail. \\
+ 				\hline
+ 			\end{tabular}
+ 		}
+ 		\qquad
+ 		\subtable[Extractive summaries of different extractor.]{
+ 			\begin{tabular}{|l|}%{|p{7cm}|rl|}
+ 				\hline \bf HIBERT \\
+ 				\hline new delhi , india -lrb- cnn -rrb- police have \textbf{arrested} four employees of
+ 				a popular indian ethnic-wear chain after a minister spotted a security\\ 
+ 				\textbf{camera} overlooking the \textbf{changing room} of one of its stores . federal
+ 				\textbf{education minister} smriti irani was visiting a \textbf{fabindia} outlet in
+ 				the tourist\\ resort state of goa on friday when she discovered a 
+ 				surveillance \textbf{camera} at the \textbf{changing room} , police said .\\
+ 				\hline \bf HIBERT$_{ad}$ \\
+ 				\hline \textit{Set 1)} federal \textbf{education minister} smriti irani was visiting a \textbf{fabindia} 
+ 				outlet in the tourist resort state of goa on friday when she discovered \\
+ 				a surveillance \textbf{camera} pointed at the \textbf{changing room} ,
+ 				police said . \\
+ 				\textit{Set 2)} `` \textit{fabindia} is deeply concerned and shocked at this allegation , 
+ 				'' the company said in a statement . `` we are in the process of investigating\\
+ 				this internally and will be cooperating fully with the police . '' \\
+ 				\hline \bf KE$_{HI}$ \\
+ 				\hline \textit{Set 1)} new delhi , india -lrb- cnn -rrb- police have \textbf{arrested}
+ 				four employees of a popular indian ethnic-wear chain after a minister spotted 
+ 				a \\security \textbf{camera} overlooking the \textbf{changing} \textbf{room} of one of
+ 				its stores . \\
+ 				\textit{Set 2)} federal \textbf{education minister} 
+ 				smriti irani was visiting a  \textbf{fabindia} outlet in the tourist 
+ 				resort state of goa on friday when she discovered a \\surveillance
+ 				\textbf{camera} at the \textbf{changing} \textbf{room} , police said .\\
+ 				\textit{Set 3)} four employees of the store have been \textbf{arrested} , 
+ 				but its manager -- a woman -- was still at large saturday , 
+ 				said goa police superintendent \\kartik kashyap . \\
+ 				\hline \bf KE$_{HIcl}$ \\
+ 				\hline \textit{Set 1)} federal \textbf{education minister} smriti irani was
+ 				visiting a \textbf{fabindia} outlet in the tourist resort state of 
+ 				goa on friday when she discovered a \\surveillance \textbf{camera} pointed 
+ 				at the \textbf{changing room} . state \textbf{authorities} launched their 
+ 				investigation right after irani levied her accusation .\\
+ 				\textit{Set 2)} four employees of the store have been \textbf{arrested} .
+ 				if \textbf{convicted}, they could spend up to \textbf{three years} in jail. \\
+ 				\hline
+ 			\end{tabular}
+ 		}
+ 		\subtable[Abstractive summaries of different end-to-end models.]{
+ 			\begin{tabular}{|l|}%{|p{7cm}|rl|}
+ 				\hline \bf BART \\
+ 				\hline
+ 				federal \textbf{education minister} smriti irani was visiting a \textbf{fabindia} outlet in
+ 				the tourist resort state of goa . she discovered a surveillance camera\\
+ 				pointed at the \textbf{changing room}. four employees of the store have been
+ 				\textbf{arrested} , but the manager is still at large . the arrested staff have been\\
+ 				charged with voyeurism and breach of privacy . \\
+ 				\hline \bf KE$_{HIcl}$-BART\\
+ 				\hline \textit{Set 1)}  federal \textbf{education minister} smriti irani was visiting a  \textbf{fabindia} outlet in goa .\\
+ 				\textit{Set 2)} \textbf{fabindia} is concerned and shocked at this allegation. \\
+ 				\hline \bf KE$_{HIcl}$-BART$_{sl}$\\
+ 				\hline \textit{Set 1)} police \textbf{arrested} four employees after a minister spotted a security camera .\\
+ 				\textit{Set 2)} federal \textbf{education} \textbf{minister} smriti irani was visiting a  \textbf{fabindia} outlet in goa . \\
+ 				%\textit{Set 3)} four employees have been \textbf{arrested} , but its manager is still at large . \\
+ 				\hline \bf KE$_{HIcl}$-BART$_{sl}$-CRL\\
+ 				\hline
+ 				\textit{Set 1)} federal \textbf{education minister} smriti irani was visiting a fabindia store 
+ 				the tourist resort state of goa. she discovered a \textbf{camera} at the\\ \textbf{changing} \textbf{room}.
+ 				\textbf{authoroities} discovered found it was able to take
+ 				\textbf{photos} from the store 's  \textbf{changing room}. \\
+ 				\textit{Set 2)} the four store workers could spend \textbf{three years} in jail if \textbf{convicted}. \\
+ 				\hline
+ 			\end{tabular}
+ 		}
+ 	\end{center}
+ 	\caption{The extractive and abstractive summaries for the example in \tabref{tab:example}.}
+ 	\label{tab:refextabs}  
+ \end{table*}
+ 
+
+\textbf{Abstractor.}
+%We take existing Enc-Dec model
+%as abstractor of our ext-abs framework.
+We improve the abstractor by creating a new training set, pseudo summaries, 
+which enhances the alignment between input of encoder and decoder.
+\tabref{tab:align} shows that
+the models trained on set-level pseudo summaries
+generate more accurate summaries.
+The models with our designed special loss (PG$_{sl}$ and BART$_{sl}$) get higher ROUGE scores
+on sentence-level and set-level pseudo summaries,
+because the special loss considers the global information of the summary during parallel summarization.
+We do not apply special loss to the abstractor trained on summary-level pseudo summaries 
+since the input of abstractor on summary-level pseudo summaries is complete and it cannot be processed in parallel.
+The summaries generated by pretrained models achieve higher ROUGE scores
+due to better document representations.
+As shown in \tabref{tab:refextabs}, with the same extractor, the abstractor with special loss
+can generate more informative summaries with less redundancy.
+
+
+\textbf{Comprehensive Reinforcement Learning.}
+%In order to generate the abstractive summaries from source document,
+%we extract sentence by extractor (KE$_{CL}$) with keywords extractor and combinational loss
+%followed by abstractor.
+As shown in \tabref{tab:extabs}, we combine our extractor
+and abstractor in different ways.
+Compared with BART,
+PG cannot abstract the extracted sentences effectively
+and achieves worse ROUGE scores than its connected extractors.
+%(as shown in \tabref{tab:extabs}).
+%As for extractor models, the Base-extractor makes 
+%the summaries generated by
+%its connected abstractors worse.
+The ROUGE scores of summaries generated by keyword-based extractor with BART are lower 
+because the less effective extractor brings more noise to the downstream abstractor.
+These results show that a good extractor is critical for ext-abs framework.
+$KE_{HIcl}$-$BART_{sl}$ has a lower R-L score on Web20
+in \tabref{tab:extabs}
+as the sentences in Web20 are very short.
+This causes that the overlapping of sentence-level longest common subsequence
+between reference and generated summary may be slightly lower when their R-1 and R-2 are higher.
+
+We use RL to connect extractor and abstractor,
+which makes ext-abs framework an end-to-end trainable model.
+We observe the changes of different models after adding RL.
+As shown in \tabref{tab:rl},
+after adding sentence-level or summary-level reward, 
+the ROUGE scores of the models on datasets become worse,
+which demonstrates that it is important to desige a suitable reward for ext-abs framework.
+The models trained on CRL achieve better ROUGE scores than 
+that trained without RL, which denotes that our CRL can enhance extractor to select more accurate sentences.
+The ROUGE scores of extractor extended by RL are improved.
+%Our best extractor (Pre-KE$_{cl}$-CRL)
+%doesn't obtain highest ROUGE scores because the model
+%with highest score are pretrained on a larger corpus.
+The CRL bridges the backpropagation from abstractive summary
+to source document. So the ROUGE-based comprehensive rewards
+between generated summaries and reference summaries reflect the quality of extracted sentences and generated summaries
+which can guide the extractor to select correct sentences.
+The higher ROUGE scores of ext-abs with RL also show
+that the ext-abs model can benefit from a better extractor.
+%the effectiveness of RL based on combinational rewards.
+%that avoid abstractor training with irrelevant selected sentences
+%and extractor with noisy reward.
+%As shown in \tabref{tab:rl}
+\begin{table*}[th!]
+	\small
+	\begin{center}
+		\begin{tabular}{|l|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|}%{|p{7cm}|rl|}
+			\hline
+			\multirow{2}{*}{Models}  &\multicolumn{3}{|c|}{CNNDM} & \multicolumn{3}{|c|}{Web17} & \multicolumn{3}{|c|}{Web20} & \multicolumn{3}{|c|}{Wiki} & \multicolumn{3}{|c|}{DUC}\\ 
+			\cline{2-16}
+			& R-1 & R-2 & R-L & R-1 & R-2 & R-L & R-1 & R-2 & R-L & R-1 & R-2 & R-L & R-1 & R-2 & R-L \\
+			\hline 
+			KE$_{cl}$PG$_{sl}$ & 38.09 & 16.61 & 35.64 & 16.55 & 3.75 & 10.77 & 7.25 & 1.44 & 7.36 & 18.85 & 4.23 & 16.52 & 34.88 & 15.23 & 31.00 \\
+			KE$_{cl}$PG$_{sl}$-RL$_{sen}$ & 38.12 & 15.60 & 34.45 & 16.37 & 3.63 & 10.32 & 7.09 & 1.42 & 7.45 & 12.19 & 3.02 & 11.21 & 35.43 & 16.37 & 32.12\\
+			KE$_{cl}$PG$_{sl}$-RL$_{sum}$ & 38.36 & 15.22 & 34.38 & 16.42 & 3.23 & 10.21 & 7.39 & 1.53 & 8.67 & 12.21 & 2.99 & 10.77 & 35.02 & 15.01 & 31.34 \\
+			KE$_{cl}$PG$_{sl}$-CRL & 39.66 & 19.69 & 36.61 & 18.01 & 4.12 & 13.91 &  12.01 &2.54 &11.54 & 21.73 & 6.46 & 19.67 & 40.37 & 18.94 & 34.22 \\
+			\hline
+			KE$_{HIcl}$BART$_{sl}$ & 43.12 & 20.13 & 39.08  & 18.75& 4.20 &14.66 & 12.71 &2.89& 11.54 & 25.70 & 7.52 & 20.08 & 40.24 & 19.01 & 36.19\\
+			KE$_{HIcl}$BART$_{sl}$-RL$_{sen}$ & 43.17 & 19.50 & 33.12 & 18.46 & 4.01 & 14.29 & 12.02 & 2.66 & 11.32 & 25.75 & 7.64 & 21.48 & 35.22 & 18.01 & 32.10\\
+			KE$_{HIcl}$BART$_{sl}$-RL$_{sum}$ & 40.44 & 19.44 & 35.79 & 18.39 & 3.97 & 14.30 & 12.55 & 2.66 & 11.37 & 22.14 & 6.98 & 20.07 & 34.18 & 17.75 & 30.44 \\
+			KE$_{HIcl}$BART$_{sl}$-CRL & \bf 43.57 & \bf 20.37 & \bf 40.27 & \bf 19.46& \bf 4.34& \bf 16.44 & \bf 14.46 & \bf 4.09 & \bf 14.12 & \bf 27.01 & \bf 8.66 & \bf 20.79 & \bf 44.46 &\bf 20.17 & \bf 36.46 \\
+			\hline
+		\end{tabular}
+		\caption{\label{tab:rl} ROUGE scores of models with different RL.}
+	\end{center}
+\end{table*}
+
+\begin{table*}[th!]
+\small
+\begin{center}
+\begin{tabular}{|l|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|}%{|p{7cm}|rl|}
+\hline
+\multirow{2}{*}{Models}  &\multicolumn{3}{|c|}{CNNDM} & \multicolumn{3}{|c|}{Web17} & \multicolumn{3}{|c|}{Web20} & \multicolumn{3}{|c|}{Wiki} & \multicolumn{3}{|c|}{DUC}\\ 
+\cline{2-16}
+  & R-1 & R-2 & R-L & R-1 & R-2 & R-L & R-1 & R-2 & R-L & R-1 & R-2 & R-L & R-1 & R-2 & R-L \\
+\hline 
+\multicolumn{16}{|c|}{\bf Extractive summarization }\\
+\hline
+lead-3~\cite{SeeLM17} & 40.34 & 17.70 & 36.57 & 18.32 & 3.87 & 12.66 & 10.36 &2.29 & 11.02 & 26.00 & 7.24 & 18.25 & 39.24 & 16.68 & 35.12\\
+PN & 37.04 & 16.57 & 33.81 & 16.21 & 2.03 & 10.22 &  8.79 &1.44& 8.23&18.71 &4.03 &15.11& 35.70 &15.38& 33.12 \\
+HIBERT & 42.37 & 19.95 & 38.83 & 19.32 &4.10 & 14.89 & 13.84 & 3.03 & 11.93 & 26.34& 7.53& 19.68 & 40.31&18.43 &33.18\\
+%Base-KE$_{cl}$ & 41.78 & 18.95 & 37.33 \\
+KE$_{cl}$-CRL & 41.37 & 19.11 & 38.74 & 18.54 & 4.03 & 13.27& 11.20 & 1.90 & 10.07 & 20.45 & 5.63 & 16.51 & 39.26 & 18.11 & 32.77\\
+%Pre-KE$_{cl}$ &  43.16 & 20.14 & 39.66 \\
+KE$_{HIcl}$-CRL & 42.62 & 20.10 & 39.68 & 19.38 & 4.22 & 14.73 & 14.30 & 3.16 & 12.04 & 26.02 & 7.79 &19.18 & 40.55 & 18.45 & 34.35\\
+\hline
+\multicolumn{16}{|c|}{\bf Abstractive summarization }\\
+\hline 
+PG & 39.53 & 17.28 & 36.38 & 18.01 & 3.82 & 12.17 & 10.00 & 2.11 & 10.71 &  20.30 & 6.12 & 18.97 & 37.22& 15.78 & 33.90\\
+FastAbs & 40.88 & 17.80 & 38.54 & 18.45 & 3.67 & 12.89 & 10.12 & 2.63 & 11.34 & 21.44 & 6.37 & 19.64 & 37.80 & 16.48 & 34.26 \\
+BART
+\tablefootnote{Test BART on released model {\em bart.larg.cnn}
+\url{https://github.com/pytorch/fairseq/tree/master/examples/bart}.}
+& 42.25 & 20.09 & 39.63 & 18.36 & 4.23 & 14.65 & 14.09 & 3.25 & 13.58 & 26.75& 8.50 &20.61 & 43.47 & 19.84 & 35.58 \\
+FastAbs$_{HB}$ & 42.71 & 20.08 & 39.69 & 19.27 & 4.20 & 14.25 & 14.23 &3.74&13.26 & 26.21 & 7.44&20.00 & 40.54 &19.15 & 35.60\\
+%Base-KE$_{cl}$-Abs & 38.70 & 19.27 & 36.23 \\
+KE$_{cl}$-PG$_{sl}$-CRL & 39.66 & 19.69 & 36.61 & 18.01 &4.12 &13.91 & 12.01 &2.54 &11.54& 21.73 & 6.46 & 19.67 & 40.37 &18.94 &34.22\\
+%Pre-KE$_{cl}$-Abs & 43.22 & 20.93 & 39.78 \\
+KE$_{HIcl}$-BART$_{sl}$-CRL & \underline{\bf 43.57} & \underline{\bf 20.37} & \underline{\bf 40.27} & \underline{\bf 19.46} & \underline{\bf 4.34} & \underline{\bf 16.44} & \bf 14.46 & \bf 4.09 & \underline{\bf 14.12} & \underline{\bf 27.01} & \bf 8.66 & \underline{\bf 21.79} & \underline{\bf 44.46} & \underline{\bf 20.17} & \underline{\bf 36.46}\\
+\hline
+\end{tabular}
+\caption{\label{tab:rouge} ROUGE scores of different end-to-end trainable models on datasets. The scores underlined are statistically 
+significantly better than BART with p $<$ 0.05 according to t-test.}
+\end{center}
+\end{table*}
+
+As shown in \tabref{tab:rouge},
+our strongest model with CRL (KE$_{HIcl}$-BART$_{sl}$-CRL) outperforms
+the SOTA abstractive models on all datasets.
+As BART is the SOTA abstractive summarization model,
+the ROUGE scores of KE$_{HIcl}$-BART$_{sl}$-CRL 
+are better than the BART but they are close.  
+We take t-test to
+measure the difference of ROUGE scores between our model 
+and BART.
+% are significant or not. 
+The p-values on ROUGE scores of the SOTA model BART and KE$_{HIcl}$-Abs$_{sl}$-CRL
+of all datasets are less than 0.05, except for Web20.
+As the reference summary in Web20 is very short and abstract, it is difficult to extract 
+pseudo summary aligned to the reference summary.
+The performance of models on Web20 is close and not good. 
+%which shows that our best model on ROUGE scores is significant.\JQ{put this part into Table}
+%are shown in \tabref{tab:ttest}.
+%2.25e-33 (R-1), 7.19e-48 (R-2) and 2.43e-12 (R-L). \JQ{which dataset}
+%All p-values are less than 0.05.
+%The smaller p-value, the higher significant.
+%Thus, the improvement of our model on ROUGE scores is 
+%significant.% and reliable. 
+\cut{%%%%%%%%%
+%which shows the better generalization of our model.
+%The highest ROUGE scores of our model shows
+}%%%%%%%%
+This shows
+that the ext-abs framework with our approaches are effective.
+As test-only dataset, DUC testing on KE$_{HIcl}$-BART$_{sl}$-CRL gets highest ROUGE scores, 
+which shows that our proposed model has a better generalization.
+The FastAbs$_{HB}$ in \tabref{tab:rouge} takes HIBERT as extractor and BART as abstractor.
+FastAbs$_{HB}$ gets lower ROUGE scores than BART due to its poor alignment of sentence-level training set
+and its extractor without keyword-based encoder.
+The best ROUGE scores of our models show that
+the abstractive models can be improved by locating the salience information.
+As shown in \tabref{tab:refextabs}, the summary generated by our model with CRL
+contains more keywords and becomes more readable.
+
+\textbf{Speed and Memory.}
+%\JQ{delete:The model training and testing on the longer input and output. }
+We take the speed and memory usage of CNNDM as example.
+As shown in \tabref{tab:eval_speed}, we evaluate our models on the speed and memory usage.
+Based on fune-tuning on the pretrained model or not, 
+we compare our KE$_{cl}$-PG$_{sl}$-CRL with PG
+and KE$_{HIcl}$-BART$_{sl}$-CRL with BART, to be fair.
+In \tabref{tab:eval_speed}(a), 
+KE$_{cl}$-PG-CRL is almost $7$ times faster in total training time and occupies less memory than PG.
+We cannot fine-tune BART on GPU RTX-2080ti due to out-of-memory.
+We test BART based on the released pretrained model.
+The KE$_{HIcl}$-BART$_{sl}$-CRL performs much better than BART on speed and memory usage.
+%To observe the decoding speed at test, we set batch size of testing as $1$
+%and calculate the decoded summaries (words) per second.
+In \tabref{tab:eval_speed}(b),
+both of our proposed models can decode summaries (word) in faster speed
+and occupy less memory.
+%the decoding speed of Base-KE$_{cl}$-Abs-RL using less memory
+%is $10$ times faster than PointGen.
+%Pre-KE$_{CL}$-Abs-RL is also better than BART on speed and memory usage.
+\begin{table}[th]
+\centering
+\small
+\subtable[Training.]{
+	    \begin{tabular}{|l|c|c|c|}
+		\hline
+        Models & T (h) & Epoch/h & M (G) \\
+        \hline
+        PG &  40.24 & 0.29 & 6.72 \\
+        FastAbs &  6.71 & 1.74 & 3.26 \\
+        KE$_{cl}$-PG-CRL & 7.04 & 1.57 & 3.42\\
+        \hline
+        BART & - & - & OOM \\
+        FastAbs$_{HB}$ & 13.64  & 0.44 & 8.93 \\
+        KE$_{HIcl}$-BART$_{sl}$-CRL  & 16.61 & 0.30 & 9.74 \\
+		\hline
+	    \end{tabular}
+        }
+\qquad
+\subtable[Testing. (Batch size = 1)]{
+	    \begin{tabular}{|l|c|c|c|c|}
+		\hline
+        Models & T (h) & summaries/s & tokens/s & M (G)\\
+        \hline
+        PG & 16.13 & 0.60 & 23.74 & 1.82\\
+        FastAbs & 1.34 & 2.18 & 76.3 & 0.91 \\
+        KE$_{cl}$-PG-CRL & 1.60 & 1.99 & 69.82 & 0.94 \\
+        \hline
+        BART & 8.30 & 0.38 & 35.31 & 3.67  \\
+        FastAbs$_{HB}$ & 3.41 & 0.81 & 68.85 & 2.37 \\
+        KE$_{HIcl}$-BART$_{sl}$-CRL  & 4.63 & 0.72 & 61.2 & 2.55\\
+		\hline
+	    \end{tabular}
+        }
+\caption{Total time (T), speed and memory usage (M) of models during training and testing of CNNDM dataset
+         on RTX-2080ti.} 
+\label{tab:eval_speed}
+\end{table}
+
+%Abstractive models always suffer from low speed and large memory usage,
+%since they have to encode long documents
+%with the attention model looking at all encoded words
+%at each time step of decoding.
+Abstractive models have to encode long documents with
+attention model looking at all encoded tokens at each time step,
+which causes low speed and large memmory usage.
+As a pointer network, our extractor is faster than most abstractive models.
+Our models first extract sentence sets from a source
+and then input them to abstractor.
+These inputs can be decoded in parallel, which speed up the model.
+The average length of inputs is shortened from $780$ to $100$,
+%The average length of inputs without extraction is $780$ and that of our extracted inputs is $100$. 
+which reduces the memory usage.
+The FastAbs and FastAbs$_{HB}$ are faster than our models because they train and test models on sentence-level pseudo summaries
+which are shorter than our set-level pseudo summaries. However, the difference is not significant.
+%This is because our set-level matching heuristics considers the keywords and ROUGE F1 score, 
+%which causes the sentences at set-level are different from sentence-level for the same sentences in the reference summaries.
+This is because that the different matching heuristics may extract different sentences for the same sentence in the reference summaries.
+Besides, as shown in \tabref{tab:rouge}, the ROUGE scores of KE$_{cl}$-PG$_{sl}$-CRL and KE$_{HIcl}$-BART$_{sl}$-CRL are better than 
+than FastAbs and FastAbs$_{HB}$.
+%Because the average length is shortened from $X$ (without extraction) to $X$ (with extraction)
+%and the summaries can be generated in parallel. 
+
+\subsubsection{Human Evaluation.}
+%\JQ{Table 9 has been changed}
+We compare the readability and keyword coverage of our best model
+(KE$_{HIcl}$-BART$_{sl}$-CRL)
+and the SOTA model.
+As shown in \tabref{tab:read}, 
+%the summaries generated by our model and BART in label
+%{\em Equal} make up a large proportion,
+%which denotes that both two models performs well on all benchmarks.our
+our model get the highest readability score and keyword coverage score,
+which means that our model can generate more informative summaries with more keywords.
+As shown in \tabref{tab:refextabs}, 
+our model generates
+more readable summaries.
+This means that our model improve BART by 
+keyword-based extractor capturing salient and aligned information.
+%Accordingly, the keyword coverage of our model is better.
+%Compared with summary of BART in \tabref{tab:example},
+%our generated summary is as follow:\\
+
+%\fbox{
+%\parbox{0.9\columnwidth}{
+%\small{
+%\textit{Set 1.} federal education minister smriti irani was visiting a fabindia store 
+%the tourist resort state of goa. she discovered a camera at the changing room.
+%authoroities discovered found it was able to take photos.
+%photos rom the store 's changing room. \\
+%\textit{Set 2.} the four store workers could spend three years in jail if convicted. 
+%}}}
+\begin{table}[ht!]
+	\centering
+	\small
+	\setlength{\tabcolsep}{1mm}{
+	\begin{tabular}{|l|c|c|c|c|c|c|c|c|c|c|c|c|}
+        \hline
+		\multirow{2}{*}{Models} &\multicolumn{2}{|c|}{CNNDM} & \multicolumn{2}{|c|}{Web17} & \multicolumn{2}{|c|}{Web20} & \multicolumn{2}{|c|}{Wiki} & \multicolumn{2}{|c|}{DUC} \\ 
+        %\hline
+        \cline{2-11}
+		 %&  Read & KC & Read & KC & Read & KC & Read & KC & Read & KC\\
+		 &  Read & KC & Read & KC & Read & KC & Read & KC & Read & KC\\
+        \hline
+		%BART & 0.17 & 0.56 & 0.39 & 0.12 & 0.68 & 0.30 & 0.10 & 0.72 & 0.20 & 0.15 & 0.65 & 0.28 & 0.12 & 0.60 & 0.32 \\
+		BART & 0.74 & 0.36 & 0.80 & 0.31 & 0.80 & 0.20 & 0.79 & 0.25 & 0.73 & 0.33 \\
+        \hline
+		%Pre-KE$_{cl}$-Abs-RL & 0.25 & 0.56 & \bf 0.43 & 0.20 & 0.68 & \bf 0.37 & 0.18 & 0.72 & \bf 0.29 & 0.20 & 0.65 & \bf 0.32 & 0.28 & 0.60 & \bf 0.38 \\
+		Ours &\bf 0.81 & \bf 0.45 & \bf0.86 & \bf 0.39 & \bf 0.91 & \bf 0.28 & \bf 0.85 & \bf 0.30& \bf 0.88 & \bf 0.37 \\
+        \hline
+	\end{tabular}}
+    \caption{The Readability(Read) and Keyword Coverage(KC) of generated summaries.}
+	\label{tab:read}
+\end{table}
+
+
+
+
+

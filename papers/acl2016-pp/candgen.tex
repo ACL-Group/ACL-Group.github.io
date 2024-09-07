@@ -1,0 +1,136 @@
+\section{Candidate Schema Generation}
+\label{sec:candgen}
+
+We propose a search algorithm to collect 
+candidate schemas from training relation instances.
+The intuition is that we first find suitable skeletons 
+as a starting point, and then recursively add constraints on 
+previous schemas, producing more specific candidate schemas.
+
+%7 sentences introducing bfs
+%1. recap
+%As outlined in \secref{sec:problem}, a skeleton is a path of KB 
+%predicates which connects target variables $x_1$ and $x_2$.
+%2. basic: bfs
+For each relation instance $(e_1, e_2)$, 
+we use breadth-first search from both ends 
+to find all suitable skeletons that connect them in KB.
+%3. problem of connection
+%Due to various predicates and popular entities existed, a relation 
+%instance could be linked through a large number of different skeletons.
+%4. what's meaningless rep.
+%Most of natural language relations are short phrases, a skeleton 
+%with too many predicates is meaningless, and is less likely 
+%to be a suitable representation.
+%5. solution to filter
+We limit the maximum number of edges of the skeletons to be $\tau$.
+%6. why use minimal coverage
+The number of input relation instances
+covered by a schema $S$ is called the {\em support} of $S$, or
+$sup(S)$.
+To ensure the quality of the retrieved skeleton, we also
+require that $sup(S) \ge \gamma$. 
+%Also note that we always focus on well-descriptive skeletons, 
+%rather than some occasional paths covering only a few entity pairs.
+%7. say in detail
+%In formal, we define another threshold $cov$ as the minimum 
+%percentage of entity pairs among all positive instances covered 
+%by a skeleton.
+% Comment: we could describe the searching process in detail, like Matt's style "more formally, blabla..."
+
+
+%18 sentences: bfs basic, search space limit, budget, diversity
+%1. general speak
+After candidate skeletons are produced, we deploy depth-first search on
+each skeleton to obtain more specific schemas.
+At each step of the search, we attempt to add an edge to any one node
+on the skeleton. An edge can be added if the support of the 
+new schema is larger than $\gamma$. 
+This process continues recursively until
+no new schemas can be found.
+%3-6: basic limit on schema constraints
+%3. why need limitation
+%The searching space is a tree structure which grows exponentially,
+%making the exhaustive searching intractable on a huge knowlege base.
+%4. how to fix the search size
+Each additionl edge on a variable node acts like a constraint on the variable.
+In practice, multiple constraints on the same variable seldom make sense. 
+Therefore, we require that at most one edge is added to any node 
+on the skeleton.
+%5. the intuition behind
+%As mentioned before, natural language relations are always short
+%phrases, which gives us the point that it's less likely to infer
+%a comfortable structure for a relation with multiple restriction 
+%imposed on a single element, and our restriction just follows 
+%this intuition.
+%6. the effect of limitation
+Consequently, the maximal depth of the searching tree is $\tau+1$.
+
+%7-11: budget base (why, budget+prune, criteria, how to prune, diversity)
+%7. why need budget
+Unfortunately, each node in a skeleton may be attached hundreds of
+different predicate in a large KB. The overall search space, though
+bounded by the constant depth, is still large.
+%8. introduce budget+pruning
+Inspired by beam search algorithm\cite{ney1992data}, we introduce a fixed size 
+priority queue to store the set of candidate schemas for each relation.
+Our goal is to fill this queue (an operational budget) 
+with relatively higher quality
+schemas. We simply use the support of each schema on the input instances
+as the quality or priority of the schema. The idea is that a better schema
+should cover more instances. Also since as we attach more edges to the schema,
+the support monotonically decreases, we can use this 
+monotonicity property to prune the search
+space. At each step of the search, we enumerate all the possible new schemas
+(with one new edge) and insert the best among them to the priority queue if the
+queue is not full. If the queue is full, we compare the support of the 
+schema to be inserted with the worst schema on the queue. 
+If the current schema is better than the worst schema on the queue, 
+the worst schema is replaced and
+the search continued from the current best schema. 
+Otherwise, we prune the search space and backtrack.
+
+%while pruning strategies will be used to reduce 
+%searching space so that poor candidates could be ignored.
+%9. what's the criteria
+%To this end, we use the number of instances covered by 
+%a schema as the criteria to approximately measure its quality.
+%%10. explanation of the criteria
+%The reason is two-fold: we aim to keep those descriptive schemas in 
+%the output candidates, since we output a bunch of schemas instead
+%of only a few, we don't need a rather precise quality measurement,
+%the idea that better schemas cover more positive instances is
+%reasonable enough for our task; 
+%and the size of coverages would never increase when the search goes
+%deeper, which leads to a simple but effective pruning strategy.
+%
+%11-15. formal describe
+%Now we explain the searching step in formal.
+%% [A simple pseudo code is available]
+%The beginning state of the searching is one skeleton, we enumerate
+%all the constraints which are allowed to add on, each constraint 
+%maps to a more specific schema.
+%Then new schemas are ranked over their coverages by descending order,
+%and we sequentially continue recursive searching on those schemas.
+%When the searching state comes to a new schema $s_0$, we keep this 
+%schema if there has enough room to keep candidates; 
+%otherwise, we pick the schema $s_1$ which has the smallest 
+%coverage among all kept schemas and compare their coverage.
+%If $s_0$ has a larger coverage, then $s_1$ is discarded, we keep 
+%$s_0$ and search deeper; otherwise, the current schema $s_0$ is 
+%pruned, and we backtrace the searching process immediately.
+%Finally, the output candidates are those schemas been kept when
+%the searching is over.
+
+%16-18. diversity
+Finally, we would like the generated set of candidate schemas
+to be diverse and not all similar to each other.
+%The diversity of output schemas plays an important rule in the 
+%learning parts.
+%If most candidates are the same and only differ from one or two 
+%constraints, we are actually wasting budgets because it contains
+%much redundant information.
+We thus maintain multiple priority queues, one for each skeleton.
+The size of each queue is proportional to the support of the corresponding
+skeleton.
+

@@ -1,0 +1,102 @@
+\section{Approach}
+\label{sec:approach}
+We first present the idea of ICL in the context of the
+vanilla sequence-to-sequence(Seq2Seq) training objective. 
+Then we propose a specific ICL learning strategy with 
+a detailed algorithm.
+
+\subsection{In-sample Curriculum Learning}
+
+NLG tasks are widely solved by Seq2Seq models especially the pre-trained language models. Vanilla Seq2Seq models are trained to predict the output $Y=\{y_0, y_1, ..., y_n\}$ given the input $X$ by minimizing the negative log-likelihood:
+\begin{equation}
+L_{ori} = -\frac{1}{n}\sum_{t=0}^{n}\log P(y_t|y_{<t}, X)
+\end{equation}
+Traditional CL manipulates the selection of training pair $(X, Y)$ from easier pairs to harder ones according to different tasks with this vanilla loss function.
+
+Differently, our ICL digs into the language itself and exploits the difficulty of language generation within each training sample.
+We segment $Y$ into two sub-sequences by a cutting point $c$, where $0\leq c\leq n$. The preceding one is called the prefix, and the other is the target. 
+According to the Shannon Information Theory, the entropy goes down when more related information is given. 
+Thus, the difficulty of generation will decrease when a longer prefix is given. In other words, we can manipulate $c$ to determine the difficulty of samples during training.
+
+Based on this intuition, we modify the vanilla loss as:
+\begin{equation}
+	L_{icl} = -\frac{1}{n-c}\sum_{t=c}^{n}\log P(y_t|y_{<t}, X)
+	\label{eq:icl}
+\end{equation}
+i.e., we only calculate the loss for predicting the target given $X$ and the prefix.
+%is called \textit{prefix} and $\{y_{c+1}, ..., y_n\}$ is called \textit{target}.
+At the beginning of the training process, we use a larger $c$ to train the model to predict the target with only the last few words.
+Then, we can gradually decrease $c$, and the prefix will shrink to an empty sequence.
+In this way, the model grows stronger with more difficult generation objectives and learns to generate the whole output in the end.
+
+ 
+\subsection{ICL Algorithm}
+Since the output length varies from sample to sample, it's hard to set $c$ as a constant for all samples.
+If so, samples with short inputs will be neglected when $c$ is large at the beginning, and the model will finally bias to training samples with long outputs since they are shown more times.
+To this consideration, we proposed to do ICL in a proportional way which determines $c$ sample by sample considering their output lengths.
+
+We define a start point $p_{start}$ and a stride $s$ for controlling $c$, where $0\leq p_{start}, s \leq 1$.
+The training process starts with: 
+\begin{equation}
+	c = n\times p_{start}
+	\label{eq:cnp}
+\end{equation}
+After each epoch or a number of updating steps, we validate the model on the validation set. If the performance on the validation set no longer increase, we introduce a more difficult generation task by removing $s$ from $p_{prev}$ according to the following equation:
+\begin{equation*}
+	p_{new} = 
+	\begin{cases}
+	p_{prev}-s, & \text{if $p_{prev}>s$} \\
+	0, & \text{else}
+	\end{cases} \\
+\end{equation*}
+And update $c$ by Equation~\ref{eq:cnp}. The training process terminates until there are no improvements on the validation set with $c$ equaling 0.
+An exemplified training process is shown in Algorithm~\ref{alg:picl}. %This can be further combined with early stopping and traditional CL strategies.
+
+\begin{algorithm}[tb]
+	\caption{The ICL training algorithm.}
+	\label{alg:picl}
+	\small
+	\textbf{Input}: the model to be fine-tuned $M_{in}$, the training set $D_t$, the validation set $D_v$\\
+	\textbf{Parameter}: a start point $p_{start}$, a stride $s$\\
+	\textbf{Output}: the final model $M_{out}$
+	\begin{algorithmic}[1] %[1] enables line numbers
+		\Procedure{ICL}{$M_{in}, D_t, D_v, p_{start}, s$}	
+		\State $p = p_{start}$ 
+		\State $M_{out}=M_{in}$ 
+			
+		\For{training epoch $e=1,...$}
+			%\State Update flag $f_p=False$
+			\State \Comment{Training process}
+			\For{training steps in an epoch}
+				\State Randomly sample a batch $B$ from $D_t$
+				\For{Each sample $(X, Y)$ in $B$}
+					\State $c = n\times p$
+					\State Calculate $L_{icl}$ by Eq.~\ref{eq:icl}
+				\EndFor
+				\State Update $M_{in}$ based on $\frac{1}{B}\sum_{B}L_{icl}$
+			\EndFor
+			\State \Comment{Validation process}
+			\State Calculate $M_{in}$'s performance on $D_v$.
+			\If{$M_{in}$ gets improvements on $D_v$}
+				\State $M_{out} = M_{in}$
+			\Else
+				\State Update $p$ according to Eq.~\ref{eq:cnp}
+				%\State $f_p=True$
+			\EndIf
+		\EndFor	
+		\State \textbf{return} $M_{out}$
+	
+	%	\State $a\gets b$
+	%	\State $b\gets r$
+	%	\State $r\gets a\bmod b$
+	%	\EndWhile\label{euclidendwhile}
+	%	\For{\texttt{<some condition>}}
+	%	\State \texttt{<do stuff>}
+	%	\EndFor
+	%	\State \textbf{return} $M_out$
+		\EndProcedure
+	\end{algorithmic}
+
+\end{algorithm}
+
+%The length of a prefix equals the multiplication of the percentage and the output's length.

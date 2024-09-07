@@ -1,0 +1,27 @@
+\section{Background}
+In this section, we present necessary background about Transformer as well as existing literature on addressing the memory and computational bottleneck of Transformer-based LLMs.
+
+\subsection{Transformer-based LLMs}
+The input to a Transformer-based LLM is a sequence of tokens 
+$\bm{x}=(x_1,...,x_{T})$, which is further processed by the embedding layer, followed by a series of Transformer blocks composed of an attention block and a feedforward block. The attention block is the only submodule where tokens at different positions exchange information, necessitating the need for a key-value cache during inference.
+\paragraph{Attention Block}
+At the $l$-th layer, the input hidden states $\bm{H}^{l-1}\in \mathbb{R}^{T\times d}$ is multiplied with three matrices $\bm{W}_{q}^{l}, \bm{W}_{k}^{l}$, and $\bm{W}_{v}^{l}$, producing $\bm{Q}^{l}=\bm{H}^{l-1}\bm{W}_q^l, \bm{K}^{l}=\bm{H}^{l-1}\bm{W}_k^l, \bm{V}^{l}=\bm{H}^{l-1}\bm{W}_v^l$. Then the scaled dot-product attention is performed as follows:
+\begin{align}
+    \text{Attn}_i&=\text{Softmax}(\frac{\bm{Q}^{l}_{i}\cdot (\bm{K}_{i}^{l})^{\top}}{\sqrt{d^\prime}})\cdot \bm{V}_{i}^{l} \\
+    \text{SDPA}&=\text{Concat}(\text{Attn}_1,...,\text{Attn}_{H})\cdot \bm{W}_{o}^{l}
+\end{align}
+where $H$ is the number of attention heads, $d^\prime=\frac{d}{H}$ is the head dimension, and $\bm{W}_o^l$ is the output matrix.
+\paragraph{Key-Value Cache}
+LLM inference follows an autoregressive fashion. During training, it masks the upper triangular part of the attention matrix such that each token only sees itself and previous tokens. At inference time, 
+the common practice is to cache the key-value vectors computed so far and append the newly computed ones into the cache. At time step $T$, the key-value cache can be written as a tensor of shape $(L, 2, B, H, T, d^\prime)$, where $L$ is the number of model layers and $B$ is the batch size. 
+It is evident that the size of the KV cache grows linearly with respect to sequence length, potentially leading to excessive memory and latency issues when dealing with long input or output.
+
+\subsection{Efficient LLMs}
+Recent years have witnessed a surge of studies attempting to optimize the inference cost of LLMs from different~(often orthogonal) perspectives.
+
+One line of work follows the conventional model compression paradigm, aiming to identify and remove redundancy from billions of model parameters. These include tensor decomposition~\cite{dao2022monarch}, weight pruning~\cite{frantar2023massive,xia2023sheared,slicegpt}, and quantization~\cite{dettmers2022llm,gptq,smoothquant}. These methods reduce the KV cache footprint by reducing the model dimension, layers, and data precision.
+
+Another line of work focuses on architectural design, aiming at reducing model complexity from the ground up. Representatives include sparse attention Transformers~\cite{child2019generating,bigbird}, linear attention Transformers~\cite{linformer,performer,qin-etal-2022-devil}, and simplified attention variants~\cite{mqa,gqa}. These methods either completely eschew the $O(T)$ space complexity of KV cache size or reduce the number of attention heads in exchange for a larger context length.
+
+Some recent efforts~\cite{liu2023scissorhands,h2o,tova} pay attention to methods that maintain the memory usage of the KV cache under a fixed budget without finetuning or architectural modifications to the model. The shared tenet of these approaches is the discernment and retention of key-value vectors that exert a significant influence on future generations.
+This work follows this line of research, dissects the efficacy of existing eviction policies, and introduces an improved policy with more consistent importance score and robust eviction scope construction.

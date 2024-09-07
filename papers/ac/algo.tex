@@ -1,0 +1,189 @@
+\section{Approach}
+\label{sec:algo}
+%In this section we first give an overview of a probabilistic taxonomy
+%that provides the vocabulary of concepts to abstract the verb arguments.
+%as well as probabilistic scores for computing various rankings.
+We first present two different confidence functions, and then
+a branch-and-bound algorithm to approximately solve the
+action conceptualization problem in large scale.
+%Finally, we provide a method to rank the
+%output action concepts from solution of action conceptualization.
+In the rest of this section, the term ``argument'' refers to either
+the object or the subject of a verb.
+
+\subsection{Confidence Functions}
+To define the confidence function $g_v$ for a verb $v$,
+we suppose that the arguments that are relevant and correct to the verb
+are more ``informative'' than those that are not.
+For example, as direct objects, ``basketball'' is more informative to the verb
+``play'' than ``weekend'',
+because ``basketball'' appears frequently in the context of the ``play'', but
+not as frequently in the context of many other verbs; while ``weekend''
+appears frequently not only next to ``play'' but also to many other
+verbs, such as ``go'', ``spend''.
+%but does not appear in the context of many other verbs.
+%However, ``weekend'' can appear in the context of many
+%verbs according to the wrong parsing (e.g., recognized as the object of
+%``play'', ``go'', ``buy'', etc.). According to the above observations,
+Inspired by such observation, we propose two confidence functions.
+
+\textbf{Mutual Information} is a measure in information theory which can
+capture the strength of mutual connection between two terms.
+In this paper, we can use the binary version of
+the mutual information $MI_v$ in place of $g_v$:
+\begin{equation}
+MI_v(e)=
+\begin{cases}
+1 & \mbox{if}~\ p(v,e)\log \frac{p(v,e)}{p(v)p(e)}> 0,\\
+-1 & \rm{otherwise}
+\end{cases}
+\end{equation}
+The probability $p(v,e)$ is the co-occurrence probability
+of $v$ and $e$ in the corpus, $p(v)$ and $p(e)$ are
+the occurrence probabilities of $v$ and $e$ in corpus.
+
+\textbf{TF-IDF} is a confidence scoring function in information
+retrieval to identify the importance of a term to a document.
+We use TF-IDF to measure the confidence of $e$ as the importance
+of $e$ to the verb $v$. Specifically, $g_v$ can be defined as:
+\begin{equation}
+TFIDF_v(e) = freq(v,e)\cdot \log\frac{\rm{\#\ of\ verbs}}{|\{v|e\in A_v\}|},
+\end{equation}
+where function $freq$ is the number of times $v$ and $e$ co-occur
+in the corpus.
+
+%\subsection{A Probabilistic IsA Taxonomy}
+%In this work, we use a probabilistic isA taxonomy called Probase
+%\cite{WuLWZ12} which is public for download.
+%Probase is a large collection of concept-subconcept (e.g., company vs.
+%tech company) or concept-entity (e.g., company vs. microsoft) pairs
+%which were extracted automatically by the Hearst pattern \cite{Hearst92}
+%from a large web corpus.
+%Probase also associates with each pair: a {\em frequency} in which
+%the pair appears in the corpus, a {\em typicality score} which is
+%essentially the conditional probabilities $p(e | c)$ and $p(c | e)$,
+%where $c$ and $e$ represent ``concept'' and ``entity'', respectively.
+%This taxonomy provide a large universe of concepts which
+%our algorithms will search against to find the minimum set of concepts
+%to cover a verb's arguments. Furthermore, the typicality score allows
+%the algorithms to determine the importance of a concept given an entity
+%and vice versa.
+
+%\subsection{A Greedy Solution}
+%\label{sec:greedy}
+%The greedy solution comes up with greedily select the concept with
+%smallest score according to \eqnref{eq:objfunc}.
+%%Our first attempt at the NP-hard action conceptualization problem
+%%is a greedy algorithm.
+%%It follows a heuristic to select one concept from a candidate set
+%%at a time until the final concept set is formed that covers all
+%%the input arguments.
+%%The candidate set can be all concepts in Probase.
+%%The algorithm first creates two argument sets
+%%$L$ and $D$. $L$ contains all arguments waiting to be covered
+%%and $D$ contains all the arguments already covered. Initially,
+%%$L$ is the set of all input arguments, and $D$ is empty.
+%%In each iteration, the algorithm selects and remove a concept from
+%%the candidate set which covers most arguments
+%%in $L$ and least objects in $D$ while satisfy the overlap constraint
+%%(see \eqnref{eq:overlap}) at the same time.
+%%
+%%For practical purpose, we use a reduce candidate set which contains only
+%%those concepts that are in Probase and are also in the input
+%%argument set. We do this primarily to speed up the computation and
+%%our experiment shows that it doesn't affect the overall quality of
+%%the solution.
+%%%If an object is a concept in Probase, like ``clothing'', ``jewelry'' for
+%%%verb ``wear'', and ``food'', ``meal'' for verb ``eat'', we put them
+%%%in the candidate concept set for ``wear'' and ``eat''.
+%%% \KZ{But where do we select this concept from? What is the candidate set?}
+%%The newly selected concept is added to the {\em selected concept list}
+%%(SCL) and all the arguments covered by the selected concept are moved
+%%from $L$ to $D$ before the next iteration starts.
+%%The iteration ends when $L$ is empty.
+%%If $L$ is not empty, and there's no concepts in the candidate set
+%%that doesn't violate the overlap constraint, then there's no
+%%solution to the problem. The details of this greedy solution is shown
+%%in Algorithm \ref{vega}.
+%%no more
+%%concepts can be added to $SCL$ because all the remaining concepts
+%%violate the overlap constraint with concepts in $SCL$.
+%%$L$ may be non-empty when the iteration ends.
+%%As a special case, objects still in $L$ are selected as
+%%concepts without considering the overlap constraint.
+%
+%\begin{algorithm}[th]
+%\caption{Greedy Solution}
+%\label{vega}
+%\begin{algorithmic}[1]
+%%\Function{CalcCover}{concept,E}
+%%\State $coverage \leftarrow 0$
+%%\For {$e \in E$}
+%%\If {$e\ isA\ concept$}
+%%\State $coverage \leftarrow coverage+1$
+%%\EndIf
+%%\EndFor
+%%\State \textbf{return} $coverage$
+%%\EndFunction
+%%\Statex
+%%\Function{PickConcept}{leftE,doneE,candidateC}
+%%\State $pickC \leftarrow NULL$, $masCover \leftarrow 0$
+%%\For {$c \in candidateC$}
+%%\State $leftCover \leftarrow calcCover(c,leftE)$
+%%\State $doneCover \leftarrow calcCover(c,doneE)$
+%%\State $cover \leftarrow leftCover-doneCover$
+%%\If {$cover>maxCover$}
+%%\State $maxCover \leftarrow cover$
+%%\State $pickC \leftarrow c$
+%%\EndIf
+%%\EndFor
+%%\State \textbf{return} $pickC$
+%%\EndFunction
+%%\Statex
+%%\Function{Process}{corpusE,candidateC}
+%%\State $L \leftarrow corpusE$, $D \leftarrow \emptyset$
+%%\State $SCL \leftarrow \emptyset$
+%%\Repeat
+%%\State select $c$ from $candidateC$ covering most arguments in $L$ and least in $D$ which satisfies constraint
+%%\For {$e$ isA $c$}
+%%\State delete $e$ from $L$
+%%\State add $e$ to $D$
+%%\EndFor
+%%\State add $c$ to $SCL$
+%%\State delete $c$ from $candidateC$
+%%\Until{$L = \emptyset$}
+%%\State \textbf{return} $SCL$
+%%\EndFunction
+%%\end{algorithmic}
+%%\end{algorithm}
+%\Function{Process}{corpusE,candidateC,K}
+%\State $SCL \leftarrow \emptyset$
+%\Repeat
+%\State $S\leftarrow \emptyset$
+%\For {$c\not\in SCL$}
+%\State $Score\leftarrow 0$
+%\For {$c'\in SCL$}
+%\State $Score\leftarrow Score + Overlap(c,c')$
+%\EndFor
+%\State $Score\leftarrow (1-w)*Score - w*Coverage(c)$
+%\State Insert $<c,Score>$ to $S$
+%\EndFor
+%\State Insert $c_{max}$ with smallest score to $SCL$
+%\Until{$SCL.size = K$}
+%\State \textbf{return} $SCL$
+%\EndFunction
+%\end{algorithmic}
+%\end{algorithm}
+
+%When we collect new objects, we need to update our action knowledge. Given
+%a set of new collected objects, we first conduct our \emph{Action Extraction}
+%on these objects to get a list of proper concepts; then we merge these concepts
+%with concepts in our previous action knowledge.
+
+%\input{algo_cluster}
+
+%\input{algo_ls}
+
+\input{graph_based}
+
+%\input{rank}

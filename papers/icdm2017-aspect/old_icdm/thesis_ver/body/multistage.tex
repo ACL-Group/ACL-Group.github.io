@@ -1,0 +1,140 @@
+\chapter{Multistage Clustering Framework}
+
+In this chapter, we introduce our proposed method for solving aspect extraction, a multistage clustering framework. We will first define the input and output of our model, then introduce the framework step by step.
+
+\section{Problem Definition}
+
+The problem we try to solve is unsupervised aspect extraction. The input is a corpus of reviews. The copurs consists of many reviews, and each review consists of several sentences. From this corpus we determine $K$ best aspects, each aspect $A_i$ being a set of candidate words $A_i = \{a_{i,j}\}$, which are typically nouns that are closely related to this aspect.
+
+Note that in a run of our method, we only use a corpus of one domain to generate the aspects of that domain, without any information from other domains. This simplicity of the task allow our model to be applied to any domain.
+
+\section{System Overview}
+
+Our system takes as input the corpus of reviews about a product and outputs the $K$ best aspect words. The whole procedure consists of 2 parts: first we group the words related to potential aspects into clusters, then we select the best word from each cluster.
+
+Our system consists of two main phases: clustering and ranking. In the first phase, we use a multistage clustering method, starting from a corpus of reviews, cluster at sentence level and evantually end up at word level. The result is a soft clustering of all the words appearing in the corpus - similar to topic modeling - each word appears in all the aspect clusters with different weights.
+
+\begin{table}[t]
+\centering
+\begin{tabular}{|l|l|} \hline
+Aspect & Words \\
+\hline 
+food & breakfast, meal, \textbf{food}, tasty, dinner, ... \\
+\hline
+staff & \textbf{staff}, desk, service, friendly, reception, ... \\
+\hline
+location & close, city, \textbf{location}, place, central, ... \\
+\hline
+room & bed, shower, spacious, \textbf{room}, size, ... \\
+\hline
+\end{tabular}
+\caption{Result of clustering phase on hotel reviews. 
+  Each row shows the candidate words of an aspect, sorted by the weight of each word. 
+Bold-fonted words are the correct representatives of each aspect cluster.}
+\label{table:cluster_example}
+\end{table}
+
+Table~\ref{table:cluster_example} shows an example of a real-life result of the clustering phase. Each row shows the candidate words of an aspect, sorted by the weight of each word. We only show the top words but each aspect actually contains all the words appearing in the corpus. The bold-fonted words are the correct representatives of each aspect cluster. In can be seen, not all of them are correctly sorted to be the top position. This is because the clustering phase is mainly based on co-occurrence of words, not the meaning of them. The sorting result of clustering can not fully capture the words' ability to represent or summarize the whole cluster. This motivates the second, ranking phase, which leverages knowledge bases to better measure the semantics of words.
+
+In the following sections, we will introduce our clustering and ranking phases step by step.
+
+\section{3-stage Clustering}
+
+For clustering, we start with sentence vectors and go through 3 stages:
+
+\begin{itemize}
+	\item[1.] \textbf{Parallel text segmentation \& aggregation}
+
+		By clustering the sentence vectors into $N$ clusters, we actually break each review documents into a few, each related one potential aspect.
+
+	\item[2.] \textbf{Infer potential aspects}
+
+		Recognize what are the potential aspects with Topic Modeling. From each cluster generate $M$ topics, in total $N\times M$ topics.
+
+	\item[3.] \textbf{Resolve overlapping}
+
+		Resolve the overlapping between aspect candidate clusters, remove noise from each cluster. Result in $C$ clusters.
+\end{itemize}
+
+With the $C$ final clusters, we want to find the $K$ best aspects. For this we go through a ranking system, which consists of 2 procedures:
+
+
+% In the ranking process, we first rank the clusters on their quality. The better quality cluster ranks higher. Then we rank each cluster in the order we just got, that is, we first sort the cluster with better quality. We rank the words on how they summarize the whole cluster while considering the mutual information between the current one and the better quality, already sorted clusters.
+
+
+\begin{itemize}
+	\item[1.] \textbf{Rank clusters by quality}
+
+		Rank the clusters by \emph{distinctiveness}, a metric for the quality of the cluster.
+
+	\item[2.] \textbf{Rank words on their summarization ability}
+
+		Score the words in each cluster on how well they summarize the whole cluster.
+\end{itemize}
+
+In the rest of the section, we introduce our approach step by step.
+
+\subsection{Potential Aspect Clustering}
+% In the first clustering procedure, we coarsely cluster the sentence vectors. We run a K-Means on the vector space and result $N$ clusters, each consists of sentences. Then we break each review documents by grouping the sentences by the clusters they are in. After this process, we result in $N$ clusters of documents. But now each document is only about topics related to one potential aspect.
+
+As mentioned in previous chapters, one feature of review texts is that many topics are compressed into a short length where each of the topics might correspond to a potential aspect. sentences in a review that are close to each other may talk about completely different aspects about the product. Also sentences about the same aspect may not appear in the review in consecutive order. In order to perform topic modeling within the text about a single aspect, we need to group the sentences about the same aspect. This naturally leads to the segmentation of the text, which should to break a review into segments, each about a single aspect. 
+
+For clustering sentences, we leverage paragraph vector introduced in Section~\ref{section:paragraph_vector}, which captures the semantic similarity between sentences.
+We run the training of paragraph vector on the whole corpus, resulting in a vector representation for each sentence.
+
+Here we make a simple and reasonable assumption: each sentence talks about only one aspect. So we break down each review into sentences and do a clustering on them all. We run a K-Means on the sentence vectors and generate $N$ clusters of sentences. We break each review based on the clusters and aggregate the sentences from the same cluster into a new document. So we actually break each review into a few, each being a topic-coherent 
+
+
+\subsection{Inference of Aspect Words}
+The first clustering process grouped related texts together and is rather coarse, the resulting clusters may have non-negligible overlapping. The overlapping appears as noises in each cluster and we need to seperate them from the actual topic of the cluster. Also our expected results is at the word level and the first clustering is at the sentence level, so we apply topic modeling. 
+
+Within each cluster, we have the reduced documents formed by sentences from about the same potential aspect. We run LDA within cluster, generating $M$ topics each. 
+
+For each cluster in the $M$ topics, some are noise. These noise topics for this cluster are very likely the result of overlapping. So we need to cluster all the topics again.
+
+\subsection{Resolution of Aspect Overlapping}
+From the LDA within each cluster, we have in total $N\times M$ topics where each topic is a distribution of words. Suppose dictionary size is $Z$, then we have $N\times M$ vectors of dimension of $Z$. We run another K-Means in this vector space after performing dimensionality reduction like PCA. This gives us $C$ clusters, each consists of topics. We take the center of each cluster as a natural representation of it. 
+
+It is because of the existence of noise topics from LDA that we keep $C$ clusters instead of $K$, which the expected number of aspects. For our system to be fault-tolerant, we take more clusters than expected and cut out the noise by the following ranking process.
+
+
+\section{Ranking}
+
+The ranking phase takes the soft clustering by the previous phase and re-ranks both the clusters and the words in each cluster.
+
+Note that the clusters by previous phase don't have an order. But in real life product reviewing, the aspects should be treated differently, the ranking of the aspects should reflect the opinion of the users. Also the quality of the clusters - how related are the words to the aspect - may vary, due to different frequencies of the aspects in the corpus. Also, the clustering is mainly based on co-occurrence of words, which may not fully capture the semantic relatedness of words. Motivated by these, we proposed to do a 2-stage ranking based on the clustering result, with the help of knowledge bases: first rank the aspect clusters, then the words in each cluster.
+
+\subsection{Ranking Clusters}
+
+We rank the clusters based on their quality. As analyzed in the previous section, the noise in each cluster is introduced by the overlap between clusters. We follow this direction and propose a measurement for the quality of clusters.
+
+Our measurement is the \textbf{distinctiveness} of a cluster, namely how different is a cluster's word distribution from other clusters'. Intuitively, a cluster is of high quality when it has small overlapping with other clusters. We measure this by calculating the weighted sum of mutual information of the adjectives against all other clusters.
+
+The mutual information of two random variables is a measure for the mutual dependence. For random variables $X$ and $Y$, their mutual information is defined by 
+$$I(X, Y) = \sum_{y\in Y} \sum_{x\in X} p(x, y) \log\left(\frac{p(x, y)}{p(x)p(y)}\right)$$
+
+In sorting clusters, we only consider the adjectives. Since aspect words are most likely to be nouns and our purpose of the clustering phase is to seperate them, they tend to be distinctive among clusters. Thus adjectives are more evenly distributed among clusters and can be used as a better measurement.
+
+Let $a$ be any adjective in cluster $c, c\in[1,C]$ with frequency $f_c(a)$. Let $S(c, a)$ be the score of word $a$ in cluster $c$, then the score of the cluster $c$, $S(c) = \sum_{a} S(c,a)$. $S(c,a)$ is calculated by the mutual information between $a$ appearence in cluster $c$ and $a$ in all other clusters.
+
+\begin{align*}
+	S(c, a) &= \log\left(\frac{f_c(a)}{\sum_{r\in[1, C], r\neq c} f_r(a)}\right) \\
+			&= \log(f_c(a)) - \log(\sum_{r\in[1, C], r\neq c} f_r(a))
+\end{align*}
+
+The score of each cluster is then calculated by the sum of scores of its adjectives. Finally the clusters are ranked in decending order of the score, implying the order of quality, from better to worse.
+
+\subsection{Ranking Words}
+
+Each cluster consists of words related to a potential aspect and we want to find what is the aspect. We do this by finding the word that best summarizes each cluster. For ranking the words in one cluster on how they summarize the cluster, we leverage the intuition behind Lesk lemmatization algorithm and a knowledge base WordNet to define a \emph{semantic similarity} $\sims(w_1, w_2)$ between words $w_1$ and $w_2$.
+The semantic similarity measures how much the two words are related. The similarity consists of two parts:
+
+\begin{itemize}
+    \item Path similarty $\sims_p$ is calculated by the shortest path that connects two words in the is-a (hypernym/hyponym) taxonomy. The scores range from 0 to 1.
+    \item Definition overlap $\sims_d$ is calculated based on the definition paragraphs of the two words. We train a recurrent neural network language model on a large dataset and use it to embed the paragraphs, then calculate the cosine of the two embedding vectors as the similarity of of the two definitions.
+\end{itemize}
+
+The final semantic similarity score is calculated by $\sims(w_1, w_2) = \sims_p(w_1, w_2) + \sims_d(w_1, w_2)$. When ranking words inside each cluster, we start with the clusters with high confidence, by the order calculated from the previous step. For word $w$ in cluster $i$, there is a weight, $u_{w,i}$, assigned by the LDA. When calculating the score of word $w$ in cluster $i$, denoted by $s_{w,i}$, we also consider its score from all previous clusters $1\sim i-1$, $s_{w,1} \sim {w,i-1}$. Similar to cluster ranking, we consider the mutual information, resulting in the final calculation of the score:
+$$s_{w,i} = u_{w,i} \sum_{w'} \sims(w, w') - \sum_{j=1}^{i-1} s_{w,j}$$
+
+The final word order in each cluster is sorted by this score.

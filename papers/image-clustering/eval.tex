@@ -1,0 +1,505 @@
+\section{Experimental Results}
+\label{sec:eval}
+In this section, we evaluate our clustered based image search system.
+At the beginning, we introduce the test data and evaluation metrics.
+Then, we show three experiment results of our system.
+The first experiment shows the performance of each key component
+of our system: context extraction, representation, and
+ the combination of textual and visual information;
+The second one gives an end-to-end comparison between our
+ approach and the start-of-the-art systems;
+The last one shows the efficiency of our system.
+%At the end of this section, we show the representative top ranked concept
+%lists of some resulting clusters.
+
+%\subsection{Preparation}
+%Talk about setup of the experiment, including running environment, selection of parameters, etc.
+
+\subsection{Experiment Setup}
+%We prepare two kinds of data set for testing. One is for comparison with other image clustering methods,
+%the other is for document clustering. All of the data set can be obtained from internet.
+
+%\textbf{Image Clustering Data:}
+We prepare a set of image clustering data from Google Image Search.
+We select a list of 30 ambiguous entities
+(10 for parameter training and 20 for testing),
+such as \emph{kiwi}, \emph{pluto}, \emph{explorer}, etc.
+For each entity, we query in Google Image and
+download the top 100 images return by Google with the original web pages of the images.
+%Due to the fact that some of the web pages are not available,
+%we drop the invalid web pages and keep downloading 100 pages for each entity.
+This data set results in a total number of 3,000 web pages/images.
+We then manually label the collected data by human judges.
+All of the following experiments
+run on a dual-core i5 machine with 14GB memory.
+
+%\textbf{Document Clustering Data:}
+%We got two test data for document clustering. One is \emph{Reuter21578}, which is a well-known test bed of
+%both document classification and clustering. It contains 11,367 documents with manual labels. 9494 documents
+%of them are uniquely labeled to on cluster. {\color{red}KQ: process on the data}.
+%The other data set is \emph{20newsgroup}(20NG) which is also commonly used. \emph{20NG} provides a larger
+%data set of 18828 documents after removing duplicate ones. All of the documents are organized into 20 different newsgroups(topics).
+%{\color{red}KQ: process on the data}
+
+\subsection{Evaluation Metrics}
+%\KZ{Give more intuition of what the three metrics are so people understand
+%them better.}
+We adopt three metrics to measure the result of image/document clustering:
+\emph{Purity}, \emph{NMI} and \emph{$F_1$}.
+Purity measures the intra-cluster accuracy:
+\begin{equation}
+\label{equ:purity}
+Purity(C,L)=\frac{1}{N}\sum_i{\max_j{|c_i\cap l_j|}}, c_i\in C\;and\;l_j\in L
+\end{equation}
+where $C$ is the set of clusters and $L$ is the ground truth. $N$ is
+the number of documents. The measure of Purity has an obvious drawback
+that if we create one cluster for each document, the Purity will be 1, and
+this is not useful at all. Therefore, Purity should not be viewed independently.
+NMI (Normalized mutual information) is a better measure that
+balances the purity of the clusters with the number of clusters.
+It measures the amount of common information between the computed clusters and
+the ground truth.
+\equref{nmi} shows the computation of NMI score which requires
+mutual information $I(C,L)$ in \equref{mi}.
+\begin{eqnarray}
+NMI(C,L)&=&\frac{I(C,L)}{(H(C)+H(L))/2}
+\label{nmi}\\
+I(C,L)&=&\sum_i{\sum_j{\frac{|c_i\cap l_j|}{N}log\frac{N|c_i\cap l_j|}{|c_i||l_j|}}}
+\label{mi}
+\end{eqnarray}
+$H(C)$ and $H(L)$ are entropy of clusters $C$ and ground truth $L$ respectively.
+Another measure of clustering is $F_1$ score,
+which combines Purity and \emph{Inverse Purity}.
+Inverse purity exchanges the position of $C$ and $L$ in \equref{equ:purity},
+deciding that how much of each cluster in the ground truth is correctly clustered together.
+Similar to the
+$F_1$ score used in information retrieval task, $F_1$ score is computed as:
+\begin{equation}
+F_1(C,L)=\frac{2\cdot Purity(C,L)\cdot Purity(L,C)}{Purity(C,L)+Purity(L,C)}
+\end{equation}
+In many work on evaluating clustering algorithms, NMI
+is more important and sometimes the only measure, because it's extremely
+difficult to achieve high NMI scores.
+
+\subsection{Evaluation on Key Components}
+In this sub-section, we experiment on different variances of our
+system. First, we investigate the effects of different context
+extraction method; Then we show the performance of concept
+representation based on conceptualization and the benefits of
+tri-stage hierarchical clustering; Finally, we how the result of
+combining low level features, i.e. visual features with our main
+algorithm.
+
+\subsubsection{Context Extraction}
+\label{sec:contexteval}
+There are three variances of context: the whole page, surrounding
+text of the image and surrounding text of both the image and query term.
+The window size of the surrounding text is set to 200 words (100 words 
+before and after the query/image respectively).
+We apply these three kinds of context in the end-to-end evaluation of
+image clustering on 20 different queries (See \tabref{tab:contexteval}).
+\footnote{The results were obtained using our framework without
+integrating the visual signals.}
+Using the whole page bring some noises such that the purity of the clusters
+drops a lot comparing to the other two contexts. In contrast, only looking at the
+surrounding text of the image cause insufficient signals which lead to
+a result of high purity but low F1 and NMI.
+This result shows that the surrounding text of query term
+also has important semantic signals for getting much bigger clusters,
+which will improve the F1 and NMI.
+
+\begin{table}[th]
+\centering
+\caption{Accuracy on Different Contexts}
+\small
+\begin{tabular}{|l|r|r|r|}
+\hline
+     &       {\bf Purity} &         {\bf F1} &        {\bf NMI} \\
+\hline
+     Whole &       0.71 &       0.79 &       0.30 \\
+\hline
+Image Only &       0.92 &       0.85 &        0.62  \\
+\hline
+Image + Query &       0.92 &       0.86 &       0.64 \\
+\hline
+\end{tabular}
+\label{tab:contexteval}
+\end{table}
+
+\subsubsection{Context Representation}
+We implement two baseline systems to compare with our concept vector (CV) model.
+One of them use bag-of-words(BOW) model and the other one use bag-of-phrase(BOP) model.
+The latter one has a slight improvement on the bag-of-words that using
+phrases instead of single words to represent the context. But these phrases
+are only surface forms which are not disambiguated. Different from these two
+baselines, our system represent the context with a bag of concepts/senses from
+Wikipedia by wikifying the context. In other word, we disambiguate terms
+in the context to generate a more accurate representation.
+To make the end-to-end result comparable,
+we apply simple HAC on these three kinds representation,
+since the tri-stage clustering algorithm is only applicable on bag-of-concepts
+representation. \tabref{tab:represent} shows
+the comprehensive clustering result of the three kinds of context representation.
+The test data is the same as \secref{sec:contexteval}.
+This experiment shows that the BOP/CV representation is much more effective than
+BOW model, with significant improvement of F1 score. Phrases are more
+accurate to identify the semantics of text than words. CV beats BOP
+on both F1 and NMI due to wikification/disambiguation.
+
+\begin{table}[th]
+\centering
+\caption{Comparison on Different Context Representations}
+\small
+\begin{tabular}{|l|r|r|r|}
+\hline
+     &       {\bf Purity} &         {\bf F1} &        {\bf NMI} \\
+\hline
+       BOW &      0.93      &      0.58      &      0.46      \\
+\hline
+       BOP &      0.96      &      0.62      &      0.46      \\
+\hline
+       CV &      0.95      &     0.78   &       0.58\\
+\hline
+\end{tabular}
+\label{tab:represent}
+\end{table}
+
+\begin{table}[th]
+\centering
+\small
+\caption{Comparison on Different Clustering Algorithms}
+\begin{tabular}{|l|r|r|r|}
+\hline
+     &       {\bf Purity} &  {\bf F1} &   {\bf NMI} \\
+\hline
+       AP  &        0.92 &   	0.58 &	      0.49\\
+\hline
+       AP + Expansion  &    0.89 &       0.59 &        0.47 \\
+\hline
+        HAC\_CC &       0.95 &       0.78 &        0.58 \\
+\hline
+        HAC\_CC + Expansion &   0.92 &       0.82 &        0.59\\
+\hline
+       TSC &       0.92 &       0.86 &        0.64\\
+\hline
+\end{tabular}
+\label{tab:clusteringeval}
+\end{table}
+
+\subsubsection{Tri-stage Clustering}
+We compare our tri-stage clustering (TSC) algorithm with
+HAC and Affinity propagation (AP), two very popular clustering algorithms,
+as well as HAC\_CC.
+In this experiment, all algorithms use the concept vector representation.
+Except for TSC which cluster in three stages,
+all other algorithms run one time clustering only.
+The merging threshold of HAC\_CC is set to 0.15, while
+the preference of AP is set to be the average similarity between
+the data points. For AP and HAC, we also expand top ranked concepts in
+the contexts to enrich the signals, using the links in the article of each
+Wikipedia concept. The result of these five algorithms are shown in
+\tabref{tab:clusteringeval}. Our HAC\_CC algorithm outperforms AP due
+to the enhancement of strong signals and the removal of noises for
+cluster conceptualization.
+
+With concept expansion, purity and NMI of AP decrease because expansion is
+sensitive to noise and AP does not have good mechanism to handle noise.
+Our HAC\_CC gains benefit from the expansion because the expansion brings
+more signals and HAC\_CC can strengthen the important signals.
+TSC further improves HAC\_CC with concept expansion
+since we make use of meta context and
+the former clustering stage can provide accurate cluster vectors
+as input to the latter stage to further reduce the influence of noises.
+The experiment demonstrate TSC's capability of boosting important
+signals, which is effective in web image clustering.
+
+\subsubsection{Visual Features}
+Visual features are used to further combine some clusters that lack
+context information. We combine two visual features to compute the visual
+similarities. One is local feature based on SIFT descriptor and the other is
+global feature of color histogram. \tabref{tab:visualeval} shows the
+comparison on text based TSC and the combination of TSC and visual clustering (TSC-V).
+TSC-V improves F1 and NMI by merging small clusters to the big ones, but
+at the same time loses a bit of purity because the two visual features we use
+are rather rudimentary, e.g., they are not good at distinguishing human faces.
+However, this experiment shows that visual features do provide some useful information
+to complement the textual features, and this frame permits the use of more
+advantage visual similarity measures if they arise.
+
+\begin{table}[th]
+\centering
+\caption{Combining Visual Features}
+\small
+\begin{tabular}{|l|r|r|r|}
+\hline
+           &  {\bf Purity} &   {\bf F1} &   {\bf NMI} \\
+\hline
+ TSC &      0.92  &      0.86  &      0.64  \\
+\hline
+ TSC-V &      0.90  &      0.87  &      0.65 \\
+\hline
+\end{tabular}
+\label{tab:visualeval}
+\end{table}
+
+\subsection{End-to-end Accuracy}
+We compare our best approach (TSC-V) with three state-of-the-art systems
+in this sub-section. The first one IGroup \cite{Jing2006},
+a search engine snippet based approach;
+the second one is Cai's \cite{Cai2004} system,
+which extract image context using VIPS \cite{VIPS};
+Third is Fu's multi-modal constraint propagation approach (MMCP) \cite{Fu2011}.
+Except for Fu's system whose code was provided to us, we implemented
+all other algorithms.
+Besides these three systems, we also compare to the baseline algorithm using
+our own context extraction algorithm but a bag-of-words (BOW) representation.
+
+IGroup rewrites the query and use search engine to obtain image clusters. We use
+Lucene to build a mini search engine on our test data and implement IGroup based on it.
+Because this method has a time complexity of $O(N^2 M)$ where $N$ is
+the number of n-grams and $M$ is the number of snippets, we restrict the number of
+snippets in the experiment to 20. Otherwise, the execution is too long.
+Cai's system need the link graph of all web pages which is not immediately available,
+so that we implement their system only with visual features and context.
+We apply the same modals to MMCP as Fu's paper: local visual, global visual
+and text. Fu's data set is extracted from Flickr, so that they use tags of
+the images as the text feature. In this experiment, we use the bag-of-words
+in the source page of the image as the text feature.
+
+\tabref{tab:end2end} compares our approach with to the peers.
+In almost of the cases, TSC-V beats all other methods on F1 and NMI scores.
+``Andrew Appel'' and ``Emirates'' are two exceptional cases in which
+TSC-V loses to our baseline BOW.
+Many images in top search results of ``Andrew Appel'' come from
+a single list-like web page from \emph{LinkedIn}, in which many different
+people called ``Andrew Appel'' are listed.
+In each list item, there are common fields such as titled position,
+education and summary. This causes our algorithm to
+treat many different entities similarly by the common phrases like
+``education'', ``position'', etc., while the baseline BOW system computes
+the IDF score only on the 100 source pages of the images which can
+decrease impact of those common words.
+The two different entities of ``Emirates'', the country UAE and the Emirates airline
+are very much related in reality, therefore share many common concepts and
+similarities in the context. As a result, the purity is compromised and
+there are confusions in the clusters.
+
+In general, our approach form bigger clusters while preserving
+the high purity in each clusters. The existing systems don't have
+a very good way to handle noises, which is often seen in the contexts of
+web images. The noises usually dilute the positive impact of the important
+signals, especially when the context is very limited. Our conceptualization
+and tri-stage clustering method can remove some of noises.
+Some systems like MMCP intends to obtain high NMI score,
+but their purity is quite low. Clustering result with low purity is
+not satisfied by end users. Our system outperforms the best of the peers
+by significant margins: {\bf 20.8\%} by $F_1$ and {\bf 41.3\%} by NMI score.
+%which makes our system practical to integrate with
+%image search engine.
+
+%\begin{figure*}
+%\centerline{\psfig{figure=histogram.eps,width=2\columnwidth}}
+%	\caption{Purity}
+%	\label{fig:purity}
+%\end{figure*}
+
+\begin{table*}[th]
+\centering
+\caption{Result of End-to-End Image Clustering}
+\small
+\begin{tabular}{|l|r|r|r|r|r|r|r|r|r|r|r|r|r|r|r|}
+\hline
+    {\bf } &  \multicolumn{ 3}{|c|}{{\bf IGroup}} &     \multicolumn{ 3}{|c|}{{\bf Cai}} &    \multicolumn{ 3}{|c|}{{\bf MMCP}} &     \multicolumn{ 3}{|c|}{{\bf BOW}} &    \multicolumn{ 3}{|c|}{{\bf TSC-V}} \\
+\hline
+{\bf Query} & {\bf Purity} &   {\bf F1} &  {\bf NMI} & {\bf Purity} &   {\bf F1} &  {\bf NMI} & {\bf Purity} &   {\bf F1} &  {\bf NMI} & {\bf Purity} &   {\bf F1} &  {\bf NMI} & {\bf Purity} &   {\bf F1} &  {\bf NMI} \\
+\hline
+    Amazon &      0.62  &      0.74  &      0.08  &      0.64  &      0.65  &      0.14  &      0.66  &      0.58  &      0.13  & {\bf 0.92 } &      0.55  &      0.42  &      0.89  & {\bf 0.84 } & {\bf 0.51 } \\
+\hline
+  Anderson &      0.61  &      0.72  &      0.21  &      0.59  &      0.72  &      0.04  &      0.63  &      0.55  &      0.38  & {\bf 0.92 } &      0.58  &      0.60  &      0.88  & {\bf 0.90 } & {\bf 0.82 } \\
+\hline
+Andrew Appel &      0.16  &      0.28  &      0.56  &      0.18  &      0.30  &      0.10  &      0.24  &      0.37  &      0.39  & {\bf 0.70 } & {\bf 0.74 } & {\bf 0.85 } &      0.57  &      0.69  &      0.78  \\
+\hline
+     Apple &      0.52  &      0.67  &      0.08  &      0.55  &      0.68  &      0.12  &      0.73  &      0.60  &      0.35  & {\bf 0.90 } &      0.39  &      0.42  &      0.79  & {\bf 0.77 } & {\bf 0.47 } \\
+\hline
+      Bean &      0.42  &      0.57  &      0.19  &      0.50  &      0.65  &      0.21  &      0.48  &      0.45  &      0.26  & {\bf 0.90 } &      0.63  &      0.65  &      0.89  & {\bf 0.89 } & {\bf 0.83 } \\
+\hline
+British India &      0.50  &      0.63  &      0.08  &      0.54  &      0.67  &      0.12  &      0.70  &      0.44  &      0.24  & {\bf 0.93 } &      0.47  &      0.43  &      0.85  & {\bf 0.71 } & {\bf 0.47 } \\
+\hline
+   Eclipse &      0.84  &      0.88  &      0.06  &      0.85  &      0.88  &      0.03  &      0.85  &      0.43  &      0.15  & {\bf 0.96 } &      0.51  &      0.33  &      0.92  & {\bf 0.91 } & {\bf 0.49 } \\
+\hline
+  Emirates &      0.78  &      0.80  &      0.04  &      0.80  &      0.86  &      0.06  &      0.81  &      0.64  &      0.19  & {\bf 0.98 } &      0.33  & {\bf 0.30 } &      0.82  & {\bf 0.85 } &      0.23  \\
+\hline
+  Explorer &      0.69  &      0.79  &      0.21  &      0.71  &      0.81  &      0.10  &      0.84  &      0.81  &      0.39  &      0.95  &      0.61  &      0.46  & {\bf 1.00 } & {\bf 0.96 } & {\bf 0.83 } \\
+\hline
+     Focus &      0.73  &      0.80  &      0.25  &      0.70  &      0.72  &      0.10  &      0.75  &      0.69  &      0.35  &      0.92  &      0.55  &      0.48  & {\bf 0.94 } & {\bf 0.88 } & {\bf 0.78 } \\
+\hline
+      Jobs &      0.51  &      0.66  &      0.07  &      0.54  &      0.68  &      0.08  &      0.61  &      0.44  &      0.19  &      0.90  &      0.58  &      0.42  & {\bf 0.91 } & {\bf 0.76 } & {\bf 0.49 } \\
+\hline
+      Kiwi &      0.60  &      0.71  &      0.05  &      0.63  &      0.74  &      0.08  &      0.82  &      0.76  &      0.28  &      0.97  &      0.48  &      0.32  & {\bf 0.99 } & {\bf 0.92 } & {\bf 0.64 } \\
+\hline
+    Malibu &      0.57  &      0.71  &      0.01  &      0.59  &      0.73  &      0.18  &      0.70  &      0.67  &      0.28  & {\bf 1.00 } &      0.70  &      0.53  &      0.99  & {\bf 0.90 } & {\bf 0.71 } \\
+\hline
+      Palm &      0.74  &      0.80  &      0.11  &      0.79  &      0.86  &      0.06  &      0.84  &      0.50  &      0.23  & {\bf 1.00 } &      0.59  &      0.39  &      0.99  & {\bf 0.97 } & {\bf 0.83 } \\
+\hline
+   Patriot &      0.55  &      0.67  &      0.21  &      0.62  &      0.74  &      0.11  &      0.72  &      0.72  &      0.42  & {\bf 0.95 } &      0.79  &      0.67  &      0.94  & {\bf 0.88 } & {\bf 0.80 } \\
+\hline
+     Pluto &      0.71  &      0.82  &      0.12  &      0.71  &      0.80  &      0.12  &      0.82  &      0.57  &      0.25  &      0.91  &      0.59  &      0.34  & {\bf 0.93 } & {\bf 0.90 } & {\bf 0.57 } \\
+\hline
+      Polo &      0.68  &      0.74  &      0.19  &      0.65  &      0.68  &      0.03  &      0.76  &      0.77  &      0.29  & {\bf 0.99 } &      0.53  &      0.44  &      0.89  & {\bf 0.88 } & {\bf 0.70 } \\
+\hline
+  Santa Fe &      0.61  &      0.73  &      0.02  &      0.65  &      0.76  &      0.07  &      0.72  &      0.69  &      0.15  & {\bf 0.95 } &      0.65  &      0.42  & {\bf 0.95 } & {\bf 0.90 } & {\bf 0.62 } \\
+\hline
+    Tucson &      0.55  &      0.69  &      0.01  &      0.63  &      0.64  &      0.08  &      0.81  &      0.73  &      0.28  &      0.98  &      0.59  &      0.38  & {\bf 0.99 } & {\bf 0.94 } & {\bf 0.70 } \\
+\hline
+     Venus &      0.80  &      0.87  &      0.07  &      0.78  &      0.85  &      0.04  &      0.78  &      0.58  &      0.07  &      0.96  &      0.73  &      0.40  & {\bf 0.98 } & {\bf 0.93 } & {\bf 0.70 } \\
+\hline
+{\bf Average} &      0.61  &      0.71  &      0.13  &      0.63  &      0.72  &      0.09  &      0.71  &      0.60  &      0.26  & {\bf 0.93 } &      0.58  &      0.46  &      0.90  & {\bf 0.87 } & {\bf 0.65 } \\
+\hline
+\end{tabular}
+\label{tab:end2end}
+\end{table*}
+
+%\KZ{One more: can we do clustering on mix of different search terms? If we could do that, then
+%the whole clustering can be done offline potentially?}
+
+\subsection{Time Efficiency}
+%We evaluate the online processing efficiency of our system. As discussed in
+%\secref{sec:algo}, the online process of our system contains two parts, context
+%extraction and clustering. We run the online component on 100 images and average
+%the time cost over three independent experiments.
+%\tabref{tab:online} demonstrate the resulting
+%time cost of each of the two parts and the whole online component in milliseconds.
+%The online system can process 100 images in less than 1 second.
+
+%\begin{table}
+%\centering
+%\caption{Time cost of the online component on 100 images (ms)}
+%\small
+%\begin{tabular}{|l|r|r|r|}
+%\hline
+%{\bf query} & {\bf context} & {\bf clustering} & {\bf total} \\
+%\hline
+%    Amazon &       259  &       839  &      1098  \\
+%\hline
+%  Anderson &       169  &       388  &       557  \\
+%\hline
+%Andrew Appel &       120  &       433  &       553  \\
+%\hline
+%     Apple &       237  &       777  &      1014  \\
+%\hline
+%      Bean &       171  &       429  &       600  \\
+%\hline
+%British India &       392  &       927  &      1320  \\
+%\hline
+%   Eclipse &       210  &       384  &       594  \\
+%\hline
+%  Emirates &       269  &       445  &       714  \\
+%\hline
+%  Explorer &       214  &       364  &       578  \\
+%\hline
+%     Focus &       200  &       154  &       354  \\
+%\hline
+%      Jobs &       234  &       344  &       578  \\
+%\hline
+%      Kiwi &       142  &       402  &       543  \\
+%\hline
+%    Malibu &       219  &       498  &       717  \\
+%\hline
+%      Palm &       193  &       445  &       638  \\
+%\hline
+%   Patriot &       193  &       504  &       698  \\
+%\hline
+%     Pluto &       254  &       509  &       763  \\
+%\hline
+%      Polo &       167  &       339  &       506  \\
+%\hline
+%  Santa Fe &       205  &       398  &       603  \\
+%\hline
+%    Tucson &       163  &       347  &       509  \\
+%\hline
+%     Venus &       256  &       633  &       889  \\
+%\hline
+%{\bf Avg.} &       213  &       478  &       691  \\
+%\hline
+%\end{tabular}
+%\label{tab:online}
+%\end{table}
+
+We compare the online efficiency of our system with the three state-of-the-art systems
+(See \tabref{tab:timepeer}).
+All timing results are averaged over 5 independent runs.
+MMCP propagates the constraints between each modality. This process run clustering
+on each modality for several times, which explains its long execution time (5 seconds).
+IGroup searches for snippets and compute several textual features based on
+n-grams. Since the number of the snippets is set to 20, 
+IGroup is quite efficient. But this is under the assumption that
+all snippets are already stored and indexed in memory.
+With all features extracted off-line, Cai's system
+only need spectral clustering on the images online, 
+they therefore are the winner in online efficiency. 
+However, the VIPS extraction module of their system relies on
+browser rendering module and is highly brittle. It is almost impossible to
+automate the context extraction process without human intervention due to
+frequent crashes of the VIPS module.
+Our prototype system, which is not optimized, 
+runs for around 1 second per query on average.
+It is slightly slower than Cai's and IGroups
+since we need to extract the query context online,
+and the expansion of concepts is also time consuming.
+However, considering the balance between accuracy, efficiency and reliability,
+our system is an overall winner in practical web image search task.
+
+\begin{table}[th]
+\centering
+\caption{Time Cost Comparison to Peers on 100 Images (ms)}
+\small
+\begin{tabular}{|l|r|r|r|r|r|}
+\hline
+{\bf Query} & {\bf IGroup} & {\bf MMCP} &  {\bf Cai} &  {\bf TSC} & {\bf TSC-V} \\
+\hline
+    Amazon &      1008  &      5069  &       216  &      1605  &      1634  \\
+\hline
+  Anderson &       441  &      4844  &       117  &       964  &       981  \\
+\hline
+Andrew Appel &       434  &      5360  &       156  &      1226  &      1242  \\
+\hline
+     Apple &       353  &      5084  &       165  &      1272  &      1289  \\
+\hline
+      Bean &       225  &      5457  &       116  &       871  &       887  \\
+\hline
+British India &       427  &      3955  &       183  &      1844  &      1864  \\
+\hline
+   Eclipse &       395  &      7105  &       147  &       909  &       926  \\
+\hline
+  Emirates &       391  &      3948  &        89  &      1124  &      1146  \\
+\hline
+  Explorer &       381  &      4718  &       130  &       919  &       934  \\
+\hline
+     Focus &       419  &      5178  &       145  &       883  &       899  \\
+\hline
+      Jobs &       743  &      5200  &       108  &      1231  &      1249  \\
+\hline
+      Kiwi &       254  &      4141  &       119  &       849  &       866  \\
+\hline
+    Malibu &       258  &      4504  &        94  &       977  &       994  \\
+\hline
+      Palm &       360  &      6606  &       159  &      1018  &      1034  \\
+\hline
+   Patriot &       331  &      4757  &       171  &      1052  &      1070  \\
+\hline
+     Pluto &       444  &      5891  &       154  &      1164  &      1182  \\
+\hline
+      Polo &       353  &      4603  &       130  &       893  &       910  \\
+\hline
+  Santa Fe &       726  &      4548  &       154  &      1255  &      1272  \\
+\hline
+    Tucson &       427  &      4478  &       170  &       859  &       876  \\
+\hline
+     Venus &       450  &      4975  &       148  &      1505  &      1525  \\
+\hline
+{\bf Average} &       441  &      5021  &       144  &      1121  &      1139  \\
+\hline
+\end{tabular}
+\label{tab:timepeer}
+\end{table}
+

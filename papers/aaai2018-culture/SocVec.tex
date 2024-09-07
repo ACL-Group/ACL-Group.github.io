@@ -1,0 +1,248 @@
+\section{Proposed \textit{SocVec} Model}
+\label{sec:socvec}
+We first discuss the intuition behind our model informally, then give the overall workflow of our approach, and finally present the details of the~\textit{\socvec}~framework. 
+
+\subsection{Problem Statement and the Intuition}
+Assuming the language $L_1$ is English and $L_2$ is Chinese,\footnote{Due to the salient cross-cultural differences between the east and the west, 
+this paper chooses English and Chinese as the example language pair. 
+Nevertheless, the techniques developed here are language independent and 
+thus can be used for any two natural languages so long as 
+we have the necessary resources.} the problem we address is: given 
+an English term $W$ and a Chinese term $U$, compute a cross-lingual 
+similarity score, $clsim(W, U)$, representing the cross-cultural 
+similarity between $W$ and $U$. 
+Although we can easily train English and Chinese word embeddings 
+respectively, we cannot directly calculate 
+the similarity between the mono-lingual word vectors of $W$ and $U$ 
+since they are trained separately and thus their dimensions 
+are inconsistent.
+Consequently, we have to devise a reasonable way to calculate the 
+similarity across two different vector spaces while retaining 
+their respective socio-linguistic features at the same time.
+That is the main challenge of the the problem. 
+
+A very intuitive solution to the problem is to translate $U$ to its English 
+counterpart $U'$ through a Chinese-English bilingual lexicon and then simply consider 
+the cosine similarity between $W$ and $U'$ by their English word embeddings.
+However, this solution is infeasible for the two tasks for three reasons: 
+i) if $U$ is an OOV (Out of Vocabulary) term, e.g., a slang term, 
+then there is no $U'$ in the bilingual lexicon; 
+%ii) if $U$ is ambiguous and has multiple translations, then the weights
+%of these translated terms are hard to determine;
+ii) if $W$ and $U$ refer to the same named entity, $U' = W$, 
+then $clsim(W, U)$ is just the similarity between $W$ and itself, 
+therefore we cannot capture any cross-lingual differences. 
+iii) Besides, this approach does not purposely preserve the 
+cultural and social context of the terms. 
+Therefore, this kind of solutions are not suitable for the two aforementioned 
+tasks, which require the cross-cultural similarities between slang terms 
+and differences between entity names.
+
+To overcome the above problems, our intuition is thus 
+to project English and Chinese word vectors to a common third space, 
+known as \textit{\socvec} and this projection is supposed to carry 
+social and cultural context such as opinions, sentiments and cognition 
+associated with the terms in respective languages. 
+Such information is suppose to be encoded as values on each 
+dimension of \textit{\socvec}.
+%Considering the shortcomings of aforementioned transformation-based solutions, we propose to  
+%construct a cross-lingual vector space with respect to sociolinguistic features, instead of transforming a space into another one.
+%To construct a universal vector space for multilingual usage, we have to specify the meaning of each dimension for each language.
+%Meanwhile, the meaning of the dimensions has to be related to opinion, sentiment, cognition and many other psychological processes to help capture the sociolinguistic information.
+%Based on these two requirements, we argue that we should build a Bilingual Sociolinguistic Lexicon and extract word representation using the similarities to each translation pair in BSL as a medium.
+%
+\begin{figure}[th!]
+	\centering
+	\epsfig{file=figures/overview.pdf, width=0.8\columnwidth}
+	\caption{Workflow for computing the cross-cultural similarity between 
+an English word \textit{W} and a Chinese word \textit{U}.}
+	\label{fig:overview}
+\end{figure}
+\vspace{-15pt}
+\subsection{Overall Workflow of Building \textit{SocVec}}
+Our proposed \textit{\socvec}~model attacks the problem with the help of three low-cost external resources: 
+i) English and Chinese social media corpora; ii) an English-Chinese bilingual lexicon (\textit{BL});  
+iii) English and Chinese social word vocabularies 
+(\textit{ESV} and \textit{CSV}).
+%For convenience, the words in these vocabularies are called
+%{\em social words}. 
+Examples of social words in English include
+\textit{fawn, inept, tremendous, gratitude,
+terror, terrific, kiss, loving, traumatic}, etc.
+%~\footnote{There are open-sourced
+%resources for these words as the following sections describe.}
+%\BL{maybe use another expression for the social words} 
+
+\figref{fig:overview} shows the overall workflow of our framework to construct the \textit{\socvec}~and compute $clsim(W,U)$. 
+Notations: \textit{CnVec} = Chinese word vector space, \textit{EnVec} = English word vector space,
+\textit{CSV} = Chinese social word vocab, \textit{ESV} = English social word vocab,
+\textit{BL} = Bilingual Lexicon, \textit{BSL} = Bilingual Social Lexicon. 
+Finally, $E_x$, $C_x$ and $S_x$ denote the word vectors of word $x$ (either $U$ or $W$) in \textit{EnVec} space, \textit{CnVec} space and \textit{SocVec} space respectively.  
+
+First, we train English and 
+Chinese word embeddings (\textit{EnVec} and \textit{CnVec}) 
+on the English and Chinese social media corpora respectively. 
+Then, 
+we build a \textit{BSL}
+from the CSV and ESV as well as \textit{BL}, . 
+The \textit{BSL} helps us 
+map previously incompatible \textit{EnVec} and \textit{CnVec} 
+into the common higher-dimensional \textit{\socvec~}space,
+where
+two new vector representations, $S_W$ for $W$ and $S_U$ for $U$,
+are now comparable.
+
+\subsection{\textit{SocVec} Modeling}
+\label{sec:model}
+In this section, we present the details of building the \textit{BSL} 
+and constructing the \textit{\socvec} space.
+
+\subsubsection{Building the \textit{BSL}}
+The process of building the \textit{BSL} is 
+illustrated in~\figref{fig:BSL}. 
+We first utilize the bilingual lexicon to translate each social word 
+in the \textit{ESV} into Chinese words and then filter out all the words 
+that are not in the \textit{CSV}. After that, we have a set of 
+Chinese social words for each English social word. 
+We call this set of Chinese words the ``translation set''.
+The final step is to generate a Chinese ``pseudo-word'' 
+for each English social word.\footnote{A pseudo-word can be either 
+an existing word that is the most representative word of the translation set 
+or a fabricated word whose word vector is the combination of word vectors of
+the translation set.}
+
+\begin{figure}[th]
+	\centering
+	\epsfig{file=figures/BSL.pdf, width=0.9\columnwidth}
+	\caption{Generating an entry in BSL for ``\textit{fawn}'' 
+		and its pseudo-word ``\textit{fawn}*''.}
+	\label{fig:BSL}
+\end{figure}
+
+For example, in \figref{fig:BSL}, the
+English social word ``\textit{fawn}'' has three Chinese translations in the 
+bilingual lexicon, but only two of them are social words. 
+The pseudo-word generator takes the word vectors of the two words, namely
+奉承(flatter) and 谄媚(toady), as input, and generates the pseudo-word 
+vector of ``\textit{fawn}'', denoted as ``\textit{fawn*}''. 
+%\footnote{The reason why we use the direction from English to Chinese  is that English socio-linguistic vocabularies tend to be more accessible and accurate than low-resource languages. The filter is optional for low-resource language which has no socio-linguistic lexicon, if we can afford the inaccuracy.}
+
+Given an English social word $s$, we denote $\mathbf{C_i}$ as 
+word vector of the $i^{th}$ word of the translation set (consisting of $N$ words).
+We design four intuitive types of pseudo-word generator as follows: 
+\vspace{-8  pt}
+\begin{align*}
+	\intertext{\textbf{Max.}: Maximum of the values in each dimension, 
+assuming $K$-dimensional word vectors.}
+	Pseudo(\mathbf{C_1},...,\mathbf{C_N}) &= \begin{bmatrix}
+	max(C_1^{(1)},...,C_N^{(1)}) \\
+	\vdots   \\
+	max(C_1^{(K)},...,C_N^{(K)})
+	\end{bmatrix}^{\rm T} \\
+	\intertext{\textbf{Avg.}: Average of the values in each dimension.}
+	Pseudo(\mathbf{C_1},...,\mathbf{C_N})&=\frac{1}{N}\sum_i^N\mathbf{C_i} \
+	\intertext{\textbf{WAvg.}: Weighted average value of each dimension 
+with respect to the translation confidence.} 
+	Pseudo(\mathbf{C_1},...,\mathbf{C_N})&=\frac{1}{N}\sum_i^Nw_i \mathbf{C_i} \
+	\intertext{\textbf{Top}: Choose the most confident translation, $\mathbf{C_{top}}$.}
+	Pseudo(\mathbf{C_1},...,\mathbf{C_N}) &= \mathbf{C_{top}} \
+\end{align*}
+
+The direction of building \textit{BSL} can also be from Chinese to English, 
+in the same manner. One can also remove this assymetry by averaging the 
+results from both directions. 
+However, in practice, we find that the current English to Chinese direction 
+gives better results due to the better quality of Enlish to Chinese translation
+in our BL.  
+
+At the end of this step, the \textit{BSL} contains a set of 
+English-Chinese word vector pairs, each entry representing an English 
+social word and its Chinese pseudo-word.
+
+
+\subsubsection{Constructing the \textit{\socvec}~Space}
+\label{sec:pg}
+%\textbf{Notation Definition.} 
+We denote $\bf{E_x}$, $\bf{C_x}$ and $\bf{S_x}$ as the word vectors of 
+word $x$ in \textit{EnVec}, \textit{CnVec} and \textit{\socvec} spaces
+respectively.  
+Let $B_i$ be an English word and $B_i^*$ be
+the corresponding Chinese pseudo-word for the $i$th entry of \textit{BSL}.  
+We can project an English word vector $\bf{E_W}$ into \textit{\socvec} by 
+computing the cosine similarity between $\bf{E_W}$ and each English
+word vector in \textit{BSL}, effectively constructing a new vector
+$\bf{S_W}$ of size $L$. 
+We also map a Chinese word vector 
+$\bf{C_U}$ to be a new vector $\bf{S_U}$. 
+Now $\bf{S_W}$ and $\bf{S_U}$ belong to the same vector space \textit{\socvec} 
+and are comparable. 
+
+For example, if $W$ is ``Nagoya'' and $U$ is ``名古屋'', we compute the
+cosine similarities between ``Nagoya'' and each English social word in \textit{BSL}.
+Such similarities compose $\bf{S_{\text{nagoya}}}$. 
+Similarly, we compute the cosine similarities
+between ``名古屋'' and each Chinese pseudo-words and form the social word vector $\bf{S_{\text{名古屋}}}$. 
+
+Formally, $clsim(W,U)$ is computed as:
+{\small
+\begin{align*}
+&clsim(W,U) := f(\mathbf{E_\text{W}},\mathbf{C_\text U}) \\ 
+&=sim\left(
+\begin{bmatrix}
+    cos(\mathbf{E_\text W},\mathbf{E_{ B_1}})\\
+    \vdots \\
+    cos(\mathbf{E_\text W},\mathbf{E_{B_L}})
+\end{bmatrix}^{\rm T},\begin{bmatrix}
+    cos(\mathbf{C_\text U},\mathbf{C_{B_1^*}})\\
+    \vdots \\
+    cos(\mathbf{C_\text U},\mathbf{C_{B_L^*}})
+\end{bmatrix}^{\rm T}\right)\\
+&=sim(\mathbf{S_\text W},\mathbf{S_\text U}), 
+\end{align*}}
+\noindent
+where $cos$ denotes the cosine similarity.
+The function $sim$ is a generic similarity function, for which a number of
+metrics will be considered later in experiments.
+%
+%to project $\mathbf{E_W}$ and $\mathbf{C_U}$ to $\mathbf{S_W}$ and $\mathbf{S_U}$ so that they can be comparable to each other.
+%We define the function $f$ to compute cross-lingual similarity between $W$ and $U$ as follows.\footnote{Here $cos$ stands for cosine similarity, } This calculation process is also shown in ~\algref{alg:alg1}. \\
+%
+%\begin{algorithm}[th]
+%	\small
+%	\DontPrintSemicolon
+%	\caption{Compute cross-lingual similarity between an English word 
+%		\textit{W} and a Chinese word \textit{U} } 
+%	\label{alg:alg1}
+%	\KwIn{ \textit{EnVec}, \textit{CnVec}, $BSL$ with $L$ word pairs} 
+%	\KwOut{the cross-lingual similarity $clsim(W,U)$} 
+%	$E_W$ = word vector of $W$ in \textit{EnVec}\\
+%	$C_U$ = word vector of $U$ in \textit{CnVec}\\
+%	$S_W$ =  zero vector with $L$ dimension \\
+%	$S_U$ =  zero vector with $L$ dimension \\
+%	%	\Comment*[l]{Project $E_W$ into $S_W$}
+%	\For{$1 \le i \le L$}{
+%		$B_i$ =  $i^{th}$ English word in \textit{BSL} \\
+%		$B_i^*$ = Chinese pseudo-word of $B_i$ \\
+%		$S_W[i]$ = $cos(E_W,E_{B_i})$\\
+%		$S_U[i]$ = $cos(C_U,C_{B_i^*})$\\
+%	} 
+%	\Return $clsim(W,U)$ = $sim(S_W,S_U)$\\
+%\end{algorithm}
+%\begin{figure}[th!]
+%	\centering
+%	\epsfig{file=figures/SocVec.pdf, width=0.6\columnwidth}
+%	\caption{Using \textit{BSL} to project $E_W$ and $C_U$ to $S_W$ and $S_U$.}
+%	\label{fig:swsu}
+%\end{figure}
+
+%\subsubsection{Parameters Description}
+%\label{sec:pd}
+%Here, we briefly summarize the main parameters of \textit{SocVec} model:
+%\begin{itemize}
+%\item Two trained monolingual word embeddings, \textit{EnVec} and \textit{CnVec};  
+%\item A bilingual lexicon;
+%\item Chinese and English socio-linguistic vocabularies; 
+%\item Pseudo-word generator function; 
+%\item Option of similarity function $sim$; 
+%\end{itemize} 
+%We conduct several experiments for testing the these parameters in~\secref{sec:mcdne}.

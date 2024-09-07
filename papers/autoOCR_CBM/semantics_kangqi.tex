@@ -1,0 +1,445 @@
+\section{Robust ODL Parser}
+\label{sec:parsing}
+
+In this section, we focus on the ODL parser,
+which is the core of the entire information extraction system.
+% we focus on the process of structured textual information extraction,
+% which is the kernel part of the entire system.
+We first describe the semantics that the parser is used for generating
+parsing trees based on the ODL specification.
+Afterwards, we describe the detail of the fuzzy matching strategy
+and the automatic correction model.
+
+\subsection{Semantics of the ODL Parser}
+% 1. in general, what's the parsing process
+Referring to \figref{fig:running-parsing-tree},
+the parsing process evaluates the entire data expression of ODL
+into hierarchical texts organized by the parsing tree,
+defined as $T = (node, [T_1, ..., T_n])$,
+where $T_i$ is the $i$-th sub-tree of $T$.
+The leaf nodes of $T$ are $(e, text)$ pairs representing the alignment
+between some primitive expression and its corresponding text,
+and non-leaf nodes are always the variable names $x$.
+
+% 2. recursive process
+Since the entire expression has a complex structure,
+the evaluation is conducted recursively:
+it first evaluates each sub-expression, and then composes multiple parsing trees
+into a large one.
+So the semantics of the parser consists of two parts:
+the evaluation rules for non-compositional expressions
+(constants, primitive variables and spatial expressions),
+and the inductive evaluation rules for compositional expressions.
+
+% talk about basic
+% \subsubsection{Evaluation Rules for Non-compositional Expressions}
+The most basic rule is for evaluating constants (or primitive variables):
+given the OCR data $D$ and the constant (or primitive variable) $e$ in ODL,
+searching all possible alignments between $e$ and some text box $d \in D$.
+During the whole parsing process, the parser maintains an environment
+$E = (x_0, y_0, x_1, y_1, x_{cr}, y_{cr})$,
+which contains the coordinates of the searching area,
+as well as a cursor ($x_{cr}$, $y_{cr}$).
+The cursor is a reference point, indicating the rough position
+that the desired text box resides.
+By default, the searching area is the whole image,
+and the cursor is at the top-left corner.
+The relative layout in ODL is represented in a
+left-to-right then top-to-bottom manner,
+thus the text box $d$ becomes a candidate alignment of $e$,
+if it's within the searching area,
+and not located in the top-left side of the cursor.
+The following $InBound$ function defines such rule:
+\begin{equation}
+  \begin{aligned}
+      InBound(D, E) & = \{d \in D\ |\ \\
+      & E.x_0 \leq d.x_0 \leq d.x_1 \leq E.x_1 \\
+      \land &
+      E.y_0 \leq d.y_0 \leq d.y_1 \leq E.y_1 \\
+      \land & \lnot
+      ( d.x_1 \leq E.x_{cr} \land d.y_1 \leq E.y_{cr} )
+      \}. \\
+  \end{aligned}
+\end{equation}
+With the environment $E$ provided,
+the parser enumerates all candidate text boxes,
+and use a boolean match function $Match(e, d; E)$ to
+judge whether an alignment exists between $d$ and
+the constant (or primitive variable) $e$.
+Intuitively, $d$ is a valid match of $e$,
+if its text is close to the constraints of $e$,
+and it's located near the cursor ($E.x_{cr}, E.y_{cr}$).
+For a better flow of explanation, the formal definition of the match function
+will be given in the next section.
+If matches, a new parsing tree $T=((e, d.text), [])$ is generated,
+which has a single node without any children.
+Besides, both $D$ and $E$ need to be changed, so that the parser
+can work on the alignment of the subsequent expressions in ODL.
+Following the relative layout of expressions,
+the cursor is moved to the top-right corner of the box:
+$E' = Move(E, d)$, and $d$ is removed from $D$,
+as one text box can be aligned at most once: $D' = D - \{d\}$.
+\equref{equ:semantic-operations} defines a series of functions
+that changes the environment, which are used in different evaluation rules.
+In which, $c$ is short for $coor$.
+\begin{equation}
+  \begin{aligned}
+    Move(E, d) = & (E.x_0, E.y_0, E.x_1, E.y_1, d.x_1, d.y_0), \\
+    Hskip(E, len) = & (E.x_0, E.y_0, E.x_1, E.y_1, E.x_{cr}+len, E.y_{cr}), \\
+    Vskip(E, len) = & (E.x_0, E.y_0, E.x_1, E.y_1, E.x_0, E.y_{cr}+len), \\
+    Restrict(c) = & (c.x_0, c.y_0, c.x_1, c.y_1, c.x_0, c.y_0). \\
+  \end{aligned}
+  \label{equ:semantic-operations}
+\end{equation}
+
+The tuple $(T, E, D)$ is called a \textit{parsing state},
+which records the partial parsing tree,
+the environment information and the remaining text boxes.
+Since there exist multiple candidate text boxes for alignment,
+given $E$ and $D$, $e$ will be evaluated into a set of parsing states,
+written in the following judgment form:
+\begin{equation}
+  E,D;e \Downarrow \bigcup_{i} \{(T_i, E'_i, D'_i)\}.
+\end{equation}
+
+
+\input{semanticsfig_kangqi}
+
+% give rules for basic
+Based on the definition of the environment, match function and parsing state,
+\figref{fig:semantics-kangqi} lists all the evaluation rules.
+The rules \ref{rule:empty}, \ref{rule:c1} and \ref{rule:c2} are used for
+evaluating the constants or primitive variables in a recursive form,
+where $r$ stands for a list of parsing states.
+The parser generates new parsing trees based on whether $d$ and $e$ matches.
+In addition, the parser can simply skip the text box $d$ and try to find
+alignments from remaining OCR data $D-\{d\}$.
+
+The rules \ref{rule:hskip} and \ref{rule:vskip}
+are used for evaluating the spatial expressions.
+Intuitively, the $hskip$ and $vskip$ expression doesn't match any text boxes,
+but indicating the rough size of spacings.
+Therefore, both rules merely move the cursor horizontally or vertically,
+using $Hskip$ or $Vskip$ function defined in \equref{equ:semantic-operations}.
+
+% talk about compositional
+Now we introduce the evaluation rules for compositional expressions,
+and focus on how the output parsing states are composed from
+the multiple sub-states.
+The rule \ref{rule:coor} is used for evaluating spatial constraints $e(coor)$.
+The given coordinates $coor$ restrict the searching area of alignments
+in the image, thus both the environment and the available OCR data are modified
+when evaluating $e$.
+The $Restrict$ function sets the new environment based on $coor$,
+and the OCR data in the output parsing state contains
+all text boxes outside the searching area ($D-D'$),
+as well as unused boxes inside it ($D''_i$).
+There doesn't have a evaluation rule for value constraints,
+but such constraints will be used in the match function.
+
+The last 5 rules in \figref{fig:semantics-kangqi} are used for evaluating
+\textit{union}, \textit{struct} and \textit{list} expressions.
+The rules \ref{rule:wrap1} and \ref{rule:wrap2}
+construct the hierarchical structure of parsing trees,
+where the root node $x$ is the identifier of union/struct/list expressions;
+\ref{rule:union} simply combines parsing states from all its branches;
+\ref{rule:struct} binds the parsing tree of $e_1$ to the larger tree of
+the remaining parts;
+\ref{rule:list} is similar with \ref{rule:struct}, considering that
+a list equals to a struct with unlimited expressions.
+
+
+
+\subsection{Fuzzy Match Function}
+% 1. the parser works fuzzily.. (emmm)
+% 2. two meanings: data: allows inexact match (15o, vcnt rule)
+%                  spatial: not assigned precise boundary to every c/v
+% 3. To tolerate the errors and noises,
+%    we define functions measuring the distance of matching
+%    at both data and spatial level, named xxx and yyy.
+% 4. Match function are built based on them.
+The key feature of the parsing process is the robustness:
+rather than conducting exact match,
+the parser tolerates the OCR recognition errors,
+and the slight layout variances between images of the same format.
+In order to measure the degree of fuzzy matching
+between primitive expressions and text boxes,
+we define penalty functions at both value and spatial level,
+then based on that, we give the formal definition of the $Match$ function.
+% We first discuss
+% the parser can align under inexact match,
+% with no precise boundary.
+% Instead, using a fuzzy match function, which consider
+% both data and spatial fitness between text box and expressions.
+% We discuss these two points, and then give a formal definition of match function.
+% Due to the limitations of OCR techniques, data derived from images is not 100\%
+% correct. To tolerate the errors and noises in the OCR results, a scoring
+% policy is proposed to take consideration of the constraints and OCR results.
+
+
+\paragraph{Penalty Function for Value Constraints}
+The value penalty function $F_v(e, text)$ measures the penalty of
+aligning some text with the primitive expression $e$,
+i.e., either constants or primitive variables.
+For the constant $c$, since the desired value is fixed, the penalty score
+is simply derived from the edit distance (Levenshtein distance)
+between two texts,
+which measures the minimal number of edits required to change one text to
+the other.
+For the primitive variable $x$ of the integer and floating point type,
+the value constraint is put into use.
+Referring to the value constraints $x(int, v_{min}, v_{max})$ and
+$x(float, length, precision, v_{min}, v_{max})$,
+edit distances are calculated between the text data and each numerical value,
+satisfying the restrictions of value range, length or precision,
+and the smallest edit distance is picked as the error score.
+The complete form of the value penalty $F_v(e, text)$ is defined as follows:
+
+\begin{equation}
+  \begin{aligned}
+    F_v(& c,text) = EditDist(c, text), \\
+    F_v(& x(int,v_{min},v_{max}),text)= \min_i\{ \\
+        & EditDist(i,text)\ |\ i \in Z, v_{min} \leq i \leq v_{max}\}, \\
+    F_v(& x(float,l,p,v_{min},v_{max}),text)= \min_i\{ \\
+        & EditDist(i,text)\ |\ i \in R', v_{min} \leq i \leq v_{max}\}, \\
+  \end{aligned}
+\end{equation}
+
+\noindent
+where $R'$ is the set of all real numbers in length $l$ and precision $p$.
+For example, the penalty score (edit distance)
+between the \textit{constant} ``Vent. rate'' and the text ``Vcnt. rule'' is 3.
+As another example, the penalty score between $x(int, 60, 100)$ the text ``53''
+is 1, since for all desired integers between 60 and 100,
+``63'' holds the minimum edit distance with ``53'', which is 1.
+
+\paragraph{Penalty Function for Spatial Layout}
+Recap that in the parsing process, based on the left-to-right and top-to-bottom
+relative layout between expressions embedded in ODL,
+the cursor $(E.x_{cr}, E.y_{cr})$ maintains a rough reference position
+that the desired text box resides.
+That's to say, the closer a text box $d$ to the cursor,
+the higher confidence to align with the current expression.
+Therefore, the spatial penalty score $F_s(d, E)$ measures the spatial distance
+between the cursor and the top-left corner of box, calculated in L$_1$-norm:
+% TODO: unit in len / width.
+\begin{equation}
+	F_s(d, E) = |d.x_0 - E.x_{cr}| + |d.y_0 - E.y_{cr}|.
+\end{equation}
+
+Now we formally define the match function $Match(e, d; E)$.
+The function returns a boolean value for whether the text box $d$
+can be aligned to the primitive expression $e$.
+Given the above penalty functions at both value and spatial view,
+the $Match$ function is defined as the weighted sum of two scores,
+controlled by an output threshold $\tau$:
+\begin{equation}
+Match(e, d; E) =
+\begin{cases}
+\text{T}& \text{$F_v(e, d.text)+k\cdot F_s(d, E) < \tau$}\\
+\text{F}& \text{otherwise}
+\end{cases}
+.
+\label{equ:match}
+\end{equation}
+\noindent
+where $k$ and $\tau$ are hyperparameters of the system.
+Finally, for picking the best parsing tree
+from multiple parsing states of the entire image expression,
+the textual error score of each primitive expression equally contributes
+to the final score of the whole parsing tree $T$.
+We define the overall score of $T$ as follows:
+\begin{equation}
+  score(T) = \sum_{(e,text) \in leaf(T)} F_v(e, text).
+  \label{equ:overall}
+\end{equation}
+
+
+\subsection{Automatic Correction Module}
+% 1. what's the correction model
+The correction module aims at automatically detecting and correcting
+error texts during the parsing process.
+For example, the parser not only detects the error of matching the text ``15o''
+to the variable $p1$ in \figref{fig:running-parsing-tree},
+but also tries to correct the error text into ``150'' on-the-fly.
+We first explain the automatic correction in the parsing process,
+then discuss the incremental generation of the correction model.
+
+% 2. formally define M, S
+\subsubsection{Correction Model}
+The correction model $M$ is a set of correction strategies $S$.
+Each correction strategy $S$ is a probabilistic distribution of replacements
+from the original string $ori$ to multiple candidate strings $dst$:
+\begin{equation}
+  S = \{(ori, dst_1, p_1), ..., (ori, dst_m, p_m)\}.
+\end{equation}
+\noindent
+A concrete correction strategy, for example,
+$S = \{(\text{``o''}, \text{``o''}, 0.6), (\text{``o''}, \text{``0''}, 0.3), (\text{``o''}, \text{``O''}, 0.1)\}$ indicates that given the character ``o''
+there's a 60\% possibility that no correction is needed,
+30\% possibility to replace into ``0'',
+and another 10\% possibility to replace into ``O''.
+Since the most frequent error of OCR recognition happens at character level,
+all the original strings are short phrases (1,2,3-letter-gram).
+In addition, we define $rep(text, ori, dst)$ as the result of
+replacing all occurrences of $ori$ with $dst$ in the string $text$.
+
+% 3. correction model-based scoring.
+% define rep, es_with_prob, improved induction rule.
+Given the correction model $M$,
+the parser is able to vary the input text
+such that a lower penalty for value constraints results.
+Intuitively, the value penalty between ``15o'' and $x(int)$
+is always 1 without correction.
+It will become smaller than 1 when the correction model is applied,
+due to a possibility of varying ``15o'' to ``150''.
+More specifically, the relaxed version of value penalty $F'_v$
+is the minimum expectation score of different texts
+after being replaced by some strategy $S$:
+\begin{equation}
+\begin{aligned}
+F'_v(e, text; M)=\min_{S \in M}\{ &
+  \sum_{(dst_i, p_i) \in S} p_i \cdot F_v(e, text'_i)~ |~ \\
+  & text'_i=rep(text, ori, dst_i)\}.
+\end{aligned}
+\end{equation}
+
+By changing $F_v$ in \equref{equ:match} into $F'_v$,
+the matching function $Match(e, d; E, M)$ is able to make better judgments
+with the help of the correction model.
+Once some $d$ and $e$ matches (\figref{fig:semantics-kangqi}, \ref{rule:c1}),
+We record the best strategy $S^\star$ which reaches the minimum value penalty,
+and generate the corresponding parsing tree $T_i = ((e, d.text'_i), [])$
+for each variant of string replacement by $S^\star$.
+For example, (p1, ``15o''), (p1, ``150'') and (p1, ``15O'')
+are all valid parsing trees.
+The best parsing result will be picked by the overall scoring function
+defined in \equref{equ:overall}.
+In this case, the system is able to find the correct matching results
+from those candidate variants.
+
+
+\subsubsection{Generation of Correction Model}
+% 4. how the correction model is incrementally updated.
+% what's the beginning,
+The model is generated in a hybrid approach.
+The initial correction model is generated from the result of OCR engine.
+For each text box, the OCR engine outputs top-K candidate texts, although
+only the best one is displayed in the raw OCR result.
+Regarding each $i$-th candidate as the replacement of the best text,
+the system counts all different ($ori$, $dst$) substring replacements.
+For example, given the replacement from ``15o'' to ``150'',
+distinct substring replacements are:
+(``1'', ``1''), (``5'', ``5''), (``o'', ``0''),
+(``15'', ``15''), (``5o'', ``50'') and (``15o'', ``150'').
+For those images of the same format,
+the system counts all occurrences of substring replacements from every image,
+and builds the initial correction model $M$,
+where the probabilities are calculated by normalization over occurrences.
+
+The correction model can be updated by incremental human corrections.
+Once the user manually changes some error texts into correct ones,
+the system obtains new substring replacements ($ori$, $dst$)
+and re-calculates all the probabilities in $M$.
+Since the human labeled texts are ground truth texts,
+all occurrences of substring replacements derived from human correction
+are multiplied by a weight factor $w$,
+so as to make larger contributions to the probability values in $M$.
+
+
+
+
+% Model initiates by OCR software.
+%
+% Incremental learnt by human.
+%
+% Also: prompt users with most frequent error,
+% associated with primitive / consts across multiple images.
+%
+% (random / frequent: leave to experimental settings)
+%
+% % \begin{enumerate}
+% % \item incremental learning model, features;
+% % \item How do we figure out which error should be corrected first;
+% % \item What will happen after an error been corrected and
+% % why the process is incremental.
+% \label{sec:incremental}
+% The correction model mentioned in \secref{sec:corrmodel}
+% is an incremental learning model because
+% the model is incrementally changed according to the corrections that
+% humans make. The design of the correction model adheres to the scoring
+% policy in \secref{sec:score}.
+%
+% \paragraph{Initial Model}
+% % \KZ{Correct all the backquotes!}
+% Before the results been corrected by human,
+% the initial model is generated using the candidate results of the OCR
+% engine. For example, for ``QRS'' in the example image, based on the OCR
+% engine, the most reliable result is ``ORS''. Other top candidates are
+% ``QPS'', ``QRS'' and ``OPS''. So we can learn from them that ``OR'' can be
+% corrected as ``QP'', ``QR'' or ``OP''. These three candidates
+% will be added into the initial model.
+%
+% To calculate the probabilities of the correction candidates in the initial
+% model, we count the occurrence of each correction. In the example, the
+% probabilities for ``OR'' corrected as ``OR'', ``QP'', ``QR'' or ``OP'' are equal
+% since such corrections only happened once.
+%
+% % \[
+% % P(newStr|oriStr) = \frac{occurrence ~of~ ()}{\sum_{tar \in all} occurrence ~of~ C(oriStr)=tar}
+% % \]
+%
+% \paragraph{Training From Human Correction}
+% After generating the parsing results using the initial model, we have
+% made full use of the OCR engine. To correct the remaining errors,
+% human input is needed. The incremental learning model is also suitable
+% for learning from human correction.
+%
+% For example, if a human corrects the error result ``1o.o'' to ``10.0'',
+% we can learn from it that for ``o''s in the OCR results, it's possible that
+% they should be corrected as ``0''s. So the correction strategy
+% for ``o'' is modified and ``0" is the new correct candidate.
+% We also calculate the occurrence
+% of different human correction for the probability calculation.
+%
+% \paragraph{Application of the Model}
+% The model for correction is used in the scoring policy in the
+% fuzzy parser. As shown in \secref{sec:score}, for each
+% description, our system will consider all the potential
+% results based on the correction strategies in the model.
+% For the description ``QRS'' and the most confident results
+% of OCR ``ORS'', we will try all the strategies in the model
+% and consider both whether the corrected result satisfies the
+% description and whether the correction strategy is
+% feasible. In this example, since the four correction strategies
+% are the same probability to happen, we choose ``QR'' as the correction
+% result for ``OR'',
+% which has the lowest error score based on the description.
+%
+% \subsubsection{Manual Correction Policy}
+% In this section, we describe the policies for recommending
+% errors to be manual corrected. When making use of human correction
+% we find that some errors will have a greater impact on
+% accuracy if they are corrected. The reason is some similar errors
+% occur frequently. Which errors are recommended to a user
+% for correction will affect the accuracy and the
+% number of corrections that the user has to made.
+%
+% \paragraph{Random}
+% The baseline for correction recommendation is random
+% recommendation. Based on the parsing results, we can randomly
+% recommend the errors we found for humans to correct.
+%
+% % \subsubsection*{Most Frequently Error Type}
+%
+% \paragraph{Most Frequent Error Description Elements}
+% Another more efficient way to perform manual correction is to
+% recommend the description
+% elements that contain the most frequent errors. For a set of images
+% in similar formats and the corresponding ODL descriptions,
+% we find out which elements in the description are more likely
+% to be parsed with errors. For those elements, similar errors
+% are more likely to happen since the descriptions for them are the
+% same. In this way, our recommendations can be more
+% accurate than
+% a random recommendation.

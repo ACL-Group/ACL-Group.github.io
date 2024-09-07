@@ -1,0 +1,121 @@
+\section{Joint RE Tagging Model}
+\label{sec:tagging}
+
+We propose a joint learning model with three modules, namely
+sentence representation, RTD and the basic RE tagging, 
+as illustrated in \figref{fig:model}. 
+Sentence representation module is to encode a sentence to a matrix, which is the 
+base of whole model. Other two modules deal with the auxiliary task and 
+the main task. Note that superscript ($^S$), ($^R$) and ($^T$) is used
+to indicate variables belonging to sentence representation,
+RTD and basic RE tagging modules respectively.
+
+
+\begin{figure}[th]
+\centering
+\includegraphics[width=\columnwidth]{pictures/model.eps}
+\caption{The joint RE tagging model \label{fig:model}}
+\end{figure}
+
+\subsection{Sentence Representation Module}
+Sentence representation module represents token sequence and extracts low level
+features. A sentence $s$ is a sequence of tokens $(w_1, w_2, \ldots, w_i,
+\ldots, w_n)$, where $w_i$ is the $i^{th}$ token in $s$, and is represented by
+a 1-hot vector $v_i$ with length $|\mathcal{V}|$, where $\mathcal{V}$ is 
+the vocabulary. We pretrain word embedding matrix $D$, and use a BiLSTM to
+represent a sentence:
+
+\begin{align*}
+    \overrightarrow{h}_i^S &= LSTM(\overrightarrow{h}_{i-1}^S, v_iD) \nonumber \\
+    \overleftarrow{h}_i^S &= LSTM(\overleftarrow{h}_{i+1}^S, v_iD) \nonumber \\
+    h_i^S &= [\overrightarrow{h}_i^S, \overleftarrow{h}_i^S] \nonumber
+\end{align*}
+
+Where $\overrightarrow{h}_i^S$ and $\overleftarrow{h}_i^S$ are the hidden state
+of forward and backward LSTM. Their concatenation $h_i^S$ is used as the feature
+of token $w_i$.
+
+
+%\subsection{NER Module}
+%Typically, NER can also be treated as Tagging problem under ``BIES'' tagging
+%scheme \YY{Add some references}. For example, tag sequence ``Person-B Person-E''
+%of ``Tim Cook'' indicate that this is a person entity which begins with ``Tim''
+%and ends with ``Cook''.
+%
+%
+%
+%We decode entity tag sequence using another LSTM. For token
+%$w_i$, the input of decoder LSTM, $h_i^S$, is from the sentence module, and the
+%output is $h_i^E$. Formally,
+%
+%\begin{align*}
+%  h_i^E &= LSTM(h_{i-1}^E, h_i^S) \nonumber \\
+%  p_i^E &= softmax(W^Eh_i^E + b^E) \nonumber
+%\end{align*}
+%
+%$p_i^E$ is the probability vector over NER tag set. Given entity tag sequence,
+%all entities can be recovered easily without ambiguity. \YY{Add references}
+%
+%
+
+\subsection{RTD Module}
+The RTD sub-task is similar to RC but detects all relation types in a sentence
+without entity information. Different from tagging problem which predicts each
+tag on the feature representation of each token, relation type is bounded with
+the semantic of whole sentence. We use a CNN to make this multi-label
+prediction.
+
+The input of CNN is a feature matrix $H^S$ from sentence module, each column is
+the feature vector of corresponding token. Therefore, $H^S$ has two dimension, feature
+dimension and sentence length dimension. Considering the linear structural of
+sequence, here we choose 1d convolution by treating the feature dimension as
+input channels. We
+use $K$ kernels to extract sentence level features. The output of $j$th kernel
+is $conv_j$. Then max pooling is applied  get the maximum feature value
+$pool_j$. The representation of whole sentence $h^R$ is the combination of
+$pool_j$ of each kernel. The size of feature vector $h^R$ is the number of
+kerners $K$. Here, we can treat each kernel as a feature extractor which is
+responsible for some kind of sentence level feature.
+
+\begin{align*}
+  H^s &= [h_1^S; h_2^S; \ldots; h_n^S] \nonumber \\
+  conv_j &= Relu(kernel_j(H^S)) \nonumber \\
+  pool_j^R &= \max(conv_j) \nonumber \\
+  h^R &= [pool_1^R, pool_2^R, \ldots, pool_K^R] \nonumber \\
+  p_i^R &= sigmoid(W^RH^R + b^R) \nonumber
+\end{align*}
+
+To predict relation types, We use a linear layer to convert $h^R$ to label space
+vector. Because RTD is a multi-label classification problem, sigmoid function is
+chosen as activation function. 
+The $k$th element of sigmoid output $p_i^R$ is the
+probability of $k$th relation type mentioned in the sentence or not.
+
+\KZ{Add a sentence or two to highlight high level feature fed to
+the basic tagging module.}
+
+\subsection{Basic RE Tagging Module}
+
+We use a LSTM to decode the RE tags. The input for 
+token $w_i$ is  $h_i^S$ from sentence module, and the output is $h_i^T$. 
+$h_i^T$ is a feature representation of token $w_i$, which extracts features by
+focusing on the tokens near $w_i$. 
+We argue that relation extraction should be based on 
+both local and global features. Local features means the
+information near by one token while global features means the information of
+whole sentence. Obviously, for token $w_i$, the local features can be
+represented by $h_i^T$. We use the output $h^R$ of max pooling in the RTD module
+as global features, which is a feature representation of the sentence from 
+the angle of relation semantic information. 
+We call the concatenation of the local features
+$h_i^T$ and global features $h^R$,  $h_i^{TR}$, which is used to
+predict the tag of $w_i$. Intuitively, mixed features add capabilities to
+the decoder. Before predicting the tag by the local features, the decoder can
+have a glance at the relation information of the whole sentence. Formally,
+
+\begin{align*}
+  h_i^T, c_i^T &= LSTM(h_{i-1}^T, c_{i-1}^T, h_i^S) \nonumber \\
+  h_i^{TR} &= [h_i^T, h^R] \nonumber \\
+  p_i^T &= softmax(W^Th_i^{TR} + b^T) \nonumber
+\end{align*}
+

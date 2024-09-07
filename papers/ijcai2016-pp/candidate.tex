@@ -1,0 +1,258 @@
+\section{Schema Inference}
+\label{sec:candidate}
+In this section, we propose a searching algorithm to generate output schemas,
+with a training model to learn weights for each schema.
+% Besides, we also explore the size of hit pairs and all hit pairs in $EP$.
+%which satisfies what?
+We first define a ``simple schema'' as a schema formed by a path of
+solid predicates, connecting from $x_1$ to $x_2$.
+%basic framework 5 sents
+%1 Intro
+Basically, the searching process is made up of three parts.
+%2 BFS
+In the first part, we generate a list of most simple schema candidates,
+which are descriptive over a part of $EP$.
+%3 DFS
+With simple schema candidates as the starting point, in the second part, we expand schemas by
+recursively adding new predicates onto previous schemas, making schemas more and more
+specific.
+%4 HP maintain
+% During the searching process, we maintain ground graphs of each candidate, and
+% calculate number of hit pairs that a candidate schema has.
+%5 Selection
+Finally, we select a finite number of well descriptive schemas from all candidates
+as output measured by $cost(EP, S)$, and learn weights for these schemas.
+
+\subsection{Simple Schema Retrieval}
+%BFS part (with hit pair gen.)
+%1. what is simple path
+% At first, we state the ``most simple'' schema as a \textbf{solid} path, that is,
+% all vertices in the schema are variables, connecting $x_{subj}$ and $x_{obj}$.
+%2. intuition
+Intuitively, a simple schema (path) represents a join operation over necessary predicates
+in the knowledge graphs, which is a most general schema, and is the skeleton of more complex schemas.
+
+%3-6. where the path comes
+In order to find descriptive paths, we use breadth-first search algorithm
+to find paths for each entity pair $\langle e_1, e_2 \rangle$.
+Due to the existence of various predicates and popular entities,
+we need to control the searching scope, in order to avoid retrieving long-path but
+meaningless schemas.
+The basic idea is to retrieve all simple schemas with the length
+of path no large than a certain threshold, $\tau$.
+
+Note that we always focus on well-descriptive schemas, rather than some occasional path that
+just hits a few entity pairs. Therefore, we propose a iterative sampling framework to generate
+simple schemas.
+
+\begin{algorithm}
+\caption{Iterative Simple Schema Retrieval}
+\label{alg:bfs}
+\textbf{Input}: Positive entity pair $EP=\{\langle e_1^{(i)}, e_2^{(i)} \rangle\}$,
+length threshold $\tau$, sample size $sz$.
+
+\textbf{Output}: A set of simple schemas $SchemaSet$, with $GroundMap$ storing ground graphs
+in $EP$ for each output schema.
+\begin{algorithmic}[1]
+\State $SchemaSet \gets \varnothing$
+\State $GroundMap \gets \varnothing$
+\State $EP\_Pool \gets EP$
+\While { $EP\_Pool$ not empty: }
+	\State $SampleEP \gets randomSample(EP\_Pool, sz)$
+	\State $EP\_Pool \gets EP\_Pool\, \backslash\, SampleEP$
+	\For { $\langle e_1, e_2 \rangle$ in $SampleEP$}
+		\State $schemas \gets bfs(e_1, e_2, \tau)$
+		\State $newSchemas \gets schemas\, \backslash\, SchemaSet$
+		\For { $ \langle e_1^{'}, e_2^{'} \rangle $ in $EP\_Pool$ }
+			\If { $isHit(e_1^{'}, e_2^{'}, newSchemas)$ }
+				\State remove $\langle e_1^{'}, e_2^{'} \rangle$ from $EP\_Pool$
+			\EndIf
+		\EndFor
+
+		\State $SchemaSet \gets SchamSet + schemas$
+	\EndFor
+\EndWhile
+\For { $schema$ in $SchemaSet$ }
+	\State $subgraphs \gets extractGround(schema, EP)$
+	\State $GroundMap \gets GroundMap + \langle schema, subgraphs \rangle$
+\EndFor
+\Return
+\end{algorithmic}
+\end{algorithm}
+
+Algorithm 1 shows the details of finding simple schemas.
+We sample a small number of unprocessed entity pairs for each iteration (line 5),
+and find all its schemas by performing breadth-first search (line 8).
+Once we find any new schemas, we enumerate each unprocessed entity pair
+and judge whether they are hit by new schemas or not (line 11), if so,
+we remove this pair from unprocessed set (line 12).
+Finally, we collect all ground graph in $EP$ for each picked simple schema (line 15).
+
+The intuition of iteratively sampling is that, for one entity pair,
+it's much quicker to judge a schema hits or not (line 11, 15), rather than exploring
+all its possible schemas. Based on the random sampling technique, it's
+more likely to retrieve schemas with larger coverage. And the removal operation
+ensure that every pair is hit by some schema (unless there has no paths
+connecting this pair within $\tau$ length).
+\begin{table}[ht]
+%\small
+	\centering
+	\caption{Example of retrieved simple schemas for ``hasGrandFather'' relation.
+	$\tau$=3, sz=20.}
+	\begin{tabular}{|c|c|c|c|}
+		%\toprule
+        \hline
+		schema & $|EP(S)|$ & $|HP(S)|$ & cover ratio \\
+        \hline
+        ``p+p''	& 0.456 & 0.471 & 0.xxx  \\
+        \hline
+        ``p+r+p''	& 0.xxx & 0.xxx & 0.xxx \\
+        \hline
+	\end{tabular}%
+	\label{tab:simple-schema}%
+\end{table}
+
+In addition, MDL-based cost function involves $HP(S)$ and $EP(S)$. While $EP(S)$ are
+stored in $GroundMap$, we query the schema over the whole knowledge graph, and store
+a sampled list\footnote{Due to memory limit, we set the maximal sampling number
+as 100,000 in the implementation.} of $HP(S)$.
+\tabref{tab:bfs-grand-father} shows the picked simple schemas for ``hasGrandFather''
+relation with $EP(S)$, $HP(S)$ size and cover ratio ($|EP(S)| / |EP|$).
+
+\subsection{Schema Expansion}
+%DFS part
+%6 sents
+%1. input?
+In the second part of searching process, we take the simple schemas with
+corresponding ground graphs as input, and explore more specific schemas.
+%2. how to expand
+The algorithm of schema expansion is a depth-first search (DFS) framework.
+Intuitively, for the schema at some state of DFS, we add a new predicate (called branch)
+on it, which produces a more specific schema.
+We expand the new schema recursively, until it's ``too specific''
+to be a suitable schema, which we back trace and go on searching with another branch .
+
+There has a huge number of specific schemas derived from one simple schema.
+We follow the running example ``hasGrandFather'', for the ``parent + parent'' simple
+schema, we could add $\langle x_2, \text{gender}, \text{male} \rangle$ dashed edge,
+forming the schema shown in \figref{fig:fb-schema}(b);
+or we may add another edge
+$\langle x_1, \text{directed}, \text{Titanic} \rangle$ to get a new schema.
+Actually there are so many choice just for adding one branch, not to mention the
+branch combinations.
+Therefore, we use MDL-based cost function to guide the searching order,
+also we designed a bunch of pruning strategies, which helps us filter out
+meaningless schemas. We state our pruning strategies as follows.
+
+First, we limit that we can add at most one
+branch to each skeleton variable (the variable in the corresponding simple schema).
+The intuition is that, a natural language relation seldom infers more than one
+constraint on one argument, we follow this idea and avoid overfitted schemas.
+
+Second, the cover ratio ($|EP(S)| / |EP|$) of a schema should above a threshold $\theta$.
+\eqnref{eqn:cost-ep-s} shows that, a schema costs too many bits transmitting
+uncovered entity pairs directly when it has a poor coverage,
+which dramatically increases the summation cost.
+
+Third, a branch needs to connect with enough \textit{distinct} entities in $EP(S)$.
+Suppose schema $S$ is the ground truth schema for a binary relation,
+then for any variable $x_i$ in the schema,
+we could get various entities $e_i$ among all its ground graphs.
+Still considering ``hasGrandFather'', there have more than 100 thousands ground graphs
+in Freebase, resulting in various children, parents and grandfathers.
+If some relation violates this rule, we could easily split it into several
+unary relations, which is not a typical binary relation.
+Therefore, we set up another parameter $\phi$ as the threshold of minimal connecting entities.
+
+\begin{algorithm}
+\caption{Depth-First Schema Expansion}
+\label{alg:dfs}
+\textbf{Input}: Positive entity pair $EP$, simple schemas $SchemaSet$,
+
+cover limit $\theta$, distinct entity threshold $\phi$, $GroundMap$ storing
+
+grounds in $EP$, $HpMap$ storing sampled grounds in $HP$, and schema budget $B$.
+
+
+\textbf{Output}: $SchemaSet, GroundMap, HpMap$, saving newly expanded schemas.
+in $EP$ for each output schema.
+\begin{algorithmic}[1]
+\Procedure{DfsExpander}{}
+\State $expandTask \gets sizeof(SchemaSet)$
+\For { $sc$ in $SchemaSet$ }
+	\State $budget \gets B / expandTask$
+	\State $sc.gEpSet \gets GroundMap(schema)$
+	\State $sc.gHpSet \gets HpMap(schema)$
+	\State $collectNum \gets DfsKernel(sc, budget)$
+	\State $expandTask \gets expandTask - 1$
+	\State $B \gets B - collectNum$
+\EndFor
+\Return
+\EndProcedure
+
+\Procedure{DfsKernel}{sc, budget}
+	\If { $budget$ = 0 }
+		\Return {0}
+	\EndIf
+	\State $SchemaSet \gets SchemaSet + sc$
+	\State $GroundMap \gets GroundMap + \langle sc, sc.gEpSet \rangle$
+	\State $HpMap \gets HpMap + \langle sc, sc.gHpSet \rangle$
+	\State $collectNum \gets 1$
+	\State $budget \gets budget - 1$
+	\State $candBranchList \gets extractBranches(schema, \phi)$
+	\State $newSchemaSet \gets \varnothing$
+	\For { $branch$ in $candBranchSet$ }
+		\State $nSc \gets specify(schema, branch)$
+		\State $nSc.gEpSet \gets filterGround(sc.gEpSet, branch)$
+		\State $nSc.gHpSet \gets filterGround(sc.gHpSet, branch)$
+		\State $covRatio \gets getCover(EP, nSc)$
+		\If { $covRatio > \theta$ }
+			\State $newSchemaSet \gets newSchemaSet + nSc$
+		\EndIf
+	\EndFor
+	\State $sortSchemaByMDL(newSchemaSet)$
+	\For { $nSc$ in $newSchemaSet$ }
+		\State $collect \gets DfsKernel(nSc, budget)$
+		\State $budget \gets budget - collect$
+		\State $collectNum \gets collectNum + collect$
+	\EndFor
+\Return {$collectNum$}
+\EndProcedure
+
+\end{algorithmic}
+\end{algorithm}
+
+
+Finally we present the DFS expansion approach as Algorithm 2.
+We use total budget $B$ to control the total searching space,
+for each simple schema, we assign its own budget as an average number (line 4).
+In the main part of DFS expansion, we extract all candidate branches
+for the current schema under threshold $\phi$ (line 17), and build a
+specific schema.
+All new schemas which passed cover limit $\theta$ (line 24)
+will be saved.
+Then we sort new schemas by $cost(EP,S)$ (line 26), and the further searching
+direction are guided by the sorted list: schema with lower cost goes first.
+The whole DFS expansion would retrieve at most $B$ specific schemas.
+Both simple and specific schemas are sent to the next step.
+
+
+\subsection{Schema Weight Learning}
+In the last step, we generate the feature space and build a discriminative
+model to learn weights for each schema.
+Each dimension in the feature space indicates a independent schema graph.
+Both positive and negative entity pairs are used for model training.
+For an entity pair $\langle e_1, e_2 \rangle$, the $i$-th feature function
+is define as:
+\begin{equation}
+\begin{aligned}
+    &f(i, e_1, e_2)      = \left\{
+        \begin{aligned}
+        \ 1 & ~     & isHit(e_1, e_2, S_i)  \\
+        \ 0 & ~     & otherwise \\
+        \end{aligned}
+	\right.	\\
+\end{aligned}
+\end{equation}
+We applied Max Entropy classifier for the training task, resulting in the
+final output schema graphs with weights.

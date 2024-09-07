@@ -1,0 +1,65 @@
+\section{Method}
+\subsection{Problem Definintion}
+Given a set of user reviews about a type of product, the corpus, and the target number of aspects $K$, we find the $K$ best aspects. For simplcity we say the product for that kind of products. Each aspect $A\_i, i\in [1, K]$ is a set of aspect candidate $A\_i = \{A_{i, 1}, A_{i,2}, ...\}$ and each aspect candidate $A\_{i,j}$ is a noun. 
+
+\subsection{System Overview}
+Our system consists of $4$ sub-procedures, the first $3$ are clusterings and the last is ranking. $N$ denotes the number of clusters of the first clustering. $M$ denotes the number of topics from LDA in each cluster. $C$ denotes the number of cluster in the last clustering, while $K$ is the number of expected number of aspects. 
+
+The first clustering is a K-Means that takes as input the sentence vectors of the reviews, outputs $N$ clusters of sentences. Then in each cluster we run a LDA and output $M$ topics, where each topic is a distribution of words. Now we have $N\times M$ topics, with the last clustering, a K-Means, we result in $C$ clusters of topics and take the $C$ centers as our aspect candidates, where each center stands for a potential aspect.
+
+In the ranking process, we first rank the clusters on their quality. The better quality cluster ranks higher. Then we rank each cluster in the order we just got, that is, we first sort the cluster with better quality. We rank the words on how they summarize the whole cluster while considering the mutual information between the current one and the better quality, already sorted clusters.
+
+\subsection{Sentence2Vec}
+As mentioned in section 2, user reviews have a important feature: various topics compressed into a short text. Sentences in a review that are close to each other may talk about completely different aspects about the product. Also sentences about the same aspect may not appear in the review in consecutive order. In order to perform topic modeling within the text about a single aspect, we need to group the sentences about the same aspect. This naturally leads to the segmentation of the text, which should to break a review into segments, each about a single aspect. Unlike traditional text segmentation techniques, we can exploit the similarity between sentences across the documents. Also it’s best if we can perform segmentation and clustering at the same time. This idea leads us to finding a vector representation of sentences and clustering them in the vector space.
+
+Sentence2Vec is a simple but powerful extension to Word2vec.
+
+(Introduce Sentence2Vec)
+
+Preprocessing on the corpus are stopword removal and lemmatization.
+We run the modeling of Sentence2Vec on the whole corpus, resulting in a vector representation for each sentence.
+
+\subsection{First Clustering}
+In the first clustering procedure, we coarsely cluster the sentence vectors. We run a K-Means on the vector space and result $N$ clusters, each consists of sentences. Then we break each review documents by grouping the sentences by the clusters they are in. After this process, we result in $N$ clusters of documents. But now each document is only about topics related to one potential aspect.
+
+\subsection{Second Clustering - LDA}
+The first clustering grouped related texts together and is rather coarse, the resulting clusters may have non-negligible overlapping. The overlapping appears as noises in each cluster and we need to seperate them from the actual topic of the cluster. Also our expected results is at the word level and the first clustering is at the sentence level, so we apply topic modeling. 
+
+Within each cluster, we have the reduced documents formed by sentences from about the same potential aspect. We run LDA within cluster, generating $M$ topics each. 
+
+For each cluster in the $M$ topics, some are noise. These noise topics for this cluster are very likely the result of overlapping. So we need to cluster all the topics again.
+
+\subsection{Third Clustering}
+From the LDA within each cluster, we have in total $N\times M$ topics where each topic is a distribution of words. Suppose dictionary size is $Z$, then we have $N\times M$ vectors of dimension of $Z$. We run another K-Means in this vector space after performing dimensionality reduction like PCA. This gives us $C$ clusters, each consists of topics. We take the center of each cluster as a natural representation of it. 
+
+It is because of the existence of noise topics from LDA that we keep $C$ clusters instead of $K$, which the expected number of aspects. For our system to be fault-tolerant, we take more clusters than expected and cut out the noise by the following ranking process.
+
+\subsection{Ranking}
+After the above procedures we have $C$ clusters, each consists of words related to a potential aspect. To arrive at $K$ accurate aspects, we conduct a ranking process.
+
+\subsubsection{Ranking Clusters}
+As mentioned in previous section, the result from LDA contains noise, and the noisy topics may likely be grouped together as outliers in the third clustering process. Also, since users put variated weights on different aspects, the frequencies of words for the aspects may vary. These factors result in a varying quality among the clusters, thus we want to rank the clusters on their qualities.
+
+One criteria of the quality of cluster is distinctiveness, namely how its words are distinctive to it. If the words in one cluster all have low frequency in other clusters, that cluster has less overlap with other clusters, thus has better quality. Specifically, for measuring the quality of a cluster, we calculate the sum of mutual information of its adjectives against all other clusters.
+
+The \emph{mutual information} of two random variables is a measure of the variables' mutual dependence. For random variables $X$ and $Y$, their mutual information is defined by 
+
+$$I(X, Y) = \sum_{y\in Y} \sum_{x\in X} p(x, y) \log\left(\frac{p(x, y)}{p(x)p(y)}\right)$$
+
+The intuition behind using the information of only the adjectives is this: the adjectives are more evenly distributed among clusters.
+
+(To be continued)
+
+Let $a$ be any adjective in cluster $c, c\in[1,C]$ with frequency $f_c(a)$. Let $S(c, a)$ be the score of word $a$ in cluster $c$, then the score of the cluster $c$, $S(c) = \sum_{a} S(c,a)$. $S(c,a)$ is calculated by the mutual information between $a$ appearence in cluster $c$ and $a$ in all other clusters.
+
+\begin{align*}
+	S(c, a) &= \log\left(\frac{f_c(a)}{\sum_{r\in[1, C], r\neq c} f_r(a)}\right) \\
+			&= \log(f_c(a)) - \log(\sum_{r\in[1, C], r\neq c} f_r(a))
+\end{align*}
+
+The score of each cluster is then calculated by the sum of scores of its adjectives. Finally the clusters are ranked in decending order of the score, implying the order of quality, from better to worse.
+
+\subsubsection{Ranking Words}
+Each cluster consists of words related to a potential aspect and we want to find what is the aspect. We do this by finding the word that best summarizes each cluster. For ranking the words in one cluster on how they summarize the cluster, we leverage the intuition behind Lesk lemmatization algorithm and a knowledge base WordNet to define a \emph{semantic similarity} $Sim(w_1, w_2)$ between words $w_1$ and $w_2$.
+
+The semantic similarity measures how much the two words are related. The similarity consists of two parts, the \emph{path similarity} $Sim_{path}(w_1, w_2)$ and \emph{definition overlap} $Sim_{def}(w_1, w_2)$.

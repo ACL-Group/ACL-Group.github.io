@@ -1,0 +1,167 @@
+Title: Low-Rank Prune-And-Factorize for Language Model Compression
+Authors: Siyu Ren and Kenny Q. Zhu
+============================================================================
+                            META-REVIEW
+============================================================================ 
+
+Comments: This paper presents a low-rank prune-and-factorize method to compress pre-trained language models like BERT. While reviewers generally think that the underlying idea is interesting, they raise severe concerns about different aspects of the proposed method. In short, R1 challenges the comparison between first-order UP and SVD, while R2 finds that the parts of matrix factorization and optimization methods miss some important details, making the method confusing for readers. R3 also thinks that the optimization part is unclear as the major contribution. The author's response seems not to solve the main concerns. In my view, these missing details actually degrade the soundness of this paper. I strongly recommend the authors to improve their paper based on the reviews since the idea itself is worth further exploring.
+
+============================================================================
+                            REVIEWER #1
+============================================================================
+
+What is this paper about and what contributions does it make?
+---------------------------------------------------------------------------
+The present article introduces a new, efficient finetuning strategy for BERT, namely LPAF. This strategy is composed of three distinct steps: firstly, obtaining a low-rank sparse model; secondly, performing matrix factorization; and finally, re-training. Two optimizations, Sparsity-aware SVD and Mixed-rank Fine-tuning, have been proposed to further enhance the matrix factorization and fine-tuning process. The effectiveness of LPAF and its components have been demonstrated through extensive experimentation.
+---------------------------------------------------------------------------
+
+
+Reasons to accept
+---------------------------------------------------------------------------
+1.	The notion of initially pruning, followed by factorizing, in order to better retain performance, is interesting.
+2.	The rationale behind the proposal of two optimization methods, namely Sparsity-aware SVD and Mixed-rank Fine-tuning, is straightforward and their effectiveness is well-established.
+3.	Experiments demonstrate the effectiveness of LPAF over GELU benchmark. Furthermore, extensive ablation studies have effectively demonstrated the contributions of different modules in LPAF.
+---------------------------------------------------------------------------
+
+
+Reasons to reject
+---------------------------------------------------------------------------
+1.	In line 277, the authors have stated that "factorizing a high-rank matrix into low-rank sub-matrices loses a significant quantity of useful information, but factorizing a low-rank matrix into low-rank sub-matrices doesn't lose as much information." Can the authors please provide an analysis or reference to support this statement? In my opinion, the loss of information is associated with the singular values and the targeted rank k, and not so much related to the rank of the matrix.
+2.	The preliminary study is somewhat perplexing and contradictory. The rank of the First-order UP lies in between that of SVD and Zero-order UP. The authors have expressed a preference for factorizing a low-rank matrix into low-rank sub-matrices, then why not use SVD in step 1, particularly in the 50% parameter setting where the model with SVD has a much lower rank? I have observed that the performance of the model with SVD is inferior to the model with First-order UP in step 1. However, the total performance drop should be the sum of degradation in steps 1 and 2, where the model with SVD may exhibit less performance drop in step 2 owing to its much lower rank.
+
+In conclusion, the motivation behind LPAF's process would benefit from further refinement.
+---------------------------------------------------------------------------
+
+
+Typos, Grammar, Style, and Presentation Improvements
+---------------------------------------------------------------------------
+1.	A minor writing error: there are two k=130 Table 5.
+2.	A small suggestion: Figure 5 appears to be significant and therefore, it may be worthwhile to consider incorporating it into the main text in the final version.
+---------------------------------------------------------------------------
+
+
+---------------------------------------------------------------------------
+Reviewer's Scores
+---------------------------------------------------------------------------
+                               Soundness: 3
+                 Excitement (Long paper): 2.5
+                     Reviewer Confidence: 4
+     Recommendation for Best Paper Award: No
+                         Reproducibility: 4
+                        Ethical Concerns: No
+
+
+============================================================================
+                            REVIEWER #2
+============================================================================
+
+What is this paper about and what contributions does it make?
+---------------------------------------------------------------------------
+This paper present a technique to reduce the number of parameters in BERT for downstream tasks. The authors first present preliminary experiments that motivate their proposal. Then they describe a 3-step procedure:
+1) Prune the weights of a pre-trained BERT model
+2) Factorize the pruned weight matrices via SVD
+3) Fine-tune this model on a specific task
+
+The originality of the proposal lies in (i) the way the SVD is performed and (ii) the way fine-tuning is done: 
+(i) Authors propose a simple trick to weight the reconstruction error minimized by the SVD (see remarks below). 
+(ii) Authors propose another trick to improve fine-tuning: instead of simply considering the factorized model, they consider a mixture of the factorized model with the pruned model. The pruned model is progressively removed according a linearly decaying schedule.
+
+Experiments on well known data suggest that this 3-step procedure can lead to important gains w.r.t. existing methods, when the compression ratio is high. The ablation study highlights the importance of all 3 steps.
+---------------------------------------------------------------------------
+
+
+Reasons to accept
+---------------------------------------------------------------------------
+1) Compressing large language models for specific tasks is a non-trivial task
+2) There is a real need for more efficient language models
+3) The experiments and the ablation study are convincing
+---------------------------------------------------------------------------
+
+
+Reasons to reject
+---------------------------------------------------------------------------
+However, I think there are important details missing from the paper:
+
+1) It isn't clear what matrices are being factorized
+
+Authors aim at reducing the number of parameters « in each linear in BERT » (line 223); they write that they « select preserved rank k from {390, 260, 130, 50}, which corresponds to {0.75, 0.50, 0.25, 0.1} of BERT's parameters. ».
+This is too vague. 
+- Are the authors considering the linear layer after concatenating the output from every heads; parameterized by a 768x768 matrix in BERT-base? 
+- Are the authors considering the three linear transformation for keys, queries and values; parameterized each by a 768x64 matrix in BERT-base?
+- Are the authors considering the two linear layers in the FFN; parameterized by a 768x3072 and a 3072x768 matrix, respectively?
+In any case, it doesn't seem to match the {0.75, 0.50, 0.25, 0.10} proportions for any of the ranks, so I'm left wondering what matrices the authors are factorizing exactly? I'd like this to be stated explicitly in the paper.
+
+2) The actual technique used for « unstructured » pruning isn't properly described
+
+Authors perform preliminary experiments with pruning techniques they refer to as « unstructured ». Indeed, their description of the two techniques, UP_zero and UP_first don't exhibit any structural constraints. 
+- However, Fig 3 shows a strong structure in the sparsity of the chosen matrix. How could such a row-wise structure have emerged by applying a simple unstructured pruning technique? 
+Reading « Structured Pruning of Large Language Models » by Wang et al. it seems to require more involved techniques to obtain such structure. I feel like there is something missing about this in the proposed paper.
+
+3) Sparsity-aware SVD is not introduced properly
+
+There is no mention of any constraint on the S matrix.
+- Then the minimization problem given at line 344 is ill posed: negative entries in S would favor arbitrary large reconstruction error
+S should be a positive matrix.
+
+It seems that the authors implicitly assume low row-wise variance in S: this allows them to take the row-wise mean of S and apply a simple preprocessing on W before factorizing it via truncated singular value decomposition. 
+- It's not natural to me why this would be a good transformation of S, as the multiplication by this diagonal weight matrix is then a simple scaling? Unless the sparsification procedure applied beforehand does impose some row-wise pattern.
+Again, I feel like there is something missing regarding pruning in the paper. There should be some structural constraints on the pruning technique for the proposed sparsity-aware SVD to be sound. Also, I'm wondering if taking the row-wise mean of S could still require additional constraints on S, like being positive?
+---------------------------------------------------------------------------
+
+
+---------------------------------------------------------------------------
+Reviewer's Scores
+---------------------------------------------------------------------------
+                               Soundness: 1
+                 Excitement (Long paper): 3
+                     Reviewer Confidence: 3
+     Recommendation for Best Paper Award: No
+                         Reproducibility: 4
+                        Ethical Concerns: No
+
+
+============================================================================
+                            REVIEWER #3
+============================================================================
+
+What is this paper about and what contributions does it make?
+---------------------------------------------------------------------------
+This paper proposes to combine weighted low rank with pruning to compress language models. Experiments show that this method can reduce model size while achieving increased performance.
+---------------------------------------------------------------------------
+
+
+Reasons to accept
+---------------------------------------------------------------------------
+1. the paper is well written and easy to follow
+2. the proposed method is simple and effective
+---------------------------------------------------------------------------
+
+
+Reasons to reject
+---------------------------------------------------------------------------
+1. the major technical contribution of this paper is only at section 4.3, which is short and unclear with its stableness
+---------------------------------------------------------------------------
+
+
+Questions for the Author(s)
+---------------------------------------------------------------------------
+Question A: line 398 discusses the stableness issue that may occur during training. the solution sampling twice seems to reduce the instable chances but it doesn't really address the problem. This can be a major concern for the proposed method. 
+
+Question B: given the complexity of this method (especially the twice sampling), it is natural to question the training difficulty for LLMs which are often large models. Is this method really practical given it will increase the memory consumption, and likely the training time? 
+
+Question C: p-value is mentioned in some tables. what is the statistical test chosen here? 
+
+Question D: the method is essentially a follow up from the weighted low rank method (Hsu et al., 2021) as you have cited. can you put on the comparison with their result?
+---------------------------------------------------------------------------
+
+
+---------------------------------------------------------------------------
+Reviewer's Scores
+---------------------------------------------------------------------------
+                               Soundness: 3
+                 Excitement (Long paper): 3
+                     Reviewer Confidence: 5
+     Recommendation for Best Paper Award: No
+                         Reproducibility: 4
+                        Ethical Concerns: No
+

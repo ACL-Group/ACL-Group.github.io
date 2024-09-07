@@ -1,0 +1,116 @@
+\section{Approach}
+\label{sec:approach}
+
+Our approach, which we call Dial2Text, consists of post-training 
+and fine-tuning for dialogue summarization. We further divide the first step into 
+two phases: cross-format data preparation and prefix-guided generation task. 
+%More details are explained as follows.
+
+\subsection{Cross-format Data Preparation}\label{sec:dcd}
+
+Training models on cross-format datasets to learn the rephrasing ability 
+depends on the quality of paired dialogue-text data, where both dialogue and text 
+covering identical content and participants albeit in different formats. However, dialogues and narrative texts on websites are usually
+unrelated or complementary.
+As a result, such data is hard to collect.
+
+Dialogue reading comprehension aims at facilitating machine reading comprehension on dialogues. Datasets proposed for this task consists of samples made up of a dialogue 
+$D$ with multiple questions regarding the dialogue contents. 
+The answer$A$ of each question $Q$ can be a span in the original dialogue or 
+a choice among multiple candidates.
+If we can transform each question answering pairs into a declarative sentence $D'$, 
+$D$ and $D'$ can be regarded as partial paraphrases. 
+%and talking about the same things in different data format.
+Based on this intuition, we propose to take advantage of the widespread
+dialogue reading comprehension datasets to collect paired data.
+% that meets the above requirement. 
+
+A rule-based approach and the commonly used pretrained model BART are hybrid to transform the QA pairs into declarations. 
+First, we do the transformation of QA pairs with rules proposed by 
+Demszky, Guu, and Liang~\shortcite{demszky2018transforming}:
+\begin{equation}
+D_r'=rule(Q, A)
+\end{equation}
+Such an approach doesn't require any training data but may fail on some rare cases, such as \textit{``Q=The outcome of which play determines the placement of the ball when a penalty is declined? A=the previous play''} where the Q doesn't start with a question word. 
+So, we also transform the QA pairs with BART finetuned on QA2D dataset~\cite{demszky2018transforming}. Then, we use this model to inference on QA pairs from dialogue reading comprehension dataset:
+\begin{equation}
+	D_b'=Bart_{qa2d}([Q, A])
+\end{equation}
+where $[\cdot]$ refers concatenation operation. Although the neural model can pass all cases, it tends to generate declarations starting with question words, which is not preferred.
+
+
+
+We further propose a hybrid method to take advantage of both methods and filter out inappropriate samples as follows:
+\begin{itemize}
+	\item We prefer to use $D_b'$ unless $D_r'$ exists and $D_b'$ starts with a question word. Question words mainly refer to \{who, what, where, why, when, how\}.
+	\item Remove samples where all of the words in $A$ do not exist in $D$. For example, in the sample \{$D$=\textit{``F: When did you start your work last night? M: I began to work after the TV news finished.''}, $Q$=\textit{``What didn't the man do yesterday?''\}}, the answer $A$=\textit{``Play games.''} leading to $D'$=\textit{``The man didn't play games yesterday.''} has nothing to do with $D$. Such samples may lead to the hallucination problem~\cite{durmus2020feqa,wang2020asking} in downstream summarization tasks.
+\end{itemize}
+In this way, we collect a new \textbf{D}ial2Text \textbf{C}ross-format \textbf{D}ataset made up of (dialogue, declaration) pairs. More details and examples are presented in Appendix.
+
+
+
+\subsection{Prefix-guided Generation Task}\label{sec:pgt}
+
+%Due to the limited amount of cross-format data, w
+We take advantage of the transformer-based pretrained language model on narrative texts and do post-training.% to learn the rephrasing ability.
+
+There are two notable characteristics of DCD dataset:
+%It should be noted that there are two main characteristics of DPD dataset:
+\begin{itemize}
+	\item \textbf{One-to-many}: A dialogue may be paired with multiple declarations, since each dialogue has multiple questions in the original reading comprehension datasets. Given the same input dialogue, the model is a deterministic function during inference, and will generate the same output.
+	\item \textbf{Whole-to-part}: Considering the amount of information, $D'$ is a partial third-person point of view paraphrase of the original $D$ since the original question only focuses on one key point in $D$. So, it is reasonable to generate a declaration given the dialogue. Otherwise, it isn't.%does not hold.
+\end{itemize}
+
+Based on above considerations, we propose a prefix-guided generation task inspired by prompting approaches~\cite{raffel2020exploring,brown2020language} and content planning approaches~\cite{narayan2021planning,wu2021controllable}.
+The former ones prepend tokens to encoder input for few-shot learning between tasks or domains, and the latter ones train the model to generate a sequence of keywords before the output for better output quality.
+Differently, we focus on learning the rephrasing ability and we assign a few tokens at the beginning of $D'$ as the known prefix to guide the decoder on generation. In this way, the same $D$ can lead to different generated $\hat{D}'$. It also prevents the divergence that $D'$ and $\hat{D}'$ are focusing on different contents.%, making it not suitable to regard $D$ as a reference.
+
+The sequence-to-sequence model is made up of a bidirectional transformer encoder and an auto-regressive transformer decoder. The encoder takes the token sequence of $D$ as input and maps it into distributed representations $H^d$. The decoder takes $H^d$ as input and factorizes the probability of $D'$ into the product of conditional probability of each token. 
+%=\{d_1, d_2, ..., d_m\}
+%At $t$-th time step, the conditional probability of $d_t^{\prime}$ is defined as:
+%\begin{equation}
+%h^d_1, h^d_2, ..., h^d_m = Enc(d_1, d_2, ..., d_m)
+%\end{equation}
+%\begin{equation}
+% P(d'_t|d'_{<t},H^d) = Softmax(W_vDec(d'_1, ..., d'_{t-1}, H^d))
+ %\label{eq:decoder}
+%\end{equation}
+%where $W_v$ is the parameter to project hidden states into the vocabulary size.
+
+Our prefix-guided training task is to minimize the negative log-likelihood of $D^\prime$:
+\begin{equation}
+\begin{aligned}
+L &= -\frac{1}{n}\sum_{t=i}^{n}\log P(d'_t|d'_{<t},H^d) \\
+%i &\sim U(a,b)
+\end{aligned}
+\end{equation}
+where $i\in Z$ is randomly sampled from $[a,b]$. $n$ is the length of reference $D'$. $\{d'_1, ..., d'_{i-1}\}$ are given prefix tokens. 
+
+During inference, the first $k$ tokens are provided as the prefix for the decoder. We map the hidden states into a vocabulary distribution at each decoding step:
+\begin{equation}
+	\begin{aligned}
+ &P(\hat{d}'_t|d_{\leq k}, \hat{d}'_{>k,<t},H^d) \\
+ &= Softmax(W_vDec(d'_1, ..., d'_k, \hat{d}'_{k+1}, \hat{d}'_{t-1}, H^d))\\
+ \end{aligned}
+\end{equation}
+ %i.e. $t>k$ in Equation \ref{eq:decoder}.
+In other words, decoding starts at the $k$+$1$-th token.
+$a$, $b$ and $k$ are hyper-parameters assigned as $\{2,4,3\}$ respectively.
+
+\subsection{Fine-tuning for Dialogue Summarization}
+
+The post-trained model can be further directly finetuned on dialogue summarization datasets to learn content selection abilities and generate a coherent summary.
+%under different scenarios and granularities.% depending on datasets. 
+The dialogue and corresponding summary are represented as $X =\{x_1, x_2, ..., x_p\}$ and $Y=\{y_1, y_2, ..., y_q\}$, where $p$ and $q$ denote the number of tokens in the dialogue and summary. We adopt the vanilla encoder-decoder generation task and the loss function as follow:
+\begin{equation}
+	\begin{aligned}
+		&h_1, h_2, ..., h_p = Enc(x_1, x_2, ..., x_p)\\
+		P(y_t|y_{<t},&H) = Softmax(W_vDec(y_1, ..., y_{t-1}, H))\\
+		&L = -\frac{1}{q}\sum_{t=1}^{q}\log P(y_t|y_{<t},H)
+	\end{aligned}
+\end{equation}
+where $H=\{h_1, h_2, ..., h_p\}$ represents the hidden states generated by the transformer encoder $Enc(\cdot)$.
+
+
+
+

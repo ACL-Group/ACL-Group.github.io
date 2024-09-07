@@ -1,0 +1,175 @@
+\section{Candidate Schema Generation}
+\label{sec:candgen}
+
+In the first part, we propose a searching alogrithm to collect 
+candidate schemas from training relation instances.
+The intuition is that we first find suitable skeletons 
+%(please mention the def in problem) 
+as a starting point, and then recursively add constraints on 
+previous schemas, making candidates more and more specific.
+
+\subsection{Skeleton Retrieval}
+% 7 sentences introducing bfs
+%1. recap
+As outlined in \secref{sec:problem}, a skeleton is a path of KB 
+predicates which connects subject and object variable.
+%2. basic: bfs
+For each positive relation instance, $\langle e_1, e_2 \rangle$, 
+we use breadth-first searching algorithm to find all possible 
+skeletons which connect them in KB.
+%3. problem of connection
+Due to various predicates and popular entities existed, a relation 
+instance could be linked through a large number of different skeletons.
+%4. what's meaningless rep.
+Since most of natural language relations are short phrases, a 
+skeleton with too many predicates is meaningless, and is less likely 
+to be a suitable representation.
+%5. solution to filter
+In our method, we use a pre-defined parameter $\tau$ to limit the 
+searching scope, only skeletons with length no larger than $\tau$ 
+are kept, all remaining candidates are filtered out.
+%6. why use minimal coverage
+Also note that we always focus on well-descriptive skeletons, 
+rather than some occasional path that just hits a few entity pairs.
+%7. say in detail
+In formal, we define another threshold $cov$ as the minimum 
+percentage of entity pairs among all positive instances covered 
+by a skeleton.
+% Comment: we could describe the searching process in detail, like Matt's style "more formally, blabla..."
+
+% 9 sentences explaning ground graph maintain
+%1-2. introduce the HP size
+How do we get the evidence that one skeleton is more general than 
+another?
+The training data is limited, and two skeletons may cover the same
+positive instances, but a more general skeleton will always cover 
+more entity pairs than the other one in the whole knowledge base, 
+and the coverage size could be a useful feature in the further 
+learning step.
+%3. brute force is intractable
+We could get the exact coverage of one skeleton by brute force 
+searching its ground graphs over the KB, but it's very time consuming.
+%4-8. explain in detail 
+Here we propose a randomized approach to estimate the coverage size.
+Supoose a skeleton has $n$ predicates with $n+1$ variables 
+$x_0,\, x_1,\, ...\, x_n$.
+Firstly, we only consider the predicate between $x_0$ and $x_1$, i
+extracting all the ground graphs (only $e_0,\, e_1$ connected by 
+the predicate), and keep a sample list 
+\footnote{Dut to memory limit, we set the maximal sampling number 
+as 100,000 in the implementation.}
+of graphs by randomly picking, in order to saving time and memory.
+Next, we follow the predicate between $x_1$ and $x_2$, expanding 
+previous ground graphs into 3 entities, and also sample them randomly.
+We perform the expansion step iteratively, until all variables in 
+the skeletons are processed, resulting in a list of ground graphs 
+with $n+1$ entities.
+The estimated coverage of the skeleton is the size of distinct 
+$\langle e_0,\, e_n\rangle$ pairs in sampled ground graphs, divided
+by sampling rates at each iteration.
+%9. show example
+We show some candidate skeletons for ``attend'' relation, with 
+coverages over positive training instances and Freebase, displayed 
+in \tabref{tab:bfs-attend}.
+
+\begin{table}[ht]
+%\small
+	\centering
+	\caption{Example of candidate skeletons for ``attend'' relations.
+		We show the coverage with percentage over training instances,
+		and estimated coverage over Freebase. $\tau$=3, $cov$=10\%.}
+	\begin{tabular}{|c|c|c|c|}
+		%\toprule
+        \hline
+		skeleton 	& $cover_{train}$	& $cover_{FB}$ \\
+        \hline
+        ``p+p''		& 120 (45.2\%)		& 12000  \\
+        \hline
+        ``p+r+p''	& 130 (56.1\%)		& 12000000 \\
+        \hline
+	\end{tabular}
+	\label{tab:bfs-attend}
+\end{table}
+
+
+\subsection{Schema Generation}
+% 18 sentences: bfs basic, search space limit, budget, diversity
+%1. general speak
+In the second part of generating process, we take all candidate 
+skeletons with corresponding ground graphs as input, and explore
+more specific schemas.
+%2. basic idea: search
+The approach we are using here is to perform a depth-first search:
+it starts from a skeleton, when coming to a new schema, we attach 
+one constraint to a variable on the skeleton recursively, and 
+continue searching deeper, until no new schemas could be traversed.
+%3-6: basic limit on schema constraints
+%3. why need limitation
+The searching space is a tree structure which grows exponentially,
+making the exhaustive searching intractable on a huge knowlege base.
+%4. how to fix the search size
+Aiming to collect meaningful schemas in this process, we limit the 
+structure of a candidate schema that no more than 1 constraint
+is allowed to add on each variable skeleton.
+%5. the intuition behind
+As mentioned before, natural language relations are always short
+phrases, this gives us the point that it's less likely to infer
+a comfortable structure for a relation with multiple restriction 
+imposed on a single element, and our restriction just follows 
+this intuition.
+%6. the effect of limitation
+Therefore, the maximal depth of the searching tree is $\tau+1$,
+which is feasible for our task.
+
+%7-11: budget base (why, budget+prune, criteria, how to prune, diversity)
+%7. why need budget
+Even though, we still encounter a large searching space, beacuase
+there has hundreds of different constraints which can be attached 
+to one variable, not to mention their combinations.
+%8. introduce budget+pruning
+Inspired by beam search algorithm, we introduce a budget over each
+relation to control the total number of output candidates, while 
+pruning strategies will be used to reduce searching space so that 
+poor candidates could be ignored.
+%9. what's the criteria
+In our data-driven method, we use the number of positive instances 
+covered by a schema as the criteria to approximately measure its
+quality.
+%10. explanation of the criteria
+The reason is two-fold: we aim to keep those descriptive schemas in 
+the output candidates, since we output a bunch of schemas instead
+of only a few, we don't need a rather precise quality measurement,
+the idea that better schemas cover more positive instances is
+reasonable enough for our task; 
+and the size of coverages would never increase when the search goes
+deeper, which leads to a simple but effective pruning strategy.
+
+%11-15. formal describe
+Now wee explain the searching step in formal.
+% [A simple pseudo code is available]
+The beginning state of the searching is one skeleton, we enumerate
+all the constraints which are allowed to add on, each constraint 
+maps to a more specific schema.
+Then new schemas are ranked over their coverages by descending order,
+and we sequentially continue recursive searching on those schemas.
+When the searching state comes to a new schema $s_0$, we keep this 
+schema if there has enough room; otherwise, we pick the schema 
+$s_1$ which has the smallest coverage among all kept schemas and 
+compare their coverage.
+If $s_0$ has a larger coverage, then $s_1$ is discarded, we keep 
+$s_0$ and search deeper; otherwise, the current schema $s_0$ is 
+pruned, and we backtrace the searching process immediately.
+Finally, the output candidates are those schemas been kept when
+the searching is over.
+
+%16-18. diversity
+The diversity of output schemas plays an important rule in the 
+learning parts.
+If most candidates are the same and only differ from one or two 
+constraints, we are actually wasting budgets because it contains
+much redundant information.
+Since the budget is defined over each relation, we split the whole 
+budget into separate parts for each skeleton, where the size of 
+budget allocated to each skeleton is determined by the distribution
+of coverages over positive instances.
+

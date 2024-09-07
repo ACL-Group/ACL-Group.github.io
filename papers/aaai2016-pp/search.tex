@@ -1,0 +1,100 @@
+\section{Search Best Schemas from Candidates}
+
+%Goal: Given candidate and a list of info, find the best schemas sat. minimum cost based on MDL
+In the final step of schema inferring, given all candidate schemas along with its costs and hit numbers
+as input, the output is to pick a set a schemas $\vec{S}$ at the smallest cost of transmitting both
+schemas and entity pairs.
+
+
+
+%Problem: Nonlinear Programming
+We model this subtask as a problem of integer linear programming (ILP).
+Before describing the objective function and constraints, 
+we state some necessary symbols:
+
+\begin{itemize}
+  \item[*] Entity Pairs: $\{ep_1, ..., ep_n\}$,
+  \item[*] Candidate Schemas: $\{S_1, ..., S_m\}$,
+  \item[*] $l_{ij} \in \{0, 1\}$ indicates if $ep_i$ is hit by $S_j$,
+  \item[*] $cost_j$ indicates the cost of $j$-th schema: $Cost(S_j)$,
+  \item[*] $h_j$ indicates the total hit number of $S_j$,
+  \item[*] $x_{ij} \in \{0, 1\}$: the \textbf{variable} indicating whether
+  $ep_i$ is assigned to $S_j$.
+  \item[*] $y_j \in \{0, 1\}$: the \textbf{variable} indicating whether
+  at least one $ep$ is assigned to $S_j$.
+\end{itemize}
+Firstly, we follow the definition of $Cost(EP, \vec{S})$ and describe the
+objective function:
+\begin{equation}
+\begin{aligned}
+  \min ~ Z = & \sum\nolimits_j \{ y_j * (cost_j + 1 + \\
+             & \log h_j * \min \{\sum\nolimits_i x_{ij}, h_j - \sum\nolimits_i x_{ij} \}~ )~ \},
+\end{aligned}
+\end{equation}
+where the part except $cost_j$ is the cost of transmitting an entity group
+by $j$-th schema, that is $Cost(G_{EP}(S_j)~ |~ S_j)$.
+
+Since the definition of $Z$ contains a minimum operation, 
+we need to perform some transformation, producing a linear objective.
+Therefore, we split each schema into two dummy nodes. Each node indicates
+a \textit{included} or \textit{excluded} way to transmit entity pairs.
+The extended symbols are shown below:
+
+\begin{itemize}
+  \item[*] $k \in \{0, 1\}$ indicates the way to describe entity pairs
+  given a schema: 0 for \textit{included}, 1 for \textit{excluded},
+  \item[*] Dummy node $S_{jk}$ indicates a schema $S_j$ and the $k$-th
+  way to describe entity pairs given $S_j$,
+  \item[*] $c_{jk}$ indicates the \textit{virtual description cost} of
+  $S_{jk}$, where $c_{j0} = cost_j + 1$, $c_{j1} = cost_j + 1 + h_j \log h_j$,
+  \item[*] $d_{jk}$ indicates the \textit{virtual additional cost} of transmitting
+  a row included in (or excluded from) hit set of $S_j$, where $d_{j0} = 
+  \log h_j$, $d_{j1} = - \log h_j$,
+  \item[*] $x_{ijk} \in \{0, 1\}$: the \textbf{variable} indicating whether
+  $ep_i$ is assigned to $S_{jk}$,
+  \item[*] $y_{jk} \in \{0, 1\}$: the \textbf{variable} indicating whether
+  at least one $ep$ is assigned to $S_{jk}$.
+\end{itemize}
+
+The objective function is: 
+\begin{equation}
+\begin{aligned}
+  \min ~ Z & = \sum\nolimits_j \{ y_{j0} * (cost_j + 1 + \log h_j * \sum\nolimits_i x_{ij0} ) \\
+           & + y_{j1} * (cost_j + 1 + \log h_j * (h_j - \sum\nolimits_i x_{ij1}) ) \}  \\
+           & = \sum\nolimits_k \sum\nolimits_j \{ y_{jk} c_{jk} + y_{jk} d_{jk} \sum\nolimits_i x_{ijk} \}
+\end{aligned}
+\end{equation}
+
+Based on the definition of $x_{ijk}$ and $y_{jk}$, 
+we restrict that $\sum\nolimits_i x_{ijk} = 0$ \textbf{iff} $y_{jk} = 0$ (constraint 2 listed below).
+Therefore, $y_{jk} d_{jk} \sum\nolimits_i x_{ijk}$ should always equal to $d_{jk} \sum\nolimits_i x_{ijk}$.
+Finally, the function in Eq. 7 is transformed to a linear objective: 
+
+\begin{equation}
+  \min ~ Z = \sum\nolimits_k \sum\nolimits_j 
+        \{ c_{jk} y_{jk} + d_{jk} \sum\nolimits_i x_{ijk} \},
+\end{equation}
+
+where the following constraints apply:
+
+1. If a schema $S_j$ is chosen, then only one way (\textit{included} or \textit{excluded}) 
+of describing entity pairs should be used:
+\begin{center}
+  $\sum\nolimits_k y_{jk} \leq 1, \forall j$
+\end{center}
+
+2. $S_{jk}$ should be chosen if at least one pair is assigned to it,
+and shouldn't be chosen if none of pairs are assigned:
+\begin{center}
+  $\frac 1n \sum\nolimits_i x_{ijk} \leq y_{jk} \leq \sum\nolimits_i x_{ijk}, \forall j,k$
+\end{center}
+
+3. Each pair can only be assigned to schemas hitting it:
+\begin{center}
+  $x_{ijk} \leq l_{ij}, \forall i,j,k$
+\end{center}
+
+4. Each pair should be assigned to \textbf{at least} one schema:
+\begin{center}
+  $\sum\nolimits_k \sum\nolimits_j x_{ijk} \geq 1, \forall i$
+\end{center}

@@ -1,0 +1,103 @@
+\subsection{Entity Linking}
+
+% 11 sentences
+
+% main: tfidf for words on freebase
+% based on overlap sim.
+% pseudo code?
+%
+
+
+% 0. what are we going to do ?
+% Given a relation tuple, we are going to find representative Freebase entities
+% which stand for the arguments.
+% 1. Formally definition
+Formally, given $arg=(w_1,w_2,...,w_m)$, which contains $m$ words, we are going
+to find a best Freebase entity standing for this argument, making relation tuples
+to linked tuples, represented by $ltup=\langle ent1,\ rel,\ ent2 \rangle$.
+
+% 2. ??? Talk about Freebase
+% 3. each mid in FB has one or more entity names.
+% example, China and PRC.
+Each entity in Freebase has one or more aliases, forming $AList$. The default alias is the name of this entity.
+For example, the entity \textit{m.02\_286} has the name ``New York City'' and other aliases
+such as ``The Big Apple'' ``NYC'' and ``Empire City''.
+% 4. leverage multiple namees to build an invert index.
+We aim to support fuzzy matching between arguments and entity aliases,
+so we take all the aliases into consideration, and build an inverted index
+pointing words to all aliases that appear.
+
+% 5. stop word set is used, and use the idf score to weight words.
+Different words in one alias cannot be treated equally. Intuitively, a word
+is more important if it occurs in fewer aliases, and vice versa.
+Based on the inverted index, we use inverted document frequency score to
+approximately model the weight of a word:
+\begin{equation}
+idf(w)=1\ /\ log(|\{alias : w \in alias\}|)
+\end{equation}
+
+\noindent
+Besides, stop words are removed from aliases, treating their idf scores as 0.
+% 6. matching rule: intersect >= N - 1, weighted overlap score >= threshold
+
+In order to measure the probability of fuzzy matching from an argument to an alias,
+we introduce the weighted overlap score:
+\begin{equation}
+overlap(arg, alias) = \frac {\sum\limits_{w \in arg \cap alias} idf(w)} {\sum\limits_{w \in arg \cup alias} idf(w)}
+\end{equation}
+
+\noindent
+We merge all the aliases of an entity, producing the fuzzy matching score to entity level:
+\begin{equation}
+\begin{aligned}
+score&(arg, ent) = \\
+&\max\limits_{alias \in AList(ent)} overlap(arg, alias)
+\end{aligned}
+\end{equation}
+
+For one argument having $n$ words (stop words are removed), we keep entities which has at least one alias
+matching $n-1$ words in the argument, and has a matching score larger than a threshold, $\tau$.
+% we can tune the threshold
+% we can use formula to show the weighted score, that is intersect / union, weighed.
+% 7. multiple matching, select the one with best wScore.
+Once more than one entity is kept, we match the argument to the entity with highest matching score,
+% 8. tie breaker: count occurrence in freebase relations.
+if there still has a tie, the most popular entity is selected. The popularity of an entity is calculated
+by counting number of relations it has in Freebase.
+% 9. SUTime is used to map years and datetime.
+In addition, we use SUTime \cite{chang2012sutime} to recognize dates, and directly
+map these arguments to a pre-defined virtual entity (Freebase has \textit{type.datetime}
+representing dates and times, but it doesn't contain any specified entities).
+% check other papers, learn how to introduce FB without too much words.
+% 10. discard non-match to guarantee accuracy of linking.
+If one argument fails to link to any entity, the corresponding relation tuple is discarded.
+% Ranking Method May Change?
+%   use wScore threshold to filter entities
+%   then sorting by interLen, then popularity ??? (maybe we can have a try afterwards)
+%
+
+
+%\begin{table}[htbp]
+%	\centering
+%	\caption{Syntactic Transform Rules}
+%	\begin{tabular}{|l|l|}
+%		%\toprule
+%        \whline
+%		Category & Pattern Template \\
+%		%\midrule
+%        \hline
+%        % Continuous Tense & \{$adv_1$\} \textbf{be} \{$adv_2$\} verb:VBG \{text\}
+%        %                  & $verb_{lem}$ \{phrase\} \\
+%		% Participle Tense & \{$adv_1$\} \textbf{have} \{$adv_2$\} verb:VBN \{text\}
+%        %                  & $verb_{lem}$ \{phrase\} \\
+%        % Participle + Passive & \{$adv_1$\} \textbf{have} \{$adv_2$\} been \{text\}
+%        %                      & is \{text\} \\
+%        Continuous Tense & \textbf{be} verb:VBG \{phrase\} \\
+%		Participle Tense & \textbf{have} verb:VBN \{text\} \\
+%        Future Tense & \textbf{will}/\textbf{shall} verb:VB \{pharse\} \\
+%                     & \textbf{be} going to verb:VB \{phrase\} \\
+%		%\bottomrule
+%        \whline
+%	\end{tabular}%
+%	\label{tab:synt rules}%
+%\end{table}

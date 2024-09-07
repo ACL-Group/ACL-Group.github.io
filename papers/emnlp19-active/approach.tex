@@ -1,0 +1,61 @@
+\section{Approach}
+\label{sec:approach}
+
+In this section, we describe the model architecture used for our experiments. 
+The model can be generally separated into two parts, the active sampling part as well as the LSTM classifier part. 
+
+\subsection{Classifier}
+We use a long short-term memory (LSTM) with three hidden layers 
+as our classifier.
+
+\subsection{Sampling}
+We name the designed sampling measurement as xxx. The active sampling strategy depends on the xxx score of each point which is calculated in the following formula
+$$xx(x) = \frac{Uncertainty(x) * Similarity(x)}{Purity(x)}.$$
+
+The total process of the approach is shown in \ref{alg:ourmethod}
+\begin{algorithm}
+\small
+\caption{xxx Sampling}
+\label{alg:ourmethod}
+\begin{algorithmic}[1]
+\STATE {Initialize an LSTM classifier $\theta$}
+\STATE {Calculate the Jaccard distance matrix of unlabeled data}
+\STATE {K-Means cluster using Jaccard distance}
+\WHILE{accuracy $<$ threshold}
+\STATE {Apply current classifier on unlabeled data and get the prediction matrix $P_{\theta}(Y|X)$} 
+\STATE {Calculate the center of the predicted class $C$}
+\STATE {Calculate the purity of $k$ clusters $\mathcal{C}$}
+\FOR {data point $x$ in unlabeled data}
+\STATE {predicted class $i = argmax_{\theta}P(y|x)$}
+\STATE {Calculate the uncertainty, similarity, purity score}
+\STATE {Calculate the over score = uncertainty $*$ similarity $/$ purity}
+\ENDFOR
+\STATE {Sort the score in descending order and select the first batch size data}
+\ENDWHILE
+\end{algorithmic}
+\end{algorithm}
+
+\subsubsection*{Uncertainty}
+There are several proposed methods to evaluate the informativeness of unlabelled samples. We have selected uncertainty sampling \cite{lewis1994sequential} since LSTM is a typical probability classifier which will output a probability vector for each data point. Uncertainty sampling is done in the following metric. Given $C$ classes and arbitrary data point $x$, the classifier will generate a probability vector $P = [p_1,p_2,...,p_C]$, where $\sum_{i=1}^C p_i = 1$. Then the uncertainty can be calculated as 
+$$Uncertainty(x) = - \sum_{i=1}^{C}P_{\theta}(\hat{y}_i|x)\log{P_{\theta}(\hat{y}_i|x)},$$
+where $p_{\theta}(\hat{y}_i|x)$ is the probability that the sample $x$ belongs to the $i_{th}$ class under model $\theta$.
+\subsubsection*{Similarity}
+It is very straightforward that querying typical and representative points will bring larger gain to the classifier. Therefore, \textbf{similarity} is introduced to evaluate whether the point is a representative one in the class. 
+
+Before evaluation, we first need to find out the center of class. We define the center $C_i$ as the average of hidden vectors whose predicted labels are class $c_i$, i.e.: 
+$$C_i = \frac{1}{N_i} \sum_{j=1}^{N_i} h_j^{(i)},$$
+where $N_i$ is the number of predicted data points belonging to class $c_i$, $h_j$ is the hidden vector of the $j_{th}$ data point whose predicted class is $i$.
+
+The similarity score of data $x$ is the cosine similarity between hidden vector $h^i$ and center $C_i$:
+$$Similarity(x) = \frac{h^{(i)}\cdot C_i}{||h^{(i)}||\; ||C_i||},$$
+\subsubsection*{Purity}
+In real cases, the data set often tends to be noisy. There may also occur the case that two samples belonging to different classes share very similar data representations.
+
+In order to overcome this margin case in early phase, we design a \textbf{purity} score. 
+
+We first calculate the Jaccard matrix of the unlabelled data. Every data point is treated as bag of words in calculation.
+$$J(x_i,x_j) = 1 - \frac{Vocab(x_i) \cap Vocab(x_j)}{Vocab(x_i) \cup Vocab(x_j)},$$
+where $Vocab(x)$ is the bag of word set of data $x$.
+
+Then we do K-Means clustering using this Jaccard distance matrix and get k clusters. Suppose data $x$ is in the $i_{th}$ cluster ${\mathcal{C}}_i$. For ${\mathcal{C}}_i$, we may have data with different predicted labels. Assume the majority label in cluster ${\mathcal{C}}_i$ is $j$ and $S_j$ denotes for the set of points in ${\mathcal{C}}_i$ whose predicted label is $j$. Then the purity of the cluster is the measure of majority set dividing by the measure of the cluster and all the points in the cluster share the same purity attribute, which is shown as follows
+$$Purity(x) = \frac{|S_j|}{|{\mathcal{C}}_i|}.$$

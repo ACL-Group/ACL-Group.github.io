@@ -1,0 +1,188 @@
+\section{Approach}
+\label{sec:approach}
+
+%To answer the second question, based on the triplets we get, we conduct the 
+%data-driven analysis of the differences in the Shiba Inu's sounds in 
+%different contexts to explore the meaning of different patterns of 
+%dog language. We first calculate the prior probability of each type in 
+%our dataset, which means the proportion of each sound type, 
+%of each possible location, of each possible activities, to have a clear 
+%recognition of our data distribution. In order to find out what does 
+%the sounds means of each sound type in different context, 
+%we mainly contruct four Then we begin to calculate the conditional 
+%probability of four combinations: given a sound type, the probability of 
+%different locations; given a sound type, the probability of different 
+%activities; given a location, the probability of each sound type; 
+%given an activity, the probability of each sound type (as shown in Figure). 
+%By ananysing the different probability values, we can acquire the meaning of some sound in specific context. Then we computes the drequency table of these four combinations to have a clearer understanding to find the extinct features. By doing so, we can interpet some dog sounds with its context meaning. As mentioned before, sequence of words can construct a sentence. We also want to investigate the possible sequence pattern of the dog sounds. To do so, we select sequences of words in which the sound type are inconsistent (as shown in Figure), as we think sequences of same type word may imply the same meaning. Then we analyse the conditional probability to discover the sequence pattern of shiba inu language. 
+
+In this section, we present our pipeline (as shown in ~\figref{fig:method}) including data collection, word segmentation, and location and activity extraction, and append implementation details. 
+
+\begin{figure}[th]
+	\centering
+	\includegraphics[width=\columnwidth]{images/method.png}
+	\caption{The overall view of the pipeline we used to get the triplet.}
+%Also move "triple" to underneath the figure, so that the fig can fit the whole
+%column of the paper. Remove any white space around the pic.}
+%\AT{the acc for location and activity will be added by chunhao later}
+%\CH{Added}}
+
+%\KZ{Since the dog is the to the left of the bowl in the pic, maybe
+%swap the position of the ``food nearby'' and ``begging for food''?}
+%Make the pic bigger. Change audio processing to ``word segmentation''.
+%No point giving the id of the word, just point out those green segments
+%are words. Instead of repeating ``classification model'', say location
+%classification and activity classification and the arrows point ``food''
+%and ``begging for food'', etc.}
+\label{fig:method}
+\end{figure}
+
+\subsection{Collect Shiba Inu Online Videos}
+\label{sec:collect_data}
+Previous researchers endeavor to uncover the potential patterns in dog language. However, they have often encountered limitations in terms of data availability as they usually record data by themselves in the field or lab. In this work, we collect data from 
+YouTube, which is the largest video portal with millions of videos of dogs. Shiba Inu is widely adopted and has plenty of videos on YouTube and we limit to this breed to avoid differences in semantics between breeds.
+We first use the keyword ``shiba inu'' to identify users who own such dogs and only upload shiba inu videos with dog sounds and then collect up to 13,164 Shiba Inu related videos posted by these users within days and can be easily expanded.
+This method enables us to collect thousands of dog videos.
+
+
+\subsection{Sentence Split and Word Segmentation}
+\label{sec:divide}
+
+Once videos with dog sounds are downloaded, we begin to process the audio
+track.  Similar to human language, where words serve as the fundamental units 
+for constructing sentences, we hypothesize that a similar concept can be 
+applied to dog language. We define a ``word'' as an independent and contiguous dog vocal sound that typically lasts from a fraction of a second to a couple of seconds, but is bounded by
+some noticeable pauses. A ``sentence'' is a sequence of consecutive words. 
+
+\paragraph{Sentence Extraction} 
+%\MY{The below paragraph can be tidying up a bit as well, you define your sentence, and show the purpose of extracting sentence, then say how you did it}
+To extract the word clips, we adopt a similar methodology as \citet{jieyiacl2023}.
+The initial step is detecting dog vocalizations and splitting the audio tracks into ``sentences'', continuous sequences of dog vocal sounds, and then removing sounds other than dog vocalizations and ensure that there's no accompanying music or speech in the background. 
+%\MY{removing sounds other than dog vocalizations and ensure that there's no accompanying music or speech in the background}. 
+%This can be detected because they are preceded or followed by 
+%significant periods of silence. 
+%\KZ{How long is the pause? 
+%What's the threshold? It seems that a step is missing, which is first split
+%the wave file into sentences by the pauses, and then classify whether each 
+%sentence is really a dog sentence, since u can have human sentences or
+%music sentences in the output of the first step.}
+%\AT{the model predicts whether dog vocalisation and splitting audio according to this result, as explained below}
+To serve this purpose of extracting dog sounds, we apply PANNs~\cite{kong2020panns}, a sound event detection model pre-trained 
+on the large-scale Audioset~\cite{} dataset with 527 sound classes. 
+To identify a dog ``sentences'', we predict whether the probability of event class 
+``dog'' sound, ${P (\text{dog event}| \text{audio})}$ ranks in the top 10 among all sound classes.
+Then we remove the noisy sentences to ensure the audio clips we got are clean. 
+Due to the nature of YouTube videos, dog sounds are often overlapped with 
+background human speech and music. We excluded those sentences  accompanied by sounds other than ``dog'' and only retained clean ones. 
+ %Among the ``sentences'' we got, we remove those from which events ``speech'' or ``music'' are detected in the top 10 events by the PANNS model.
+
+\paragraph{Word Segmentation}
+These ``sentences'' may contain short pauses in the middle that separate the 
+words and the next step is to segment ``words'' in them. 
+We finetune PANNs to determine each start and end of a single ``word''. 
+This amounts to detecting a frame in the audio clip that transits from 
+a silence frame to a dog frame.
+We manually created labels for the event of ``dog'' with 
+a total data length of 715 seconds. This finetuned model is capable of 
+detecting the small pauses within ``sentences'' and extracting the 
+singular ``words''. We denote the following variables:
+$T_{\text{dog}}$ as the threshold for the dog voice probability, 
+$T_{\text{silence}}$ as the threshold for the silence probability, 
+$P_{\text{dog}}(t)$ as the probability of the dog voice at time frame $t$, 
+$P_{\text{silence}}(t)$ as the probability of silence at time frame $t$. 
+For an input ``sentence'',  we will decide the start of a dog frame 
+$t_{dog}$ as :
+\begin{align*}
+t_{dog} = \min (t\mid & P_{\text{d}}(t)\ge T_{\text{d}} \text{ and } P_{\text{s}}(t) \le T_{\text{s}} )
+\end{align*}
+where ``d'' refers to dog word and ``s'' refers to silence. 
+We find a frame for the ending of a dog word with the same idea. 
+
+%:
+%\begin{align*}
+%\text{Change Frame} = \min ( t \mid & P_{\text{dog}}(t) > T_{\text{dog}} \\
+%& \text{and } P_{\text{silence}}(t) \leq T_{\text{silence}} )
+%\end{align*}
+
+Lastly, we employ pre-trained PANNs as an audio tagging model to 
+assign these words to specific dog sound types:
+\begin{equation}
+\text{Wordtype} = \arg\max_{i} P_{PANNs}(\text{soundtype}_i | \text{word}).
+\end{equation}
+%The ``words'' we got are sounds from ``sentences'' that sound event ``dog'' is contained. 
+We use the \textit{six dog sound types} defined in Audioset as all 
+the domains of possible word types in this paper. 
+%\KZ{This should go into evaluations:  We also do manual checks and ensure the classification results.} 
+%\AT{But we have to finish constructing the triplets so it better be here? I will add a manual check at that part}
+We also do manual checks to ensure the classification results. 
+At the end of this process, we have been able to extract small units of 
+dog vocalizations and their corresponding sound type, 
+paving the way for a deeper understanding of their semantic meaning. 
+
+\subsection{Surrounding Context Extraction}
+\label{sec:infer_context}
+% \KZ{Very verbose!}
+%After word segmentation, the next task is to find the corresponding contextual information. So far, we have not taken advantage of the visual information in videos. 
+Since images and sound are naturally aligned in a video,  we can
+extract the \textit{location} and \textit{activity} of the dog while it utters 
+a particular ``word'', from the image frames that synchronize with the audio 
+frames.
+The end product of this phase will be a sequence of triplets 
+consisting of \texttt{<word, location, activity>}, extracted from the videos. 
+% \KZ{set or sequence}
+
+ \paragraph{Location} %\KZ{This para is too long.} 
+%In this work, we applied common used methods to acquire these visual 
+%information. As for discovering location information, 
+%\KZ{is it the begin and end timestamp?}
+Given the begin and end timestamp of a ``word'', five image frames in that time range 
+are sampled, then sent into an image classification model to judge 
+what's the location of the dog when the ``word'' occurs. Here we finetune the pre-trained model 
+from~\cite{zhou2017places} trained on the scene-centric datasets 
+Places365 based on thousands of pictures sampled from Shiba Inu videos to predict the dog's location.
+%\KZ{What model?
+%how was this model trained?} 
+ 
+We denote the following variables:
+$t_{\text{word}}$: Timestamp of the ``word'' occurrence between begin and end, %\KZ{Begin or end?}
+$I_{\text{i}}$: An image from a batch of images constructed from five frames sampled around the timestamp $t_{\text{word}}$,
+$M_{\text{class}}$: The class predicted by the model given $I_{\text{i}}$,
+$L_{\text{dog}}$: Location of the dog when the ``word'' occurs,
+$\text{Majority Vote}$ is a function that selects the class with the highest frequency among the predictioned class of the individual images in the batch.
+The formula for location inference is as:
+\begin{equation}
+L_{\text{dog}} = \text{Majority Vote}\left(\bigcup_{i=1}^{n} M_{\text{class}}(I_i)\right)
+\end{equation}
+
+%\begin{equation}
+%L_{\text{dog}} = M_{\text{classification}}(I_{\text{batch}})
+%\end{equation}
+%\KZ{This equation is not right: a classifier only takes 1 image as input.
+%How do you handle 5? Is it majority voting, or what?}
+
+
+Since we mainly want to extract location information about the background 
+rather than the subject, we choose the pre-trained model 
+from~\cite{zhou2017places} which is trained on the scene-centric datasets 
+Places365 and finetuned it based on 2000 human annotated pictures sampled 
+from Shiba Inu videos. 
+%As for discovering location information, given the timestamp of a ``word'', five frames from the video are sampled out, constructed into a batch of images that could reflect the location information, and the batch is then sent into an image classification model to judge what's the location of the dog when the ``word'' occurs. Since we mainly want to extract location information about the background rather than the subject, we choose the pre-trained model from~\cite{zhou2017places} which is trained on the scene-centric datasets Places365 and finetuned it based on thousands of pictures sampled from Shiba Inu videos. 
+%As for discovering location information, given the timestamp of a ``word'', five frames from the video are sampled out, constructed into a batch of images which could reflect the location information, and the batch is then sent into an image classfication model to judge what's the location of the dog when the ``word'' occurs. Since we mainly want to extract location information about the background rather than the subject, we choose the pretrained model from~\cite{zhou2017places} which is trained on the scene-centric datasets Places365 and finetuned it based on thousands of pictures sampled from Shiba Inu videos. \KZ{This should be
+%in the eval section: }
+
+%The finetuned model achieves an accuracy of 77.99\% on our manually labeled pictures.
+
+%To get the activity information about the dog, we sample a five-second video clip based on the timestamp of the ``word'', and then a video understanding model is applied to decide what the dog is doing. The pre-trained model TSN~\cite{wang2018temporal} performs well on the task of video understanding. In this study, we annotated a set of video clips sampled from the Shiba Inu videos and finetuned the pre-trained model. Based on the finetuned models, given the timestamp of a ``word'', we can explore the location and activity from the video. 
+%To get the activity information about the dog, we sample a five-second video clip based on the timestamp of the ``word'', and then a video understanding model is applied to decide what the dog is doing. The pretrained model TSN~\cite{wang2018temporal} performs well on the task of video understanding. In this study, we annotated a set of video clips sampled from the Shiba Inu videos and finetuned the pre-trained model. The finetuned model achieves an top1 accuracy of 59.11\% and top5 accuracy of 94.16\%. Based on the finetuned models, given the timestamp of a ``word'', we can explore the location and activity from the video. 
+
+
+\paragraph{Activity} To get the activity information about the dog, we sample a five-second video clip based on the timestamp of the ``word'' that we choice a range of (begin timestamp  - 2.5s, end timestamp + 2.5s) and then a video understanding model is applied to decide what the dog is doing. The pre-trained model TSN~\cite{wang2018temporal} performs well on 
+the task of video understanding. In this study, we annotated 1500 video clips sampled from the Shiba Inu videos and finetune the pre-trained model. 
+Based on the these two finetuned models, given the timestamp of a ``word'', 
+we can explore the location and activity from the video.
+%$Activity_{dog} = Model(I_{t})$
+%where $I_{t}$ refers to a batch of audio clips constructed around the timestamp %$t_{\text{word}}$.
+%\KZ{this and the previous formula are useless.}
+
+%\subsection{Implementation Details}
+%We use PANNs ~\cite{kong2020panns} to extract ``sentences''. For removing noises, if PANNs infers there is human voice or background music, we will remove these clips. For extracting ``words'', we finetune PANNs on our humain annotated short dog word dataset. For classifing the type of the word, we select the word type predicted by PANNs with highest probability. We also do manual check and ensure the classification results. 

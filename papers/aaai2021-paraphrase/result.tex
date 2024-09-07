@@ -1,0 +1,370 @@
+\section{Experimental Results}
+% \KZ{Put a preamble here... In general, don't use the word ``prove'' unless you
+% have mathematical proof. Experiments can only ``show'' or 
+% ``demonstrate'' things, not prove things.}
+
+In this section, we first introduce the experimental setup, including dataset, baselines, evaluation metrics, and implementation details. Then, we show the results and compared with some baselines.
+% in \secref{sec:result}
+Finally, we analyze the result from different aspects.
+% four aspects: the effects of different datasets, ablation study, case study, 
+% and human evaluation.
+
+\subsection{Datasets}
+We evaluate our framework on four different datasets, namely Quora, WikiAnswers, MSCOCO, and Twitter. Following \citet{liu2019unsupervised}, we randomly choose 20K parallel paraphrase pairs as the test set and 3K parallel paraphrase pairs as the validation set for Quora, WikiAnswers, and MSCOCO. 
+
+We randomly sample the remaining parallel paraphrases pairs and pick one sentence from each pair to construct the non-parallel training data.
+The number of selected sentences is the same as the work by \citet{liu2019unsupervised}, which is 400K for Quora, 500K for WikiAnswers, 320K for MSCOCO and 110K for Twitter.
+
+\paragraph{Quora. } Quora\footnote{You can find the dataset at \url{https://data.quora.com/First-Quora-Dataset-Release-Question-Pairs}} dataset is released by Quora in
+January 2017. It contains 400K pairs of questions with manual annotation about whether questions in each pair are duplicates of each other. Through these annotations, there are 140K pairs marked as paraphrases and 320K pairs masked as non-paraphrases. 
+
+\paragraph{WikiAnswers. } WikiAnswers \citep{fader2013paraphrase} dataset contains 2.3M pairs of question paraphrases extracted from the WikiAnswers website. The dataset is collected automatically without manual annotation.
+
+\paragraph{MSCOCO. } MSCOCO \citep{lin2014microsoft} contains human-annotated captions for 120K images. Each image contains five captions considered as paraphrases of each other, we take four pairs from each image and get 500K parallel pairs.
+
+\paragraph{Twitter. } Twitter \citep{lan2017continuously} is a paraphrase detection dataset, containing 110K pairs of potential paraphrases and 60K manually annotated paraphrases. There are only 600 sentences marked as paraphrases in the test set, and we take them all for testing.
+
+\paragraph{Training on Common-Domain Data. } \label{sec:indomain}
+When there is no sufficient available target-domain non-parallel data
+% , or when we cannot use any data from the target-domain to train the set2seq model
+, it is hard to train unsupervised models or fine-tune supervised models in the target-domain. Our solution is to train the set2seq model with a big common-domain dataset and apply it to the target-domain. We name the model ``set2seq-common''. We test the performance of our framework with set2seq-common on four datasets to show the generality of our framework. Further, we apply set2seq-common in the Application section.
+
+\subsection{Baselines and Evaluation Metrics}
+We compare our framework with five unsupervised/distantly-supervised methods and six supervised methods with domain adaptation. We re-produce ParaNMT and ParaBank with our translation models, and take the results from \citet{liu2019unsupervised} for other baselines. For a fair comparison, we keep their scripts for data pre-processing and evaluation. On the Quora dataset, we even use the same train-test split as UPSA.\footnote{The pre-processing script, evaluation script, train-test split and results of UPSA can be found at \url{https://github.com/anonymity-person/UPSA}}
+% For human evaluation, we use the open source code and data provided by UPSA and CGMH\footnote{\url{https://github.com/NingMiao/CGMH}}, and take the same VAE tool used by 
+% \citet{liu2019unsupervised} to generate some paraphrases on the Quora dataset.
+
+\paragraph{Unsupervised and distantly-supervised methods. } The current state-of-the-art unsupervised method is Unsupervised Paraphrasing by Simulated Annealing (UPSA), proposed by \citet{liu2019unsupervised}, which is also our main target of comparison. Other unsupervised methods include CGMH from \citet{miao2019cgmh}, and VAE from \citet{kingma2013auto}. Distantly-supervised baselines are ParaNMT from \citet{wieting2017paranmt} and ParaBank(-$3^{rd}$ IDF) from \citet{hu2019parabank}, Note that ParaNMT used back-translation to generate paraphrases, so it can be viewed as ``back-translation only''.
+
+\paragraph{Supervised methods with domain adaptation. } Decomposable Neural Paraphrase Generation (DNPG) \citep{li2019decomposable} is the current state-of-the-art method for supervised paraphrase generation.
+% \citet{li2019decomposable} raised the issue of domain adaptation in his paper and demonstrated that DNPG also performed best with domain adaptation, so we mainly compare our framework with DNPG. 
+Other baselines are shallow fusion from \citet{gulcehre2015using}, Multi-Task Learning (MTL) from \citet{domhan2017using}, Pointer-generator from \citet{see2017get}, Transformer \citep{vaswani2017attention} with copy mechanism, and MTL with copy mechanism. 
+
+\paragraph{Evaluation metrics. } For the fairness of comparison, 
+we take the same evaluation metrics as in UPSA and 
+DNPG, which are iBLEU \citep{sun2012joint}, BLEU \citep{papineni2002bleu} and ROUGE \citep{lin2004rouge} scores. 
+BLEU and ROUGE scores are common evaluation metrics for NLP tasks while 
+iBLEU is especially designed for paraphrase generation tasks. 
+It penalizes the similarity between paraphrase and the original sentence. 
+Suppose the input sentence is $src$, the output paraphrase is $out$, 
+and the ground truth paraphrase is $trg$, we calculate iBLEU as follows:
+\begin{multline}
+\text{iBLEU} = \alpha \cdot \text{BLEU}(out, trg) - \\
+(1-\alpha) \cdot \text{BLEU}(out, src)
+\label{equ:ibleu}
+\end{multline}
+BLEU and ROUGE only consider the accuracy but ignore the 
+diversity of generated paraphrases, while iBLEU considers both. 
+So we use iBLEU as our main evaluation metric.
+We set $\alpha=0.9$, same as other baselines.
+
+\begin{table*}[ht]
+\small
+\centering
+\begin{tabular}{p{2cm}p{3.6cm}p{0.8cm}<{\centering}p{0.8cm}<{\centering}p{0.8cm}<{\centering}p{0.8cm}<{\centering}p{0.8cm}<{\centering}p{0.8cm}<{\centering}p{0.8cm}<{\centering}p{0.8cm}<{\centering}}
+\hline
+\\ [-1.7ex]
+& & \multicolumn{4}{c}{\textbf{Quora}} & \multicolumn{4}{c}{\textbf{WikiAnswers}} \\
+\\ [-1.7ex]
+\cline{3-6} \cline{7-10} 
+\\ [-1.8ex]
+ &Model&iBLEU&BLEU&R-1&R-2&iBLEU&BLEU&R-1&R-2\\
+\\ [-1.8ex]
+\hline
+\\ [-1.8ex]
+Supervised & DNPG (SOTA) & 
+18.01 & 25.03 & 63.73 & 37.75 & 34.15 & 41.64 & 57.32 & 25.88 \\
+\\ [-1.8ex]
+\hline
+\\ [-1.8ex]
+\multirow{6}{3cm}{Supervised + \\Domain-Adapted}
+& Pointer-generator & 
+5.04 & 6.96 & 41.89 & 12.77 & 21.87 & 27.94 & 53.99 & 20.85 \\
+& Transformer+Copy &
+6.17 & 8.15 & 44.89 & 14.79 & 23.25 & 29.22 & 53.33 & 21.02 \\
+& Shallow fusion &
+6.04 & 7.95 & 44.87 & 14.79 & 22.57 & 29.76 & 53.54 & 20.68 \\
+& MTL &
+4.90 & 6.37 & 37.64 & 11.83 & 18.34 & 23.65 & 48.19 & 17.53 \\
+& MTL+Copy &
+7.22 & 9.83 & 47.08 & 19.03 & 21.87 & 30.78 & 54.10 & 21.08 \\
+& DNPG &
+10.39& 16.98& 56.01 & 28.61 & \underline{25.60} & \underline{35.12} & \underline{56.17} & \underline{23.65} \\
+\\ [-1.8ex]
+\hline
+\\ [-1.8ex]
+\multirow{3}{3cm}{Unsupervised}
+& VAE & 
+8.16 & 13.96 & 44.55 & 22.64 & 17.92 & 24.13 & 31.87 & 12.08 \\
+& CGMH & 
+9.94 & 15.73 & 48.73 & 26.12 & 20.05 & 26.45 & 43.31 & 16.53 \\
+& UPSA & 
+\underline{12.02}& \underline{18.18} & \underline{56.51} & \underline{30.69} & 24.84 & 32.39 & 54.12 & 21.45 \\
+\\ [-1.8ex]
+\hline
+\\ [-1.8ex]
+\multirow{5}{3cm}{Distantly-\\Supervised}
+& ParaNMT\scriptsize{(back-translation)} & 
+10.69& 15.75 & 52.28 & 25.12 & 14.94 & 20.01 & 30.55 & 10.23 \\
+& ParaBank & 
+9.92 & 14.71 & 50.03 & 23.80 & 13.14 & 17.56 & 28.97 & 9.34 \\
+\\ [-1.8ex]
+\cline{2-10}
+\\ [-1.8ex]
+& \textbf{set2seq \scriptsize{(ours)}} & 
+13.54 & 20.85 & 58.27 & 32.59 & 25.98 & 33.41 & 55.95 & 23.08 \\
+& \textbf{set2seq-common+BT \scriptsize{(ours)}} & 
+12.60 & 18.85 & 57.13 & 31.19 & 25.04 & 33.43 & 55.81 & 23.12 \\
+& \textbf{set2seq+BT \scriptsize{(ours)}}& 
+\textbf{14.66} & \textbf{22.53} & \textbf{59.98} & \textbf{34.09} & \textbf{28.27} & \textbf{37.42} & \textbf{56.71} & \textbf{24.94} \\
+\\ [-1.8ex]
+\hline
+\\ [-1.5ex]
+& & \multicolumn{4}{c}{\textbf{MSCOCO}} & \multicolumn{4}{c}{\textbf{Twitter}} \\
+\\ [-1.7ex]
+\cline{3-6} \cline{7-10} 
+\\ [-1.8ex]
+ &Model&iBLEU&BLEU&Rouge1&Rouge2&iBLEU&BLEU&Rouge1&Rouge2\\
+\\ [-1.8ex]
+\hline
+\\ [-1.8ex]
+\multirow{3}{3cm}{Unsupervised}
+& VAE & 
+ 7.48 & 11.09 & 31.78 &  8.66 &  2.92 &  3.46 & 15.13 &  3.40 \\
+& CGMH & 
+ 7.84 & 11.45 & 32.19 &  8.67 &  4.18 &  5.32 & 19.96 &  5.44 \\
+& UPSA & 
+ \underline{9.26} & \underline{14.16} & \underline{37.18} & \underline{11.21} &  4.93 &  6.87 & 28.34 &  8.53 \\
+\\ [-1.8ex]
+\hline
+\\ [-1.8ex]
+\multirow{5}{3cm}{Distantly-\\Supervised}
+& ParaNMT\scriptsize{(back-translation)} & 
+ 7.39 & 10.71 & 30.74 &  8.68 &  \underline{7.57} & \underline{10.79} & \underline{35.38} & \underline{14.74} \\
+& ParaBank & 
+ 6.45 &  9.48 & 29.22 &  8.35 &  6.50 &  9.71 & 34.56 & 13.92 \\
+ \\ [-1.8ex]
+\cline{2-10}
+\\ [-1.8ex]
+& \textbf{set2seq \scriptsize{(ours)}} & 
+\textbf{11.54} & 17.61 & 39.87 & 13.67 & 5.72 & 7.48 & 31.65 & 10.89 \\
+& \textbf{set2seq-common+BT \scriptsize{(ours)}} & 
+ 9.07 & 13.44 & 35.90 & 11.05 &  9.73 & \textbf{14.30} & \textbf{39.23} & \textbf{18.82} \\
+& \textbf{set2seq+BT \scriptsize{(ours)}} & 
+11.39 & \textbf{17.93} & \textbf{40.28} & \textbf{14.04} & \textbf{9.95} & 13.97 & 38.96 & 18.32 \\
+\\ [-1.8ex]
+\hline
+\end{tabular}
+\caption{\label{tab:result}
+Evaluation results on Quora, WikiAnswers, MSCOCO and Twitter. The comparison 
+with supervised + domain adapted methods is only on Quora and WikiAnswers 
+because results of current state-of-the-art 
+method~\citep{li2019decomposable} are only available on these two datasets.
+The previous highest scores are marked with the underlines and the present highest scores are marked with the bold font.
+The supervised method (DNPG (SOTA)) here is only for reference.
+% \KZ{Underlined are previous best results? Say it clearly.}
+}
+\end{table*}
+
+\subsection{Implementation and Training Details} \label{sec:exset}
+To be consistent with the pre-processing of UPSA and DNPG, we convert the input words into lower-case and truncate all sentences to up to 20 words. 
+For the convenience of hybrid decoding, 
+we learn a shared byte-pair encoding (BPE, \citet{sennrich2016edinburgh}) 
+with size 50k from the training data for translation models, 
+and use a 30K vocabulary for all models. 
+% Same as UPSA and DNPG, all baselines include all words that appear in the training set into the vocabulary for a fair comparison. 
+For the hyper-parameter $\lambda$ mentioned before in the hybrid decoder,
+% in \secref{sec:joint}
+we set it to 0.5 for all datasets.
+% (chosen from $\{0.1, 0.2, \cdots, 1, 2, 3\}$).
+
+For the translation models in back-translation, we train them with the WMT17\footnote{\url{http://statmt.org/wmt17/translation-task.html}} zh-en dataset \citep{ziemski2016united} with a standard transformer for 3 days on two GTX-2080 GPUs. We reuse these translation models for ParaNMT and ParaBank. For the set2seq-common model, we use the news-crawl-2016 English monolingual data from WMT17 and train 1.5 days with a standard transformer. For the domain-specific set2seq models, we use a 2-layer transformer with 300 embedding size, 256 units, 1024 feed-forward dimensions for all layers to train them. The training lasts 3 hours on a single GTX-2080 GPU. Set2seq is a lightweight model with 31M parameters, 3.7M parameters for multi-head attention layers, only one-third of a standard transformer.
+
+To calculate iBLEU and BLEU, four references are used for MSCOCO, five for WikiAnswers, and one for other datasets. For some test cases, WikiAnswers does not have 5 references, so we evaluate them on reduced references. 
+For ROUGE scores, we take the average of all references.
+
+\subsection{Results} \label{sec:result}
+
+Table~\ref{tab:result} presents our experimental results. We compare three different models with the previous methods, 
+namely set2seq, set2seq-common+BT, and set2seq+BT, where BT stands for 
+back-translation. We show the set2seq alone here to demonstrate that
+useful information comes not only from translation, as the
+set2seq model alone can already outperform almost all competitors. 
+Our framework outperforms all existing unsupervised methods, 
+distantly-supervised methods, and supervised methods with domain adaptation. 
+% The results from our framework are even close to the state-of-the-art supervised model DNPG. 
+
+\subsection{Analysis} \label{sec:analysis}
+\paragraph{Datasets. } Due to the domain-specific differences between four datasets, it is understandable that scores on all metrics vary a lot across different datasets. 
+% Sentences in Quora are of the best quality, and
+% , they are in appropriate lengths and have high correlations between paraphrases in the same pair. 
+% experiments on Quora are the most persuasive and representative.
+
+Paraphrases from MSCOCO are descriptions of images, the set2seq model fits this dataset quite well since the process of generating paraphrases are similar: 
+one extends information from a static picture; 
+the other extends from a word set. 
+The set2seq-common model cannot learn the in-domain properties of MSCOCO, 
+so it does relatively poorly here as opposed to its performance 
+in other datasets. 
+
+Lack of training data for Twitter leads to insufficient training of most models. Models containing back-translation perform extraordinary well since they have adequate information. Besides, set2seq-common+BT achieves an excellent result, which shows the advantages of the set2seq-common model compared with the set2seq model trained with insufficient in-domain data.
+
+\paragraph{Ablation Study. }
+
+Table~\ref{tab:ablation} shows the result of the ablation study on the Quora dataset, where $\text{BLEU}_{ref}$ is the BLEU between reference and output, the higher the better and $\text{BLEU}_{src}$ is the BLEU between source sentence and output, the lower the better. 
+
+We demonstrate that removing stopwords outperforms retaining high-IDF words. For high-IDF words, we keep top $k\%$ high-IDF words in the original sentence. For the value of $k$, we set $k=50$, which is the best among $[30, 40, 50, 60, 70]$. We also tried TextRank \citep{mihalcea2004textrank} to score words and get similar results with IDF scores. 
+% \KZ{Why do you exclude the stopwords and
+% add high-IDF at the same time? Usually ablations are done one feature at
+% a time.} 
+
+Removing random replacement and adding position encoding can both lead to 
+a high BLEU between source sentences and output paraphrases, 
+which substantially reduces the diversity of generated sentences. 
+% \KZ{Consider dropping this: 
+% We try to augment the NMT training data with these two methods in 
+% section~\ref{sec:app}, but fail to get any improvement. 
+% Since we do not mainly conduct NMT experiments, we only propose an observed phenomenon here, more detailed experiments can be done in future works.}
+
+\begin{table}
+\small
+\centering
+\begin{tabular}{lp{0.8cm}<{\centering}p{1cm}<{\centering}p{1cm}<{\centering}}
+\hline 
+\\ [-1.8ex]
+\textbf{Model Variants} & iBLEU & $\text{BLEU}_{ref}$ & $\text{BLEU}_{src}$ \\
+\\ [-1.8ex]
+\hline
+\\ [-1.8ex]
+set2seq+BT & \textbf{14.66} & 22.53 & \textbf{56.17} \\
+\\ [-1.8ex]
+\hline
+\\ [-1.8ex]
+\multicolumn{1}{m{3cm}}{$\ominus$ excluding stopwords \par $\oplus$ retaining high-IDF} & 13.46 & 22.15 & 64.75 \\
+\\ [-1.8ex]
+\hline
+\\ [-1.8ex]
+\multicolumn{1}{m{3cm}} {$\ominus$ random replacement} & 13.78 & \textbf{23.92} & 77.47 \\
+\\ [-1.8ex]
+\hline
+\\ [-1.8ex]
+\multicolumn{1}{m{3cm}}{$\oplus$ position encoding} & 14.07 & 23.26 & 68.60 \\
+\\ [-1.8ex]
+\hline
+\end{tabular}
+\caption{\label{tab:ablation} Ablation Study on Quora.}
+\end{table}
+
+\paragraph{Case Study. } Table~\ref{tab:case} shows the examples of generated paraphrases through different strategies.
+
+Two kinds of information are easily lost in set2seq: 
+one is the information in stopwords; the other is the information in the 
+sequential expression. 
+In the first example, set2seq model loses the word ``When'' 
+when generating paraphrase from the word set. 
+In the second example, set2seq model mistakes the relationship between the 
+the universe and the black hole since it cannot obtain any sequential information. 
+
+For back-translation, the correct paraphrase sometimes cannot be 
+generated due to the limited capacity of the translation models, 
+``seed funding'' should be a fixed phrase in Example 3, 
+but back-translation cannot recognize it.
+
+% For seq2seq+BT, the generated sentences are too close to the 
+% original sentences by the order of the words. 
+% Our goal is to generate sentence level paraphrases, 
+% but seq2seq model limits the sequential expression.
+
+\begin{table}
+\small
+\centering
+\begin{tabular}{p{1.3cm}p{6.5cm}}
+\hline 
+\\ [-1.8ex]
+\multicolumn{2}{l}{\textbf{Example 1}} \\
+\\ [-1.8ex]
+\hline
+\\ [-1.8ex]
+Input & when will be end of world ? \\
+Word Set & (stop, earth, ?) \\
+BT & when is the end of the world ? \\
+set2seq & will the world end ? \\
+% seq2seq+BT & what is the end of the world ? \\
+set2seq+BT & when will the world end ? \\
+\\ [-1.8ex]
+\hline
+\\ [-1.8ex]
+\multicolumn{2}{l}{\textbf{Example 2}} \\
+\\ [-1.8ex]
+\hline
+\\ [-1.8ex]
+Input & could this universe be inside a black hole ? \\
+Word Set & (universe, in, dark, cave, ?) \\
+BT & can universe be a black hole ? \\
+set2seq & is there a black hole in the universe ? \\
+% seq2seq+BT & could the universe be in a black hole ? \\
+set2seq+BT & is the universe in a black hole ? \\
+\\ [-1.8ex]
+\hline
+\\ [-1.8ex]
+\multicolumn{2}{l}{\textbf{Example 3}} \\
+\\ [-1.8ex]
+\hline
+\\ [-1.8ex]
+Input & do product ideas get seed fundings ? \\
+Word Set & (produce, mind, incur, germ, financing, ?) \\
+BT & does the product concept receive seed money ? \\
+set2seq & where can i get funding for my product idea ? \\
+% seq2seq+BT & do product ideas get seed funding ? \\
+set2seq+BT & how do i receive seed funding for my product idea ? \\
+\\ [-1.8ex]
+\hline
+\end{tabular}
+\caption{\label{tab:case} Case Study }
+\end{table}
+% \KZ{The fonts in Table 4 too small.}
+\begin{table}[th]
+\small
+\centering
+\begin{tabular}{lcccc}
+\hline 
+\\ [-1.8ex]
+& \multicolumn{2}{c}{\textbf{Accuracy}} & \multicolumn{2}{c}{\textbf{Fluency}} \\
+\\ [-1.8ex]
+\cline{2-5}
+\\ [-1.8ex]
+\textbf{Method} & Score & Agreement & Score & Agreement \\
+\\ [-2ex]
+\hline
+\\ [-1.8ex]
+VAE  & 2.79 & 0.45 & 3.21 & 0.53 \\
+CGMH & 3.15 & 0.55 & 3.42 & 0.50 \\
+UPSA & 3.49 & 0.54 & 3.51 & 0.55 \\
+DNPG\scriptsize{(Adapted)} & 3.32 & 0.48 & 3.62 & 0.54 \\
+Back Translation & 3.37 & 0.59 & \textbf{4.18} & 0.58 \\
+set2seq+BT\scriptsize{(ours)} & \textbf{3.78} &0.57 & 4.13 & 0.55 \\
+\\ [-1.8ex]
+\hline
+\end{tabular}
+\caption{\label{tab:human} Results for Human Evaluation. (Mean Score and Kappa Agreement) }
+\end{table}
+
+\paragraph{Human Evaluation.}
+We choose 100 sentences from Quora and ask 3 human annotators to score the result from 1 to 5 from the perspective of both fluency and accuracy without telling them the result is generated by which method, the higher score indicates the better quality of the generated paraphrases. From the perspective of fluency, we judge whether paraphrase conforms to grammar and common sense. From the perspective of accuracy, we judge whether paraphrase has the same meaning as the original sentence but expressed differently.
+
+% For UPSA and CGMH\footnote{CGMH: \url{https://github.com/NingMiao/CGMH}}, they provided open-source code and data, and for VAE, we use the code from SentenceVAE\footnote{\url{https://github.com/timbmg/Sentence-VAE}}. 
+
+We can see that word/phrase based methods have bad performances on fluency since their Language Model is trained on a small dataset. Paraphrases generated by back-translation are not very accurate since they are not trained by in-domain data. From the perspective of both fluency and accuracy, our method performs 
+the overall best.
+% All annotators are asked to 
+% consider the result from both accuracy and diversity. We give a reference for scoring:
+% \begin{itemize}
+% \item[\textbf{1.}] The meaning is totally different.
+% \item[\textbf{2.}] Exactly the same sentence.
+% \item[\textbf{3.}] The meaning is slightly different.
+% \item[\textbf{4.}] Express the same meaning in a slightly different expression.
+% \item[\textbf{5.}] Express the same meaning in a totally different expression.
+% \end{itemize}
+% Table~\ref{tab:human} shows the average rating of 
+% all annotators on all sentences. 
+% Our framework performs the best among different baselines. 

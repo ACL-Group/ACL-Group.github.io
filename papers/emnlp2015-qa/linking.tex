@@ -1,0 +1,168 @@
+\subsection{Entity Linking}
+
+% 11 sentences
+
+% main: tfidf for words on freebase
+% based on overlap sim.
+% pseudo code?
+%
+
+
+% 0. what are we going to do ?
+% Given a relation tuple, we are going to find representative Freebase entities
+% which stand for the arguments.
+% 1. Formally definition
+In the entity linking step, by matching arguments to entities in the knowledge base,
+each relation tuple is transformed into linked tuples,
+$ltup=\langle e_1,\ rel,\ e_2 \rangle$, with linking scores.
+
+% 2. ??? Talk about Freebase
+% 3. each mid in FB has one or more entity names.
+% example, China and PRC.
+
+
+
+%Each entity in Freebase has one or more aliases. The default one is the name of this entity.
+%For example, the entity \textit{m.02\_286} has the name ``New York City'' and other aliases
+%such as ``The Big Apple'' ``NYC'' and ``Empire City''.
+% 4. leverage multiple namees to build an invert index.
+We aim to support fuzzy matching between arguments and entity aliases,
+so we take all the aliases into consideration, and build an inverted index from words to aliases.
+% 5. stop word set is used, and use the idf score to weight words.
+Different words in one alias cannot be treated equally. Intuitively, a word
+is more important if it occurs in fewer aliases ($n$), and vice versa.
+Based on the inverted index, we use inverted document frequency score to
+approximately model the weight of a word $w$:
+\begin{equation}
+idf(w)=1\ /\log(|\{n : w \in n\}|)
+\end{equation}
+
+Besides, stop words are removed from aliases, treating their idf scores as 0.
+% 6. matching rule: intersect >= N - 1, weighted overlap score >= threshold
+In order to measure the probability of fuzzy matching from an argument ($a$) to an alias ($n$),
+we introduce the weighted overlap score:
+\begin{equation}
+overlap(a, n) = \frac {\sum\limits_{w \in a \cap n} idf(w)} {\sum\limits_{w \in a \cup n} idf(w)}
+\end{equation}
+
+We merge all the aliases of an entity together to producing a similarity score 
+of fuzzy matching between an entity and an argument:
+\begin{equation}
+\begin{aligned}
+sim(e, a) = \max\limits_{n \in Alist(e)} overlap(a, n)
+\end{aligned}
+\end{equation}
+
+% \KQ{TODO: Two Strategies: Just choose the best separately, or FB 2-hop connectable}
+
+In order to control the quality of candidate entities,
+for an argument having $m$ words (with stop words removed),
+we only keep entities that have at least one alias
+matching $m-1$ words in the argument, and have a similarity score larger than a threshold, $\tau$.
+% we can tune the threshold
+% we can use formula to show the weighted score, that is intersect / union, weighed.
+% 7. multiple matching, select the one with best wScore.
+% 8. tie breaker: count occurrence in freebase relations.
+%if there still has a tie, the most popular entity is selected. The popularity of an entity is calculated
+%by counting number of relations it has in Freebase.
+With similarity score computed, we generate 10 best entity candidates 
+respectively for both the subject and the object of $rel$.
+
+Next, we model the joint similarity score ($F$) of the relation tuple
+$\langle a_1,rel,a_2\rangle$ with each entity pair combination $\langle e_1,e_2\rangle$ in two ways.
+One is a \textbf{naive method} which only considers the similarity
+between arguments and corresponding entities:
+\begin{equation} \label{eqn:naive}
+\begin{aligned}
+F(a_1, e_1, &a_2, e_2, rel) = \\
+            &sim(e_1, a_1) \times sim(e_2, a_2).
+\end{aligned}
+\end{equation}
+
+The other method takes predicate paths between $e_1$ and $e_2$
+into consideration.
+Let $\vec{w}$ be the word vector of $rel$,
+and $\vec{p}$ be a path of predicates connecting $e_1$ and $e_2$ in at most
+2 hops. Here we say two entities $e_1$ and $e_2$ are connected in 1 hop,
+if there exists a predicate $p$, such that $p(e_1, e_2)$ (or $p(e_2, e_1)$) is in the knowledge base.
+
+Similarly, $e_1$ and $e_2$ are connected in 2 hops,
+if there exists two predicates $p_1, p_2$ and a transition entity $e'$,
+such that $p_1(e_1, e')$ (or $p_1(e', e_1)$) and $p_2(e', e_2)$ (or $p_2(e_2, e')$) are in the knowledge base.
+ 
+We hence define the relatedness between $\vec{p}$ and $\vec{w}$ 
+in the form of a conditional probability according to the Naive Bayes model:
+\begin{equation}
+\begin{aligned}
+    P(\vec{p}\, |\, \vec{w}) & \approx \prod\nolimits_p P(p\, |\, \vec{w})  \\
+                        & \propto \prod\nolimits_p P(p) \prod\nolimits_w P(w\, |\, p),
+\end{aligned}
+\end{equation}
+\noindent
+and we follow the IBM alignment Model 1~\cite{yao2014information} to calculate the conditional probability
+between predicates and relation words $P(\vec{p}\, |\, \vec{w})$.
+Based on the information above, we define a richer joint similarity score, 
+considering all valid
+paths between $e_1$ and $e_2$:
+\begin{equation} \label{eqn:full}
+\begin{aligned}
+F(a_1, e_1,a_2,&e_2,rel) = sim(e_1,\, a_1) \times\\
+               &sim(e_2,\, a_2) \times
+		\sum\nolimits_{\vec{p}} P(\vec{p}\,| \vec{w}).
+\end{aligned}
+\end{equation}
+
+Due to the multiplications, the value of $P(\vec{p}\,| \vec{w})$ varies a lot 
+among different entity pair candidates. The large deviation makes 
+$P(\vec{p}\,| \vec{w})$ the most important term in \eqnref{eqn:full}, 
+especially in the case when none of predicate paths
+are similar enough to the relation words.
+Therefore, we trust the factor of $P(\vec{p}\,| \vec{w})$ only when 
+there exists a similar predicate path.
+In practice, we use a threshold $\rho$ to control whether to 
+use \eqnref{eqn:full} or \eqnref{eqn:naive}.
+We call this an \textbf{ensemble method}.
+For each case of entity linking, if there exists one candidate entity pair satisfying $P(\vec{p}\, |\, \vec{w}) > \rho$,
+we use the ensemble method, otherwise we fall back to the naive method for the current case.
+
+%\footnote{The popularity of an entity is calculated by counting number of relations it has in the taxonomy.}
+%The other strategy (SIM) selects all the $\langle ent1,\ ent2 \rangle$ pairs simultaneously,
+%where $ent1$ is reachable from $ent2$ in the taxonomy by 1-hop or 2-hop relation.
+%Experimental results on these two strategies are shown in Section 4.
+
+
+% 9. SUTime is used to map years and datetime.
+
+% check other papers, learn how to introduce FB without too much words.
+% 10. discard non-match to guarantee accuracy of linking.
+% If one argument fails to link to any entity, the corresponding relation tuple is discarded.
+% Ranking Method May Change?
+%   use wScore threshold to filter entities
+%   then sorting by interLen, then popularity ??? (maybe we can have a try afterwards)
+%
+
+
+%\begin{table}[htbp]
+%	\centering
+%	\caption{Syntactic Transform Rules}
+%	\begin{tabular}{|l|l|}
+%		%\toprule
+%        \whline
+%		Category & Pattern Template \\
+%		%\midrule
+%        \hline
+%        % Continuous Tense & \{$adv_1$\} \textbf{be} \{$adv_2$\} verb:VBG \{text\}
+%        %                  & $verb_{lem}$ \{phrase\} \\
+%		% Participle Tense & \{$adv_1$\} \textbf{have} \{$adv_2$\} verb:VBN \{text\}
+%        %                  & $verb_{lem}$ \{phrase\} \\
+%        % Participle + Passive & \{$adv_1$\} \textbf{have} \{$adv_2$\} been \{text\}
+%        %                      & is \{text\} \\
+%        Continuous Tense & \textbf{be} verb:VBG \{phrase\} \\
+%		Participle Tense & \textbf{have} verb:VBN \{text\} \\
+%        Future Tense & \textbf{will}/\textbf{shall} verb:VB \{pharse\} \\
+%                     & \textbf{be} going to verb:VB \{phrase\} \\
+%		%\bottomrule
+%        \whline
+%	\end{tabular}%
+%	\label{tab:synt rules}%
+%\end{table}

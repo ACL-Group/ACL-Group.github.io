@@ -1,0 +1,2053 @@
+However, the difference is that we add the clustering in Algorithm 2 on all concept contexts of terms for their possible senses, and then evaluate the semantic similarity by comparing these concept-cluster contexts. We will give the details on the concept-cluster-based similarity evaluation in the following section.
+@misc{semcor,
+  howpublished  = "http://www.cs.unt.edu/~rada/downloads.html\#semcor"
+}
+
+We now analyze the challenges in this task. Given a pair of terms $<t_1, t_2>$, the first challenge is to decide the type of a term, namely the entity or the concept. Because it is the basis in the following context collection of terms. That is, for the entity pair, we should collect the concepts as their contexts while for the concept pair we should collect the entities as their contexts to measure the semantic similarity.
+The second challenge is to collect the contexts of terms efficiently.
+ The third challenge is to get the similarity score by comparing the contexts of terms. For example, given a pair of terms $<microsoft, apple>$, we can get the top 20 concepts of \emph{microsoft} and \emph{apple} as shown in Table~\ref{tab:microsoft-apple}. If we directly compare their concepts in a similarity evaluation function (e.g., cosine) to evaluate its semantic similarity, the cosine similarity is only 0.3784 (the value of 1 indicates very similar while the value of 0 indicates very different). In this case, we can not judge it is a similar pair. This is because the term like \emph{apple} has multiple senses (e.g., company and fruit), and the data distributions of senses are skewed, that is, the contexts relevant to the fruit sense are much more than those relevant to the company sense. Thus, how to effectively evaluate the semantic similarity between contexts is necessary to be addressed in the measuring of the semantic similarity between terms.
+
+\begin{table*}[!t]
+\centering
+\caption{Pearson correlation coefficient on benchmark data}
+\label{tab:benchmarkData}
+\begin{tabular}{|l|l|c|c|}\hline
+~~~~~~~~~Approach	&~~~~~~~~~~~~~~~Source	&M\&C database	&WordNet353 Similarity\\\hline
+Hungarian method 	&string-based	&-0.1956	&0.0640 \\\hline
+Tray's (2005)	&string-based+WordNet	&0.7548	&0.5935\\\hline
+Rada's (1989)	&path-length-based (WordNet)	&0.7391	&0.5945\\\hline
+Hirst's (1998)	&lexical chain-based  (WordNet)	&0.6426	&0.5738\\\hline
+Quang's (2009)	&lexical chain-based (WordNet)	&0.6756	&0.4815\\\hline
+resnik's (1995)	&information content+WordNet	&0.7617	&0.6716\\\hline
+jcn's (1997)	&information content+WordNet	&0.8484	&0.3710\\\hline
+lin's (1998)	&information content+WordNet	&0.8224	&0.6739\\\hline
+Sanchez's(2011)*	&information content+WordNet	&0.8700	&/\\\hline
+Banerjee's (2002)	&glosses-based (WordNet)	&0.7805	&0.6510\\\hline
+Eneko's (2010)	&personalized PageRank (WordNet)	&0.7945	&0.5789\\\hline
+Bollegala's (2007, 2011)*	&search-snippet-based	&0.8340	&/\\\hline
+our baseline approach	&semantic network-based	&0.7773	&0.5756\\\hline
+clustering-based &semantic network+clustering	&0.8847	&0.6898\\\hline
+our clustering approach	&semantic network+clustering+clusterPrunning	&\textbf{0.9210}&\textbf{0.7247}\\\hline
+\end{tabular}
+\end{table*}
+
+\begin{table*}[!t]
+\centering
+\caption{Pearson correlation coefficient on 146 labeled data identified by WordNet}
+\label{tab:146pairs}
+\begin{tabular}{|l|l|c|c|c|}\hline
+~~~~~~~~~Approach	&~~~~~~~~~~~~~~~Source	&on 75 pairs	&on 71 pairs	&on 146 pairs\\\hline
+Hungarian method 	&string-based	&0.0391	&0.3712&	0.0931\\\hline
+Tray's (2005)	&string-based+WordNet	&0.5201	&0.3887	&0.4594\\\hline
+Rada's (1989)	&path-length-based (WordNet)	&0.5195	&0.5915	&0.5568\\\hline
+Hirst's (1998)	&lexical chain-based  (WordNet)	&0.5334	&0.4586	&0.5036\\\hline
+Quang's (2009)	&lexical chain-based (WordNet)	&0.3550	&0.3586	&0.3438\\\hline
+resnik's (1995)	&information content+WordNet	&0.5727	&0.7438	&0.6773\\\hline
+jcn's (1997)	&information content+WordNet	&0.6408	&0.3819	&0.4319\\\hline
+lin's (1998)	&information content+WordNet	&0.6048	&0.7169	&0.6777\\\hline
+Banerjee's (2002)	&glosses-based (WordNet)	&0.4698	&0.3768	&0.4279\\\hline
+Eneko's (2010)	&personalized PageRank (WordNet)	&0.5696	&0.3802	&0.4650\\\hline
+our baseline approach	&semantic network-based	&0.3212	&0.3125	&0.3557\\\hline
+clustering-based &semantic network+clustering	&0.4521	&0.6506	&0.5195\\\hline
+our clustering approach	&semantic network+clustering+clusterPrunning	&\textbf{0.7716}	&\textbf{0.8215}	&\textbf{0.7601}\\\hline
+\end{tabular}
+\end{table*}
+
+{
+%\makeatletter\def\@captype{algorithm}\makeatother
+\renewcommand\algorithmicrequire{\textbf{Input:}}
+\renewcommand\algorithmicensure {\textbf{Output:}}
+\begin{algorithm}[h]
+\label{alg:baseline}
+%\begin{center}
+\caption{Clustering-based Approach}
+\begin{algorithmic}[1]
+\REQUIRE $<t_1, t_2>$: a pair of terms;\\
+~~~~~~$\Gamma_{isA}$: the semantic network of isA relationship;\\
+~~~~~~$\Gamma_{ssyn}$: synonym/very similar surface data set in $\Gamma_{isA}$;
+\ENSURE a similarity score of $<t_1, t_2>$;
+\IF {$t_1$ and $t_2$ is a pair in the same cluster according to $\Gamma_{ssyn}$}
+\STATE Let $sim(t_1, t_2) \leftarrow $ 1 and return $sim(t_1, t_2)$;
+\ENDIF
+\IF {$<t_1, t_2>$ has the isA relationship}
+\STATE Label the pair of terms $<t_1, t_2>$ as a concept-entity pair;
+\ELSIF {the value of \emph{r} in Eq.~\ref{eq:typeChecking} $>$ 1 ($i\in \{1,2\}$}
+\STATE $t_i$ is a concept;
+\ELSE
+\STATE $t_i$ is an entity;
+\ENDIF
+\IF {$<t_1, t_2>$ is a concept pair}
+\STATE Collect all entities of $t_i$ from $\Gamma_{isA}$ as the context and generate the entity vector $I_e^{t_i} (i\in\{1, 2\})$;
+\STATE Evaluate the similarity score between context vectors $I_e^{t_1}$ and $I_e^{t_2}$ in Eq.~\ref{eq:cosine};
+\STATE return $Sim(I_e^{t_1}, I_e^{t_2})$;
+\ENDIF
+\IF {$<t_1, t_2>$ is an entity pair}
+\STATE Collect all concepts of $t_i$ from $\Gamma_{isA}$ as the context and generate the concept vector $I_c(t_i) (i\in\{1, 2\})$;
+\STATE Evaluate the similarity score between context vectors $I_c(t_1)$ and $I_c(t_2)$ in Eq.~\ref{eq:cosine};
+\STATE $sim_1\leftarrow Sim(I_c(t_1), I_c(t_2))$;
+\STATE Clustering the contexts $C^{t_1}$ and $C^{t_2}$ into clusters $\{C_1^{t_1}, C_2^{t_1},...,C_m^{t_1}\}$ and $\{C{^{t_2}_1}, C{^{t_2}_2},..., C{^{t_2}_n}\}$ with the cluster pruning;
+\STATE $sim_2\leftarrow sim(C^{t_1}, C^{t_2})$ in Eq.~\ref{eq:clusterCosine};
+\STATE return $Max(sim_1, sim_2)$;
+\ENDIF
+\IF {$<t_1, t_2>$ is a concept-entity pair}
+\STATE Collect all concepts of the entity term $t_i$ from $\Gamma_{isA}$ as the context $C^{t_i} (i\in\{1, 2\})$;
+\STATE Clustering the contexts $C^{t_i}$ into clusters $\{C_1, C_2,...,C_m\}$ with the cluster pruning;
+\IF {the concept term $t_j$ belongs to a cluster $C_x$ ($1\leq x \leq m$) in $C^{t_i}$}
+\STATE $S\leftarrow$ $C_x$;
+\ELSE
+\STATE $S\leftarrow \{C_x|C_x\in C^{t_i}, 1\leq x \leq m\}$;
+\ENDIF
+\FOR {each cluster $C_x$ in $S$}
+\STATE Select top $k$ concepts in the cluster $C_x$ to represent $t_i$, denoted by $C{_{topk}^{x}}=\{c_y|c_y \neq t_j,c_y\in C_x, 1\leq y \leq k\}$;
+\FOR {each concept $c_y$ in $C{^{topk}_{x}}$}
+\STATE Compute the semantic similarity given a pair of $<c_y,~t_j>$ iteratively;
+\ENDFOR
+\STATE $sim_{C_x}\leftarrow maxSim_{c_y\in C_{topk}^{x}}(c_y,~t_j)$;
+\ENDFOR
+\STATE return $Max\{sim_{C_x}|C_x\in S\}$;
+\ENDIF
+\end{algorithmic}
+%\end{center}
+\end{algorithm}
+}
+
+We explore two distance measures between concepts $c_1$ and $c_2$, including the lexical distance measure and the semantic distance measure.
+\begin{equation}
+dis_{lex}(c_{1}, c_{2}) = \frac{EditDistance(c_{1}, c_{2})}{MaxLength(c_{1}, c_{2})}
+\end{equation}
+
+\begin{itemize}
+\item Wikipedia Redirects: Some Wikipedia URLs do not have
+their own page. Accesses to such URLs are redirected to
+other describing the same subject. We use $x_{i} \rightarrow y_i$
+to denote the redirection.
+\item Wikipedia Internal Links: Links to internal pages are expressed
+in shorthand by [[Title $|$ Surface Name]]
+in Wikipedia, where Surface Name is the anchor text,
+and the page it links to is titled Title. Again, we denote it
+as $x_i \rightarrow y_i$, where $x_i$ is the anchor text, and $y_i$ is the title.
+\item lexical
+\end{itemize}
+
+
+
+However, since we harvest instances from the Web, on one hand, people
+may use different terms to represent the same meaning, such
+as using corporation or firm to represent company, on the other hand, people may use different surface forms to represent the same instance, such as singular/plural forms (e.g., flavor, flavors), the various spelling formats (e.g., flavor, flavour) or misspelling formats (e.g., 2d barcode and 2d bar code, accomplished artist and	accomplished artiste).
+
+To do the clustering, we need positive evidence that indicates two surface forms are
+actually the same, and negative evidence that indicates two surface
+forms are definitely not the same. We get positive evidence from
+sources such as Wikipedia Redirects, Wikipedia Internal Links, or
+other synonym services, and negative evidence from lists or tables (if
+two surface forms appear in the same list or as two columns in a
+table, then usually they do not mean the same thing). After collecting
+the evidence, we perform a graph cut to find clusters of surface forms
+that represent the same attributes.
+
+
+\textbf{synonym instances and instances with very similar surface forms}
+After quantifying the relation between concepts and entities,
+we can get a list of instances containing concepts and entities.
+
+However, since we harvest instances from the Web, on one hand, people
+may use different terms to represent the same meaning, such
+as using corporation or firm to represent company, on the other hand, people may use different surface forms to represent the same instance, such as singular/plural forms (e.g., flavor, flavors), the various spelling formats (e.g., flavor, flavour) or misspelling formats (e.g., ).
+
+To identify the instances with similar surface forms, we introduce the edit-distance distance to decide ...
+
+We explore two distance measures between concepts $c_1$ and $c_2$, including the lexical distance measure and the semantic distance measure.
+
+
+the instances have the different but very similar surface forms,
+
+
+ use misspelling formats, such as spelling ''
+to represent ''.
+the same term
+or
+
+Grouping these semantically identical instance into a set is an important task, without which the three
+terms would be considered as independent concepts and the
+typicality for this group of attributes would be diluted over
+these three terms. To find potentially synonymous concepts, we can leverage
+the evidence from Wikipedia\cite{Lee:2011} and use the following ways to get concept synonyms:
+\begin{itemize}
+\item Wikipedia Redirects: Some Wikipedia URLs do not have
+their own page. Accesses to such URLs are redirected to
+other describing the same subject. We use $x_{i} \rightarrow y_i$
+to denote the redirection.
+\item Wikipedia Internal Links: Links to internal pages are expressed
+in shorthand by [[Title $|$ Surface Name]]
+in Wikipedia, where Surface Name is the anchor text,
+and the page it links to is titled Title. Again, we denote it
+as $x_i \rightarrow y_i$, where $x_i$ is the anchor text, and $y_i$ is the title.
+\item lexical
+\end{itemize}
+
+Using these evidence pairs, we connect synonymous instances.
+Then, we take each connected component as a synonymous
+instance cluster. Within each cluster, we set the
+most frequent instance as a representative one of the
+synonymous instances.
+
+\STATE Judge whether the given pair follows an isA relationship in $\Gamma_{isA}$;
+
+We can see that results identified include
+not only synonym pairs {gender, sex}, but also the same term
+in singular/plural forms such as (flavor, flavors) or spelled
+differently, such as (flavor, flavour). These results show the
+initial promise of identifying synonym sets using a simple
+technique and Wikipedia, and we leave more sophisticated
+techniques for future work.
+
+
+We first introduce the lexical distance measure to identify those terms with very similar surface forms caused by the misspelling, for example, .... In terms of the edit-distance, we merge these similar concepts with a representative one and combine their entity distributions. After this preprocessing, we use the semantic distance measure function defined in Eq.~\ref{eq:semanticDist} to evaluate the distance between concepts.
+
+regarding the ambiguous concept, we can introduce the synonym data to fix, including the synonym data in bing dictionary.
+for example, $film$ has two senses, including movie and layer.
+Therefore, our core task is to improve the semantic similarity between ambiguous entities. The key is to identify the senses given the term. We require
+
+In the above analysis, we know that if comparing the collected concept context using the cosine similarity evaluation function directly, we could not get a higher similarity due to the skewed concept distributions regarding the senses of terms. For example, Table~\ref{tab:sensesOfSamples} shows the main senses of two instances Apple and Facebook and the probability of each sense corresponding to the concept distributions. We can see that the probability of the company sense that Apple belongs to is much lower than that of the fruit sense. This indicates the concepts in the fruit sense of Apple are more popular as those in the company sense (refer Table~\ref{tab:microsoft-apple} for details). This skew concept distribution is more obvious for the company sense of the instance Facebook compared to other senses. Hence, to improve the semantic similarity between these contexts, we want to group all similar contexts and use the sense of the given term to evaluate the similarity. However, labeling all senses of terms manually and creating a sufficient knowledgebase containing sense-tagger definitions of terms is very time-consuming if not possible.
+
+According to the isA relationship between concepts and entities in $\Gamma_{isA}$, we can construct a bipartite between concepts and entities as shown in Fig.~\ref{fig:bipartition}.
+This bipartite can help us to find similar concepts. The basic idea is that if two concepts share many entities, they are similar to each other.
+
+There are offline/online clustering algorithms.
+For example,
+\textbf{the number of clusters is unknown. The clustering algorithm should be able to automatically determine the number of clusters. }
+
+Threshold-min: select the instance as a
+      new centroid whose  minimum distance
+      from each of the previous j-1 centers
+      meeting: minDistance $>$ threshold (e.g., 0.7)
+
+      \begin{table}[!h]
+\centering
+\caption{Case study}
+\label{tab:examples}{\scriptsize
+\begin{tabular}{|c|c|c|c|}\hline
+termA & termB	&cosine	&cluster-based cosine\\\hline
+\textbf{Apple} &Pear	&0.916	&\textbf{0.999}\\
+\textbf{Apple}&Microsoft	&\textbf{0.378}	&\textbf{0.994}\\
+\textbf{Orange}&Pear	&0.715	&\textbf{0.845}\\
+\textbf{Orange}&Red	&\textbf{0.491}	&\textbf{0.982}\\
+Microsoft&\textbf{GE}	&0.620	&\textbf{0.982}\\
+Glass&Plastic	&0.991	&\textbf{0.995}\\
+Music&Lunch     &0.292	&\textbf{0.884}\\
+Company&Microsoft	&0.930	&\textbf{0.934}\\
+Asia~country &Developing~country	&0.852	&0.852\\
+Country&Company	&0	&0\\
+\hline
+\end{tabular}}
+\end{table}
+
+\begin{table}[!t]
+\centering
+\caption{Main senses of apple and facebook}
+\label{tab:sensesOfSamples}
+\begin{tabular}{|l|c|c|c|} \hline
+entity &id &	senses	&prob.\\\hline
+Apple	&1	&Fruit & 0.792\\
+	&2	&Company &0.138\\
+	&3	&Fruit Tree & 0.080\\
+	&4	&Food&0.070\\\hline
+Orange	&1	&Fruit & 0.457\\
+	&2	&Color &0.447\\
+	&3	&Food&0.097\\\hline
+GE	&1	&Company & 0.606\\
+	& 2	&Material&0.394\\\hline
+Music	&1	&Intrest &0.518\\
+	&2	&Multimedia&0.201\\
+	&3	&Activity & 0.196\\
+	&4	&Art&0.085\\\hline
+Music	&1	&Dish &0.501\\
+	&2	&Activity&0.251\\
+	&3	&Cost&0.248\\\hline
+Pear	&1	&Fruit & 0.824\\
+	&2	&Fruit Tree & 0.097\\
+	&3	&Food& 0.034\\\hline
+Microsoft	&1	&Company &0.895\\
+	&2	&provider &0.050\\
+	&3	&industry leader &0.024\\
+	&4	&brand &0.015\\\hline
+\end{tabular}
+\end{table}
+
+\begin{table}[!t]
+\centering
+\caption{Main senses of apple and facebook}
+\label{tab:sensesOfSamples}
+\begin{tabular}{|l|c|c|c|} \hline
+entity &id &	senses	&prob.\\\hline
+Apple	&1	&Fruit & 0.792\\
+	& 2	&Company &0.138\\
+	&3	&Food&0.070\\
+Orange	&1	&Fruit & 0.457\\
+	&2	&Color &0.447\\
+	&3	&Food&0.097\\\hline
+GE	&1	&Company & 0.606\\
+	& 2	&Material&0.394\\\hline
+Music	&1	&Intrest &0.518\\\hline
+	&2	&Multimedia&0.201\\\hline
+	&3	&Activity & 0.196\\
+	&4	&Art&0.085\\\hline
+Music	&1	&Dish &0.501\\
+	&2	&Activity&0.251\\
+	&3	&Cost&0.248\\\hline
+Apple	&1	&Fruit & 0.44\\
+	& 2	&Company &0.23\\\hline
+Facebook	&1	&Website/social medium site &0.57\\
+	&2	&Channel/social network &0.18\\
+	&3	&Company &\textbf{0.05}\\\hline
+\end{tabular}
+\end{table}
+
+
+To group similar concepts into a cluster, we use the entity distribution to describe the concept and evaluate the similarity between concepts in Eq.~\ref{eq:semanticDist}. According to the isA relationship between concepts and entities from our semantic network of isA relationships $\Gamma_{isA}$, we can construct a bipartite between concepts and entities as shown in Fig.~\ref{}.
+This bipartite can help us to find similar concepts. The basic idea is that if two concepts share many entities, they are similar to each other. From
+the concept-entity bipartite, we represent each concept $c_i$ as an L2-normalized vector as shown in Eq.~\ref{eq:Ic}, where each dimension corresponds
+to an entity in the bipartite. There are some challenges in clustering concepts effectively and efficiently in this bipartite.
+
+We induce distributional similarities collected from 1.68 million web pages and 2 years' Bing search log. we come up with a semantic representation for the
+contexts. This approach is natural because we are dealing with a large semantic network, which provides semantic information in
+various aspects, such as the isA patterns and the attributes. Using these information, we are able to introduce
+semantic features to describe a context, which also leads to a
+lightweight solution of context learning.
+
+First, we aim to collect the contexts (such as the hypernyms/concepts) given the pairwise terms and group all similar contexts. That is,
+given a term $e$, we want to collect the context relevant to the given term, such as a concept list $C_{e} = \{c_{1}, ..., c_{i}...\}$. Meanwhile, we want to find how many senses the current term belong to, namely, we group all similar concepts into $C_{e} = \{C_{1}, ..., C_{x}...\}$ satisfying $C_{x} = \{c_{j}|c_{j}\in C_{e}\}$. For example, Tabel~\ref{tab:microsoft-apple-clusters} shows the groups of similar concepts given the term \emph{Microsoft} and the term \emph{Apple}.
+Secondly, we aim to give the semantic similarity between two terms corresponding to the terms' senses. For example, we should get a higher similarity score given the pair of \emph{Apple} and \emph{Microsoft} regarding the company sense while getting a higher similarity score given the pair of \emph{Apple} and \emph{Pear} regarding the fruit sense.
+
+Take
+Probase~\cite{12MSRA:Probase} as an example. The Probase semantic network
+contains millions of entities and concepts, and the backbone of the
+taxonomy is the isA relationship. {\color{red}{Figure~\ref{fig:probase} shows the
+concept distribution of Probase (X-axis shows millions of concepts,
+and Y-axis shows their occurrence frequency in a sample dataset). We
+can see that Probase contains not only head concepts such as
+``country'' and ``artist'', but also relatively tail concepts such as
+``political analyst'' and ``scheduling algorithm''.}} Besides isA
+relationships, there are all kinds of other relationships such as
+located-in, is-CEO-of, etc.
+
+In addition, it could provide similarities corresponding to the specified concept category, e.g., $<Apple, Lobster>$ are similar considering the food sense;
+ $<Production, Hike>$ are similar considering the activity sense; Otherwise, they are dissimilar.
+
+
+In the above analysis, we could get three categories for a given pair corresponding to the types of terms, such as the concept-entity pair (e.g.,~$<Company,~Microsoft>$), the concept pair (e.g.,~$<Company,~Country>$) and the entity pair (e.g.,~$<Apple,~Microsoft>$). However, if the given pair of terms has a concept term, we can use the contexts of seeds as the context of the current concept. For example, given a concept term $Company$, the top 10 seed instances include \emph{Microsoft}, \emph{IBM}, \emph{Google}, \emph{Apple}, \emph{Dell}, \emph{Intel}, \emph{Sony}, \emph{Motorola}, \emph{HP} and \emph{Samsung}. Therefore, we can transform the issue of measuring semantic similarity between terms into that between instances.
+Correspondingly, we can formalize the issue below. Given the pairwise terms $<e_{1}, e_{2}>$, we can get the semantic contexts, such as attribute-based and isA-based contexts for each instance as shown in Figure~\ref{fig:Information-structure-of-terms}.
+
+More specifically,
+
+However, if the given pair of terms has a concept term, we can use the contexts of seeds as the context of the current concept. For example, given a concept term $company$, the top 10 seed entities include \emph{Microsoft}, \emph{IBM}, \emph{Google}, \emph{Apple}, \emph{Dell}, \emph{Intel}, \emph{Sony}, \emph{Motorola}, \emph{HP} and \emph{Samsung}. Therefore, we can transform the issue of measuring semantic similarity between terms into that between entities.
+Correspondingly, we can formalize the issue below. Given the pairwise terms $<e_{1}, e_{2}>$, we can get the semantic contexts, such as isA-based contexts for each entity as shown in Figure~\ref{fig:Information-structure-of-terms}.
+
+{
+%\makeatletter\def\@captype{algorithm}\makeatother
+\renewcommand\algorithmicrequire{\textbf{Input:}}
+\renewcommand\algorithmicensure {\textbf{Output:}}
+\begin{algorithm}[h]
+\label{alg:conceptClustering}
+%\begin{center}
+\caption{Semantic Similarity}
+\begin{algorithmic}[1]
+\REQUIRE $<t_1, t_2>$: a pair of terms;\\
+~~~~~~$\Gamma_{isA}$: the semantic network of isA relationship;
+\ENSURE a similarity score of $<t_1, t_2>$;
+\STATE Judge whether the given pair follows an isA relationship by $\Gamma_{isA}$;
+\IF {$<t_1, t_2>$ has the isA relationship}
+\STATE Label the pair of terms $<t_1, t_2>$ as a concept-entity pair;
+\ELSIF {occurrences of ($t_i$) as the concept $>$ occurrences of ($t_i$) as the entity ($i\in \{1,2\}$}
+\STATE $t_i$ is a concept;
+\ELSE
+\STATE $t_i$ is an entity;
+\ENDIF
+\IF {$<t_1, t_2>$ is a concept pair}
+\STATE Collect all entities of $t_i$ from $\Gamma_{isA}$ as the context $E(t_i) (i\in\{1, 2\})$;
+\STATE Evaluate the similarity score between contexts $E(t_1)$ and $E(t_2)$ in the cosine function;
+\STATE return $Sim(E(t_1), E(t_2))$;
+\ENDIF
+\IF {$<t_1, t_2>$ is an entity pair}
+\STATE Collect all concepts of $t_i$ from $\Gamma_{isA}$ as the context $C(t_i) (i\in\{1, 2\})$;
+\STATE Clustering the contexts $C(t_1)$ and $C(t_2)$ into clusters $\{C_1, C_2,...,C_m\}$ and $\{C{^{'}_1}, C{^{'}_2},..., C{^{'}_n}\}$;
+\STATE Evaluate the similarity score between each pair of clusters $C_x$ and $C{_y^{'}}$ in Eq.~\ref{eq:cosine};
+\STATE return $Max\{Sim_{x,y}(C_x, C{_y^{'}}), 1\leq x\leq m, 1\leq y\leq n\}$;
+\ENDIF
+\IF {$<t_1, t_2>$ is a concept-entity pair}
+\STATE Collect all concepts of the entity term $t_i$ from $\Gamma_{isA}$ as the context $C(t_i) (i\in\{1, 2\})$;
+\STATE Clustering the contexts $C(t_t)$ into clusters $\{C_1, C_2,...,C_m\}$;
+\IF {the concept term $t_j$ belongs to a cluster $C_x$ ($1\leq x \leq m$) in $C(t_i)$}
+\STATE $S\leftarrow$ $C_x$;
+\ELSE
+\STATE $S\leftarrow {C_x|C_x\in C(t_i), 1\leq x \leq m}$;
+\ENDIF
+\FOR {each cluster $C_x$ in $S$}
+\STATE Select top $k$ concepts ${c_y}$ ($c_y != t_j, 1\leq y \leq k)$ in the cluster $C_x$ to represent $t_i$;
+\STATE Collect entities of $t_j$ and each concept $c_y$ from $\Gamma_{isA}$ as the contexts of $t_j$ and $c_y$ respectively, namely $E(t_j)$ and $E(c_y)$;
+\STATE Merge all entities of $E(c_y)$ ($1\leq y \leq k$) as the context of $C_x$, namely $E(C_x)$
+\STATE Evaluate the similarity score between $E(t_j)$ and $E(C_x)$ in the cosine function;
+\ENDFOR
+\STATE return $Max\{Sim_{C_x\in S}(E(t_j), E(C_x))\}$;
+\ENDIF
+\end{algorithmic}
+%\end{center}
+\end{algorithm}
+}
+
+\begin{table}[!h]
+\centering
+\caption{Case study}
+\label{tab:examples}{\scriptsize
+\begin{tabular}{|c|c|c|c|c|}\hline
+	& & 	&	&cosine after\\
+pair type&termA & termB	&cosine	&clustering\\\hline
+entity	&Apple &Pear	&0.916	&0.999\\
+entity	&Apple&Microsoft	&\textbf{0.378}	&0.994\\
+entity	&Orange&Pear	&0.715	&0.845\\
+entity	&Orange&Red	&\textbf{0.491}	&0.982\\
+entity	&Microsoft&GE	&0.620	&0.982\\
+entity	&Glass&Plastic	&0.991	&0.995\\
+concept-entity	&Company&Microsoft	&0.930	&0.934\\
+concept	&Asia~country &Developing~country	&0.852	&0.852\\
+concept	&Country&Company	&0	&0\\
+concept &film &layer & 1 & 1\\
+\hline
+\end{tabular}}
+\end{table}
+
+This is because our approach can identify multiple senses of ambiguous terms and weight each sense equally. It is beneficial to improve the semantic similarity between terms especially for ambiguous terms with skewed data distributions of contexts.
+
+\begin{displaymath}
+{s.t.,
+\begin{aligned}
+sim(A_{e_{1}}, A_{e_{2}}) = cosine(A_{e_{1}}, A_{e_{2}})\\
+sim(\mathcal{I}_{e_{1}}, \mathcal{I}_{e_{2}}) = cosine(\mathcal{I}_{e_{1}}, \mathcal{I}_{e_{2}})~~
+\end{aligned}
+}
+\end{displaymath}
+
+where $f()$ indicates the similarity evaluation function between contexts. In our approach, we use logistic regression to combine the attribute based similarity (e.g., $sim(A_{e_{1}}, A_{e_{2}})$) and the isA-based similarity (e.g., $sim(\mathcal{I}_{e_{1}}, \mathcal{I}_{e_{2}})$).
+\item We induce distributional similarities collected from 1.68 million web pages and 2 years' Bing search log. we come up with a semantic representation for the
+contexts. This approach is natural because we are dealing with a large semantic network, which provides semantic information in
+various aspects, such as the isA patterns and the attributes. Using these information, we are able to introduce
+semantic features to describe a context, which also leads to a
+lightweight solution of context learning. {\color{red}It is beneficial to improve the identification on the sparse pairwise terms}, and meanwhile, it requires no a hierarchical taxonomy of concepts labeled manually or sense-tagger definitions of terms.
+
+When we talk about the company like \emph{Microsoft}, no matter big or small, we are
+likely to mention things such as {\it name}, {\it foundation time},
+{\it ceo}, {\it founder}, {\it number of employee}, {\it headquarters}, {\it operating profit} and {\t main products}.
+In other words, if we represent the context of
+{\it Microsoft} by the presence of such terms, then it will be clear to identify the mentioned term is relevant to the company.
+
+We assume we are given a set of attributes $\{a_1, \cdots, a_n\}$ for
+any term/intance $e$. We use the syntactic pattern ``the $\langle
+a\rangle$ of $e$ is'' to obtain each candidate attribute $\langle
+a\rangle$ of $e$ from the web corpus. This gives us a vector for $e$:
+\begin{equation}
+  A_e= \langle w_1, \cdots, w_k\rangle
+\end{equation}
+where $w_i$ indicates the frequency $a_i$ appears in the pattern with
+$e$. For example, Table~\ref{tab:RhodesiaIndia} lists the top 20 attributes of $India$
+as well as $Rhodesia$ together with their normalized frequency. {\color{red}We can
+see that the two lists have high similarity.}
+
+\begin{table}[!t]
+\scriptsize
+\centering
+\caption{Top 20 attributes of \emph{Rhodesia} and \emph{India}}
+\label{tab:RhodesiaIndia}
+\begin{tabular}{|l|c|l|c|} \hline
+Attributes of \emph{Rhodesia} &weight & Attributes of \emph{India} & weight\\\hline\hline
+republic    &0.1022 &government &0.1050\\\hline
+new country &0.0482 &people &0.0289\\\hline
+prime minister  &0.0411 &reserve bank   &0.0278\\\hline
+african state   &0.0376 &constitution   &0.0256\\\hline
+government  &0.0341 &capital    &0.0146\\\hline
+star    &0.0235 &president  &0.0133\\\hline
+person  &0.0200 &population &0.0128\\\hline
+liberation  &0.0153 &industrial development &0.0125\\\hline
+capital &0.0141 &times  &0.0115\\\hline
+history &0.0129 &republic   &0.0114\\\hline
+honour system   &0.0129 &supreme court  &0.0083\\\hline
+former british colony   &0.0118 &state bank &0.0073\\\hline
+police force    &0.0106 &legislature    &0.0070\\\hline
+southern african country    &0.0106 &prime minister &0.0064\\\hline
+university  &0.0094 &history    &0.0062\\\hline
+administration  &0.0094 &treasures  &0.0060\\\hline
+development &0.0082 &financial capital  &0.0060\\\hline
+population  &0.0082 &culture    &0.0059\\\hline
+founder &0.0082 &economy    &0.0057\\\hline
+high court  &0.0071 &star   &0.0044\\\hline
+\end{tabular}
+\end{table}
+
+The original Probase data does not contain information of attributes.
+We obtain knowledge about attributes using Probase and the web
+corpus. Specifically, for a given concept $c$ in Probase, we use the following syntactic
+pattern to derive attributes of $c$:
+\begin{equation}
+\begin{aligned}
+    the <\textbf{\emph{a}}> of~(the/a/an) <\textbf{\emph{e}$_i$}> is
+\end{aligned}
+\label{eq:attr}
+\end{equation}
+where \textbf{\emph{a}} is an attribute and \emph{\textbf{e}$_i$} is a
+seed instance of $c$ from the top \emph{k} seeds. The ``seed'' instances of each concept are just instances
+of high typicality scores, that is, instance $e$ with $P(e|c)$ larger
+than a threshold. After obtaining all the candidate attributes
+$<\textbf{\emph{a}}>$, we cluster and weight the attributes.  This is
+necessary because an attribute may have many ``surface forms''.  For
+example, ``date of birth'', ``birthdate'', ``birth date'' and so on to
+represent the attribute ``birthday''. In order to do the clustering,
+we need positive evidence that indicates two surface forms are
+actually the same, and negative evidence that indicates two surface
+forms are definitely not the same. We get positive evidence from
+sources such as Wikipedia Redirects, Wikipedia Internal Links, or
+other synonym services, and negative evidence from lists or tables (if
+two surface forms appear in the same list or as two columns in a
+table, then usually they do not mean the same thing). After collecting
+the evidence, we perform a graph cut to find clusters of surface forms
+that represent the same attributes.
+
+Besides, we weight the attributes. Two of the most important scores
+are $P(a|e)$, the typicality of attribute $a$ of instance $e$, and
+$P(e|a)$, the typicality of instance $e$ for attribute $a$. Both
+scores are approximated by frequencies.
+\begin{displaymath}
+{
+\begin{aligned}
+P(a|e) = \frac{\mbox{\# occurrences of }(e,a)\mbox{ in pattern Eq.~\ref{eq:attr}}}{\mbox{\# occurrences of }e\mbox{ in pattern Eq.~\ref{eq:attr}}}\\
+P(e|a) = \frac{\mbox{\# occurrences of }(e,a)\mbox{ in pattern Eq.~\ref{eq:attr}}}{\mbox{\# occurrences of }a\mbox{ in pattern Eq.~\ref{eq:attr}}}
+\end{aligned}
+}
+\end{displaymath}
+
+Most clustering algorithms partition the data based on how similar individual records are; the more similar, the more likely that they belong to the same cluster.
+
+The algorithm for keyword extraction belongs to a family of clustering algorithms. However, a
+straightforward application of such algorithms (e.g., K-means [Duda and Hart 2000; Fukunaga
+1990]) is not feasible due to a large amount of noise and a small amount of information available:
+usually we have about 50 context words represented in 27-dimensional space, which makes the
+clustering problem very difficult. Observe also that application of a clustering algorithm would
+require that the semantic network be able to handle non-words (centroids of multi-dimensional
+clusters), and this requirement is problematic for the WordNet-based metric. In order to overcome
+these problems we used a special-purpose clustering algorithm (similar to [Opher et al. 1999])
+that performs recurrent clustering analysis and then refines the results statistically.
+
+Algorithm 1 shows our concept clustering algorithm by assembling the above parts.
+
+Studies have shown that humans are able to quickly assess the semantic relatedness
+of two concepts in a way that they generally agree [26,14]. To give
+an example, most people would define ”coffee” as more related to ”cup” than to
+”telephone”. Due to the process complexity involved behind human perception
+of relatedness, the fascinating physiological and psychological explanations of
+this ability remains unclear. Despite the difficulty to explain the foundations of
+semantic relatedness perception, researchers have tried to design automatic methods
+which calculate semantic similarity as human do.
+
+In this paper we deal with “semantic relatedness” rather
+than “semantic similarity” or “semantic distance”, which are
+also often used in the literature. In their extensive survey
+of relatedness measures, Budanitsky and Hirst [2006] argued
+that the notion of relatedness is more general than that of similarity,
+as the former subsumes many different kind of specific
+relations, including meronymy, antonymy, functional association,
+and others. They further maintained that computational
+linguistics applications often require measures of relatedness
+rather than the more narrowly defined measures of similarity.
+For example, word sense disambiguation can use any related
+words from the context, and not merely similar words. Budanitsky
+and Hirst [2006] also argued that the notion of semantic
+distance might be confusing due to the different ways
+it has been used in the literature.
+
+As stated in [9][16], semantic
+similarity between documents has been less studied compared
+to semantic similarity between terms.
+
+Measuring semantic similarity and relatedness between
+terms is an important problem in lexical semantics (Budanitsky
+and Hirst, 2006). It has applications in many natural
+language processing tasks, such as Textual Entailment,
+Word Sense Disambiguation or Information Extraction,
+and other related areas like Information Retrieval. Nevertheless,
+most of the proposed techniques are evaluated
+over manually curated word similarity datasets like Word-
+Sim353 (Finkelstein et al., 2002), in which the weights returned
+by the systems for word pairs are compared with
+human ratings.
+The techniques used to solve this problem can be roughly
+classified into two main categories: those relying on preexisting
+knowledge resources (thesauri, semantic networks,
+taxonomies or encyclopedias) (Alvarez and Lim, 2007;
+Yang and Powers, 2005; Hughes and Ramage, 2007; Agirre
+et al., 2009) and those inducing distributional properties
+of words from corpora (Sahami and Heilman, 2006; Chen
+et al., 2006; Bollegala et al., 2007; Agirre et al., 2009).
+(Hughes and Ramage, 2007) presented a random walk algorithm
+over WordNet, with good results on a similarity
+dataset. In (Agirre et al., 2009) we improved their results
+and provided the best results among WordNet-based algorithms
+on the Wordsim353 dataset. Those results are comparable
+to a distributional method over four billion documents,
+also presented in (Agirre et al., 2009).
+In (Agirre et al., 2009) we already mentioned that different
+combinations ofWordNet relations provide different results.
+This paper explores in detail a wider range of combinations
+of relations and improve previous WordNet-based
+results. The similarity software and graphs used are publicly
+available under the GPL license
+
+Prior work in the field mostly focused on semantic similarity
+of words, using R\&G Rubenstein and Goodenough,1965 list of 65 word pairs and M\&C [Miller and Charles,
+1991] list of 30 word pairs.When only the similarity relation
+is considered, using lexical resources was often successful
+enough, reaching the correlation of 0.70–0.85 with
+human judgements [Budanitsky and Hirst, 2006; Jarmasz,
+2003]. In this case, lexical techniques even have a slight edge
+over ESA, whose correlation with human scores is 0.723 on
+M\&C and 0.816 on R\&G.4 However, when the entire language
+wealth is considered in an attempt to capture more
+general semantic relatedness, lexical techniques yield substantially
+inferior results (see Table 1). WordNet-based techniques,
+which only consider the generalization (“is-a”) relation
+between words, achieve correlation of only 0.33–0.35
+with human judgements [Budanitsky and Hirst, 2006]. Jarmasz
+\& Szpakowicz’s ELKB system [Jarmasz, 2003] based
+on Roget’s Thesaurus achieves a higher correlation of 0.55
+due to its use of a richer set if relations.
+Sahami and Heilman [2006] proposed to use the Web as
+a source of additional knowledge for measuring similarity of
+short text snippets. A major limitation of this technique is that
+it is only applicable to short texts, because sending a long text
+as a query to a search engine is likely to return few or even no
+results at all. On the other hand, our approach is applicable to
+text fragments of arbitrary length.
+
+In order to provide accurate results by means of the above measures,
+the way in which IC is computed is crucial. Classical information
+theoretic approaches [15,18,28] obtain the IC of a concept a by
+computing the inverse of its appearance probability in a corpus
+(p(a)) (5). In this manner, infrequent terms are considered more
+informative than common ones.
+
+It is important to note that, in order to behave properly, IC-based
+measures need that IC values monotonically increase as one moves
+down in the taxonomy (i.e., 8 a,b|a is hypernym of b => IC(a) 6 IC(b)).
+In corpora-based IC assessments, it is achieved by computing p(a)
+as the probability of encountering a or any of its taxonomical hyponyms
+in the given corpus. In practice, each individual occurrence
+of any noun in the corpus is recursively counted also as an occurrence
+of each of its taxonomic ancestors (6) [28]:
+
+where W(a) is the set of terms in the corpus whose senses are subsumed
+by a, and N is the total number of corpus terms that are contained
+in the taxonomy.
+
+Furthermore, using the full dataset of
+65 pairs presented by Rubenstein and Goodenough [20],
+the correlation between SSA results and the known human
+ratings is 0.903, which is higher than all other reported algorithms
+for the same dataset. The high correlations of SSA
+with human ratings suggest that SSA would be convenient in
+solving several data mining and information retrieval problems
+
+In the analysis of the above corpora-based IC algorithms, researchers found that all of them require a proper disambiguation and annotation of each noun in the given corpus to compute the concept appearance probabilities.
+If either the taxonomy or the corpus changes, they need to re-compute the affected concepts. It is hence necessary to perform a manual and
+time-consuming analysis of text, and resulting probabilities will
+depend on the size and nature of input corpora. Therefore, the
+background taxonomy must be as complete as possible to provide reliable results at a conceptual
+level, that is, it should include most of the specializations of each concept covered
+in the corpus. Meanwhile, to avoid data sparseness, corpora's contents should be adequate with respect
+to the ontology scope and big enough.
+Large and general purpose corpora such as Brown corpus may be suitable for WordNet, but more specific corpora may be
+needed for domain ontologies covering concrete terminology.
+
+abstract ontological concepts with many hyponyms
+are likely to appear more probably in a corpus, as they can be
+implicitly referred in text by means of all their subsumed concepts.
+
+
+
+
+references: Ontology-based information content computation 2011
+The information content (IC) of a concept provides an estimation of its degree of generality/concreteness, a dimension which enables a better understanding of concept’s semantics. As a result, IC has been successfully applied to the automatic assessment of the semantic similarity between concepts. In the past, IC has been estimated as the probability of appearance of concepts in corpora. However, the applicability and scalability of this method are hampered due to corpora dependency and data sparseness. More recently, some authors proposed IC-based measures using taxonomical features extracted from an ontology for a particular concept, obtaining promising results. In this paper, we analyse these ontology-based approaches for IC computation and propose several improvements aimed to better capture the semantic evidence modelled in the ontology for the particular concept. Our approach has been evaluated and compared with related works (both corpora and ontology-based ones) when applied to the task of semantic similarity estimation. Results obtained for a widely used benchmark show that our method enables similarity estimations which are better correlated with human judgements than related works.
+
+The study of semantic relatedness and similarity between concepts has been a very active trend in computational
+linguistics over the past twenty years. There are numerous applications
+which include information retrieval [12], visualization [22], document clustering
+and categorization [4], gene analysis [19], among others. Several approaches and
+calculation methods involving different knowledge sources have been defined. We
+propose to focus on the main approaches exploiting structured representations
+of knowledge, such as taxonomy, or a more complex space described by an ontology
+specification, which will help us to define their foundations and to highlight
+the information taken into account. We will
+
+involved here are similar to that $w_{c_{i}}^{x}$ indicates the occurrences in the context of $c_i$, $|V_{c_{i}}|$ indicates the count of objects in the context of $c_{i}$, $N_{c_{i}}$ indicates the total number of sentences in the context of $c_{i}$ and $n_{obj^{x}_{c_{i}}}$ indicates the count of sentences containing the object $obj^{x}_{c_{i}}$.
+
+$TE =\{<c_{1},e^{1}_{c_{1}}>, ...,<c_{1},e^{|e_{c_{1}}|}_{c_{1}}>...,<c_{i},e^{1}_{c_{i}}>,...,<c_{i},e^{|e_{c_{i}}|}_{c_{i}}>...\}\subset \Gamma_{hearst}$
+($|e_{c_{i}}|$ indicates the count of entities belong to the concept $c_i$)
+
+use the training vectors to build a SVM model(Train a classifier with RBF kernel...), then we give a probability that $\emph{e}_{c_{i}}$ belongs to $\emph{c}_{i}$ for each pair using the SVM model. Therefore, the above non-semantic context-based method with the SVM model can be formalized in Eq. 2, where $\gamma(c_{i},e_{j})$ indicates the probability function based on the SVM model reflecting the likelihood that the entity $\emph{e}_{c_{i}}$ belongs to the given concept $\emph{c}_{\emph{i}}$.
+
+we select the cosine evaluation function to evaluate the likelihood that $\emph{e}_{c_{i}}$ belongs to $\emph{c}_{i}$.
+
+\begin{equation} \label{e3}
+\begin{aligned}
+f_{\gamma}(c_{i}, e_{j})=\gamma_{BM25}(c_{i},e_{j})=\\
+\sum_{i=1}^{N}idf(obj_{i}\cdot \frac{f(obj_{i},D)fl(k_{1}+1)}{f(obj_{i},D)+k_{1}(1-b+b\cdot \frac{|D|}{avgdl})})
+\end{aligned}
+\end{equation}
+
+To access spare extractions, it is critical to increase the data redundancy by using more context information.
+
+Probase\cite{MSRA:Probase} is a research prototype that aims at building a unified taxonomy of worldly facts from web data and search log data.
+Compared with other knowledge-based database, such as Freebase, the Probase taxonomy is extremely rich. The core taxonomy alone (which is
+learned from 1.68 billion web pages and 2 years' worth of Microsoft Bing's search log) contains more than 2 million categories. As categories in
+Probase correspond to concepts in our mental world, Probase is valuable to a wide range of applications, such as search \cite{Xu:Boosting},
+where there is a need to interpret users' intent. Probase contains many IsA relationships that are harvested using so called Hearst linguistic
+patterns\cite{Hearst:Automatic}, that is, SUCH AS like patterns. For example, a sentence that contains ``... artists such as Pablo Picasso ...''
+can be considered evidence for the claim that Pablo Picasso is an instance in the artist category. This database is also the full scale test
+data and the knowledge source about subclasses and super classes used in our approach, denoted as the $\Gamma_{\emph{hearst}}$ database.
+
+
+ It should be mentioned that in the cleaning of our approach, we utilize the hidden taxonomy information in this database. That is, given each concept-entity pair $<\emph{c}_{i},\emph{e}_{j}>$ from this database $\Gamma_{hearst}$,
+we can get a subclass set containing ``$c_i$'' and a super class set exclusive of classes containing ``$c_{i}$''. More precisely, the subclass set of $\emph{c}_{i}$ only consist of those concepts who contain the given concept $\emph{c}_{i}$ in $\Gamma_{hearst}$. For example, given two pairs <\emph{feral animal}, \emph{wolf}> and <\emph{animal}, \emph{wolf}>, ``\emph{feral} \emph{animal}'' is a subclass of the concept ``\emph{animal}'', this is because the head of ``\emph{feral} \emph{animal}'' contains ``\emph{animal}''. However, the superclass set of $e_{j}$ consist of all concepts without containing ``$c_{i}$'' occurring in the hearst pattern sentences whose entities contains $e_{j}$. Both class sets are denoted as $C_{sub}(c_{i},e_{j})=\{C_{c_{i}}^1,...,C_{c_{i}}^x,...,\}$ (the last word of ``$C_{c_{i}}^x$'' $\bigcap$ ``$c_{i}$'' $!=$ $\emptyset$) and $C_{sup}(c_{i},e_{j})=\{C_{e_{j}}^1,...,C_{e_{j}}^x,...,\}$ (the last word of ``$C_{e_{j}}^x$'' $\cap$ ``$c_{i}$''=$\emptyset$) respectively.
+We use a rule-based system to perform Hearst pattern extraction from 1.68 billion web documents in a Map/Reduce environment. We collect 16
+million unique is-a relationships, and 2.7 million unique categories. This database will be as the full scale application data in our approach.
+
+\footnote{The lower lower similarity score indicates that the context of the current entity is very different from that of the corresponding concept. It is mainly caused by two reasons below: 1) entities with ambiguous sense including entities with abbreviation and 2) entities with unpopular spelling formats.}
+
+, where $\emph{C}=\{\emph{c}_{1},...,\emph{c}_{i},...,\emph{c}_{m}\}$, it is the concept set while
+$\emph{E}=\{\emph{e}_{i1},...,\emph{e}_{ij},...,\emph{e}_{in}\}$ ($1\leq$\emph{i}$\leq$\emph{m} and 1$\leq$\emph{j}$\leq$\emph{in}), it is the
+entity set, and \emph{m} indicates the total number of concepts in \emph{C}) and \emph{in} indicates the total number of entities in
+$\emph{c}_{i}$
+
+P_{\Gamma_{isa}}(c_{i}|e_{j})+\sum_{x=1}^{M_{sub}}{P_{\Gamma_{isa}}(c_{i}|C_{c_{i}}^x)+\sum_{x=1}^{K_{sup}}{P_{\Gamma_{isa}}(c_{i}|C_{e_{j}}^x )}}
+
+\footnote{The context involved in our approach can refer to
+bags-of-words of sentences, patterns or attributes of extractions on the Web etc. To simplify our approach, we only
+select attributes of extractions as the context in this paper. This is because attributes present more semantic
+information. It is beneficial to get the higher prediction accuracy for extractions.}
+and match the context of concept and that of entity.
+
+
+To access spare extractions, it is critical to increase the data redundancy by collecting more context information. The OM method mentioned
+above uses the object-based context to tackle the issue of sparse information extractions. The context used in OM is meaningful in the matching
+compared to traditional bags-of-words-based context matching methods. However, it is still insufficient regarding the semantics of the context.
+Thus, in this subsection, we mainly mention how to collect more semantic contexts using the knowledge databases of Probase, including the
+attribute databases, the knowledge of subclasses and super classes and the knowledge of isA-patterns, which will be used in the following
+semantic context matching approaches.
+
+ we first collect the sentences containing the given pair or entity as the context, and then use the conceptualization method t
+
+ \begin{figure*}[tb]
+\centering
+  \begin{tabular}{c}
+ \includegraphics[width=.68\textwidth]{CM-sorted-similarity-data-distribution1.eps}\\
+(g) Data distribution of similarity scores in CM-Variant-CO on Country\\
+\end{tabular}
+\caption{Data distribution of similarity scores in different methods on Country}
+\label{fig:context}
+\end{figure*}
+
+
+\subsubsection{Concept-based Context Matching Method}
+ In this subsection, we use the concepts of entities in $\Gamma_{hearst}$ as the context to build models and get the probabilistic score of an
+ entity belonging to a concept. As the introduction in Section 3.2, we first get the top $K_{seed}$ popular seeds for the given concept $c_{i}$ in
+ $\Gamma_{hearst}$, denoted as $E_{seed} = \{e_{c_{i}}^{y}~oder~by~w{_{e_{c_{i}}}^{y}} = P{_{\Gamma_{hearst}}}(e_{c_{i}}|c_{i})~desc,~1\leq y \leq
+ K_{seed}\}$. Secondly, we can get the conceptualized concepts of the entity $e_{ij}$ or a seed $e_{c_{i}}^{x}$ corresponding to the probabilistic
+ scores in $\Gamma_{hearst}$, namely all concepts that the entity $e_{i}$ or the seed $e_{c_{i}}^{x}$ belongs to in $\Gamma_{hearst}$, denoted as
+ $C_{e_{ij}}=\{<C_{e_{ij}}^1,w_{e_{ij}}^1>,...,<C_{e_{ij}}^x,w_{e_{ij}}^x>,...,\}$ and $C_{c_{i}}=\{C_{e_{c_{i}}^{y}}|C_{e_{c_{i}}^{y}} = \{<C_{e_{c_{i}}^{y}}^1,w_{e_{c_{i}}^{y}}^1>,...,<C_{e_{c_{i}}^{y}}^x,w_{e_{c_{i}}^{y}}^x>,...,\}\}$ respectively.
+Lastly, we determine how similar the context of the current entity $\emph{e}_{\emph{ij}}$ compared to the context vector of the given concept $\emph{c}_{\emph{i}}$ in the cosine function. Let $\gamma(c_{i},e_{ij})$ indicates the probability function reflecting the likelihood that the entity $\emph{e}_{ij}$ belongs to the given concept $\emph{c}_{\emph{i}}$, it can be formalized in Eq. 2 below.
+\begin{equation} \label{e3}
+\begin{aligned}
+f_{\gamma}(c_{i}, e_{ij})=\gamma(c_{i},e_{ij})=\frac{\sum_{y=1}^{K_{seed}}f_{\gamma}(e_{c_{i}}^{y}, e_{ij})}{K_{seed}}
+\end{aligned}
+\end{equation}
+s.t. $f_{\gamma}(e_{c_{i}}^{y}, e_{ij})= \frac{\sum{_{x=1}^{C_{e_{c_{i}}^{y}}\bigcap C_{e_{ij}}}}(w_{e_{c_{i}}^{y}}^x \cdot w_{e_{ij}}^{x}
+)}{\sqrt{\sum_{x=1}^{|C_{e_{c_{i}}^{y}}|}(w_{e_{c_{i}}^{y}}^x)^{2}} \cdot \sqrt{\sum_{x=1}^{|C_{e_{ij}}|}(w_{e_{ij}}^{x})^{2}}}$
+
+given a test pair $<c_i, e_{ij}>$, we first collect sentences those who have a co-occurrence of $c_i$ and $e_{ij}$ from the data source containing $50$ millions
+sentences\footnote{*****}.
+
+Let
+$\gamma(\emph{c}_{i},\emph{e}_{\emph{j}})$ be a score function in CM,
+
+In addition, we outline the pseudo-code of our COAI approach in Algorithm 1. That is, we adopt firstly the concept-based context matching method to assess the sparse extractions (Lines 2-5). Secondly, we use the conceptualized object-based context matching method to get the probabilistic score for each pair (Line 6-10). Thirdly, we use the threshold $\alpha$ to filter some pairs. For
+%\begin{figure}[t]
+\makeatletter\def\@captype{figure}\makeatother
+ \centerline{
+ \includegraphics[width=0.5\textwidth]{PseudoCode.eps}}
+% \caption{Pseudo-code of our context-based semantic cleaning approach} \label{Fig. k-7}
+%\end{figure}
+the remaining pairs, we further use the attribute-based matching method (Lines 11-12) and the isa-pattern-based matching method (Lines 13-15) to evaluate the similarity score between the contexts of concept and entity respectively. Lastly, we generate an aggregate semantic context-based assessment method using a logistic regression model to combine all above evaluation function; (Line 17).
+
+%\begin{table}[!h]
+{\makeatletter\def\@captype{table}\makeatother
+ \caption{Prediction on 12 isA relationships (Part 1)}{\scriptsize{\begin{tabular}{|c|c|c|c|c|c|c|c|} \hline
+data& & BR & BP& GR&GP &$BF_{1}$&$GF_{1}$\\\hline
+        &WM &11.0  &71.4  &94.5  &46.0  &19.0  &61.9\\\cline{2-8}
+        &PM &34.6   &68.2   &80.9   &50.8   &47.0   &62.4\\\cline{2-8}
+ coun-    &CM &11.4 &\textbf{86.7}   &\textbf{97.8}   &47.0   &20.2   &63.5\\\cline{2-8}
+ try &CO &12.8	&68.6	&93.6	&49.5	&21.6	&64.8\\\cline{2-8}
+&AM &39.0   &78.1   &86.8   &54.1   &52.0   &66.7\\\cline{2-8}
+   &IM &\textbf{67.1}  &84.5   &85.2   &\textbf{68.2}   &\textbf{74.8}  &\textbf{75.8}\\\cline{2-8}
+     &CAI&32.0  &\textbf{93.6}  &97.4  &54.3   &47.7   &69.7\\\hline
+        &WM &19.4  &41.9  &93.3  &82.2  &26.5  &87.4\\\cline{2-8}
+        &PM &20.0   &26.5   &84.8   &79.4   &22.8   &82.0\\\cline{2-8}
+  sport      &CM &19.4  &\textbf{76.5}   &\textbf{98.5}   &83.0   &31.0   &90.1\\\cline{2-8}
+  &CO &7.0	&42.9	&98.3	&85.0	&12.0	&91.2\\\cline{2-8}
+        &AM &73.1   &49.0   &81.0   &92.3   &58.7   &86.3\\\cline{2-8}
+   &IM &\textbf{80.6}  &44.3   &74.6   &\textbf{93.9}  &57.1   &83.2\\\cline{2-8}
+       &CAI    &53.7   &\textbf{92.3}  &\textbf{98.9}  &89.5   &\textbf{67.9}  &\textbf{94.0}\\\hline
+       &WM  &30.3  &27.0  &85.9  &87.8  &28.6  &86.8\\\cline{2-8}
+       &PM &25.8    &16.7   &78.7   &86.6   &20.3   &82.5\\\cline{2-8}
+ city       &CM &3.0    &33.3   &99.0   &86.0   &5.6    &91.8\\\cline{2-8}
+ &CO &19.0	&44.4	&96.9	&90.1	&26.7	&93.3
+\\\cline{2-8}
+       &AM  &33.3   &73.3   &98.0   &89.8   &45.8   &\textbf{93.7}\\\cline{2-8}
+    &IM &\textbf{60.6}   &44.4   &87.4   &\textbf{93.0}  &\textbf{51.3 } &90.1\\\cline{2-8}
+       &CAI    &12.1   &\textbf{80.0}  &\textbf{99.5}  &87.2   &21.1   &92.9\\\hline
+       &WM  &7.9   &8.6   &78.2  &76.7  &8.2   &77.4\\\cline{2-8}
+       &PM &20.0    &41.2   &92.8   &82.1   &26.9   &87.1\\\cline{2-8}
+ anim-       &CM &15.8  &17.1   &80.3   &78.7   &16.4   &79.5\\\cline{2-8}
+ al&CO &9.1	&28.6	&91.5	&73.0	&13.8	&81.2
+\\\cline{2-8}
+       &AM  &\textbf{39.5}   &28.8   &75.2   &\textbf{83.0}   &33.3   &78.9\\\cline{2-8}
+   &IM &7.9    &37.5   &\textbf{96.6}  &80.4   &13.0   &\textbf{87.8}\\\cline{2-8}
+       &CAI  &\textbf{57.9}  &\textbf{45.8}  &82.6   &\textbf{88.5}  &\textbf{51.2}  &85.4\\\hline
+       &WM  &2.4   &25.0  &97.6  &75.2  &4.4   &84.9\\\cline{2-8}
+       &PM &2.6 &7.7    &90.6   &75.2   &3.8    &82.1\\\cline{2-8}
+ seaso-       &CM &41.5 &50.0   &86.3   &81.7   &45.3   &83.9\\\cline{2-8}
+ ning &CO &3.8	&14.3	&92.5	&74.7	&6.1	&82.7
+\\\cline{2-8}
+&AM  &22.0   &50.0   &\textbf{93.0}  &78.8   &30.5   &85.3\\\cline{2-8}
+&IM&\textbf{92.7} &31.4   &35.2   &93.8   &46.9   &51.1\\\cline{2-8}
+    &CAI     &85.4   &\textbf{68.6}  &87.5   &\textbf{94.9}  &\textbf{76.1}  &\textbf{91.1}\\\hline
+       &WM  &53.9  &25.9  &76.5  &91.6  &35.0  &83.3\\\cline{2-8}
+       &PM &18.2    &20.0   &90.0   &88.9   &21.0   &89.4\\\cline{2-8}
+ comp-       &CM &\textbf{85.7}  &\textbf{46.2}   &83.5   &\textbf{97.3}   &\textbf{60.0}   &89.9\\\cline{2-8}
+ any &CO &0.0	&0.0	&\textbf{100.0}	&92.5	&0.0	&\textbf{96.1}
+\\\cline{2-8}
+&AM    &20.0   &16.7   &86.3   &88.7   &18.2   &87.5\\\cline{2-8}
+   &IM &20.0   &25.0   &91.8   &89.3   &22.2   &90.5\\\cline{2-8}
+  &CAI  &30.0  &37.5  &93.2  &90.7  &33.3  &\textbf{91.9}\\\hline
+\end{tabular}}}
+}
+%\end{table}
+%\begin{table}[!h]
+{\makeatletter\def\@captype{table}\makeatother
+ \caption{Prediction on 12 concepts (Part 2)}{\scriptsize{\flushleft\begin{tabular}{|c|c|c|c|c|c|c|c|} \hline
+data & & BR & BP& GR&GP &$BF_{1}$&$GF_{1}$\\\hline
+      &WM   &20.0  &9.1   &86.8  &94.3  &12.5  &90.4\\\cline{2-8}
+      &AM   &60.0  &15.0  &77.6  &96.7   &24.0   &86.1\\\cline{2-8}
+      &PM   &25.0  &7.7   &83.8  &95.4   &11.8   &89.2\\\cline{2-8}
+ pain-&CM   &60.0  &33.3   &92.1   &97.2   &\textbf{42.9}   &94.6\\\cline{2-8}
+ ter  &CO   &0.0	&0.0	&65.2	&\textbf{100.0}	&0.0	&78.9\\\cline{2-8}
+      &IM &\textbf{100.0} &15.6   &64.5   &\textbf{100.0} &27.0   &78.4\\\cline{2-8}
+      &CAI   &40.0   &\textbf{40.0}  &\textbf{96.1}  &96.1   &40.0  &\textbf{96.1}\\\hline
+     &WM    &12.5  &25.0  &95.5  &90.0  &16.7  &92.7\\\cline{2-8}
+     &PM &12.5  &5.3    &73.5   &87.7   &7.4    &80.0\\\cline{2-8}
+ curr-       &CM &25.0  &40.0   &95.5   &91.3   &30.8   &93.3\\\cline{2-8}
+ ency &CO &16.7	&\textbf{100.0}	&\textbf{100.0}	&92.5	&28.6	&\textbf{96.1}
+\\\cline{2-8}
+&AM    &62.5   &31.3   &84.3   &95.2   &\textbf{41.7}   &89.4\\\cline{2-8}
+&IM    &\textbf{100.0} &21.1   &57.1   &\textbf{100.0} &34.8   &72.7\\\cline{2-8}
+    &CAI    &62.5   &62.5  &95.7  &95.7   &\textbf{62.5}  &95.7\\\hline
+     &WM    &37.5  &21.4  &80.0  &89.8  &27.3  &84.6\\\cline{2-8}
+     &PM &12.5  &16.7   &91.4   &88.3   &14.3   &89.8\\\cline{2-8}
+ dise-       &CM &12.5  &50.0   &\textbf{98.2}   &88.5   &20.0   &93.1\\\cline{2-8}
+ ase &CO &0.0	&0.0	&97.0	&88.9	&0.0	&92.8
+\\\cline{2-8}
+&AM    &\textbf{55.6}  &62.5   &95.0   &\textbf{93.4}  &\textbf{58.8}  &94.2\\\cline{2-8}
+   &IM &44.4   &28.6   &83.3   &90.9   &34.8   &87.0\\\cline{2-8}
+ &CAI    &44.4   &\textbf{66.7}  &96.7  &92.1   &53.3   &\textbf{94.3}\\\hline
+     &WM    &46.7  &51.9  &72.3  &68.0  &49.1  &70.1\\\cline{2-8}
+     &PM &\textbf{96.6}  &38.9   &4.4    &66.7   &22.3   &8.2\\\cline{2-8}
+film     &CM &90.0  &64.3   &68.1   &\textbf{91.4}   &\textbf{75.0}   &78.1\\\cline{2-8}
+&CO &5.9	&25.0	&90.6	&64.4	&9.5	&75.3
+\\\cline{2-8}
+     &AM    &32.0   &66.7   &90.0   &67.9   &43.2   &77.4\\\cline{2-8}
+    &IM &56.0  &77.8   &90.0   &76.6  &65.1  &82.8\\\cline{2-8}
+    &CAI    &48.0   &\textbf{85.7}  &\textbf{95.0}  &74.5   &61.5   &\textbf{83.5}\\\hline
+    &WM &39.0   &\textbf{78.1}   &86.8   &54.1   &\textbf{52.0}   &66.7\\\cline{2-8}
+    &PM &50.0   &42.9   &90.2   &92.5   &46.2   &91.4\\\cline{2-8}
+lang-        &CM &0.0   &0.0    &90.5   &86.4   &0.0    &88.4\\\cline{2-8}
+uage &CO &0.0	&0.0	&84.4	&81.8	&0.0	&83.1
+\\\cline{2-8}
+&AM    &50.0   &16.7   &66.7   &90.9   &25.0   &76.9\\\cline{2-8}
+   &IM &\textbf{66.7}  &28.6   &77.8   &\textbf{94.6}  &40.0   &85.4\\\cline{2-8}
+    &CAI    &50.0   &\textbf{100.0} &\textbf{100.0} &93.8   &\textbf{66.7}  &\textbf{96.8}\\\hline
+     &WM    &0.0   &0.0   &83.3  &85.4  &0.0   &84.3\\\cline{2-8}
+     &PM &\textbf{50.0}  &25.0   &\textbf{92.1}   &\textbf{97.2}   &33.3   &\textbf{94.6}\\\cline{2-8}
+  river      &CM &0.0   &0.0    &91.2   &93.9   &0.0    &92.5\\\cline{2-8}
+  &CO &0.0	&0.0	&70.8	&94.4	&0.0	&81.0
+\\\cline{2-8}
+       &AM    &48.3   &10.1   &67.5   &80.6   &16.8   &73.5\\\cline{2-8}
+   &IM &48.6   &22.1   &72.1   &81.2   &30.4   &76.4\\\cline{2-8}
+    &CAI   &49.0   &\textbf{34.0}   &76.6   &81.8   &\textbf{40.1}  &79.1\\\hline
+     &WM    &14.9  &30.3  &87.7  &74.1  &19.9  &80.3\\\cline{2-8}
+     &PM &18.0  &36.5   &88.8   &75.2   &24.1   &81.4\\\cline{2-8}
+overall       &CM &20.9 &52.2   &93.1   &76.6   &29.8   &84.0\\\cline{2-8}
+&CO &10.5	&35.7	&93.6	&75.6	&16.2	&83.6
+\\\cline{2-8}
+     &AM    &41.9   &50.3   &85.6   &81.0   &45.7   &83.2\\\cline{2-8}
+ &IM &\textbf{64.6 }  &49.1   &76.5   &\textbf{86.1}   &\textbf{55.8}  &81.0\\\cline{2-8}
+    &CAI    &42.6   &\textbf{74.1}   &\textbf{94.7}   &82.2   &54.1   &\textbf{88.1}\\\hline
+\end{tabular}}}
+}
+%\end{table}
+
+because our approach
+  does not require any hand-tagged seeds, it is more scalable than
+  approaches that learn models for each individual relation from
+  manually-labeled data.
+
+we can use the following segmented function in Eq. 6 to summary our approach. There are some reasons using this segmented function. According to
+the analysis in Section 3.3, CM has the highest value of the number of killed bad pairs dividing that of killed good ones, in other words, when
+handling the same number of bad pairs, the cost of killing good pairs in CM is lowest. However, if we combine three functions in a simple
+weighted method directly, due to the higher probabilistic scores predicted in CM on bad pairs, it is probable that the weighted sum of
+probabilistic score is still higher. It will lead to the cleaning result is similar to the original prediction result in CM. Thus, in CAIM, we
+first use the CM function to filter a part of bad pairs using the threshold $\alpha$, and then we use the weighting function combined AM and IM
+clean the kept pairs in CM.
+
+In Eq.6, values of $\gamma(c_{i},e_{ij})$, $\upsilon(c_{i},e_{ij})$, $\phi(c_{i},e_{ij})$ and $\kappa(c_{i},e_{ij})$ are known. That is, given a
+set of test pairs $TE=\{<c_{i},e_{ij}>|c_{i}\in C~and~e_{ij}\in E\}$, CO, CM, AM and IM has a set of predicted scores for each pair
+respectively, thus, we can rewrite Eq.6 into Eq. 7,
+\begin{equation} \label{e2}
+Y=\sum_{i=1}^{4}\omega_{i}X_{i}
+\end{equation}
+s.t.,
+\begin{displaymath}
+{label = \left\{
+\begin{aligned}
+1 & ~~~~~if~~Y\geq \alpha\\
+0 & ~~~~~~~~~~otherwise
+\end{aligned}
+\right.}
+\end{displaymath}
+
+To get the Apparently, our COAI approach is similar to a linear SVM classifier. In terms of the given test pairs, we first form the training
+vector containing four dimensions, and the value in each dimension
+ our COAI approach forms a linear classifier, which aims to classify the
+given test pairs predict the probabilistic score of each pair in our COAI approach, the Thus, we can transform the solution to Eq. 6 in the
+following optimal problem,
+
+can be transformed  If we consider the function of $upsilon(c_{i},e_{ij})$ the objective of clustering a set of n categorical objects into k
+clusters is to ¡¥nd W and M that minimize
+
+ According to Eq.6, this is a
+linearly optimal the key is to determine the values of weights.
+
+ our COAI approach as follows.  in the following Eq. 6.
+
+
+
+Let $\gamma(c_{i},e_{j})$ indicates the probability function reflecting the likelihood that the entity $\emph{e}_{c_{i}}$ belongs to the given concept $\emph{c}_{\emph{i}}$, the similarity evaluation for each pair can be formalized in Eq. 2 below.
+
+We first select as the seeds, denoted as $Seed_{c_{i}}=\{e_{c_{i}}^{1},
+e_{c_{i}}^{2},...,e_{c_{i}}^{K_{seed}}\}$. According to the context extraction method mentioned above, we select all sentences who has a
+co-occurrence of the concept $c_{i}$ and the entity seed $e_{c_{i}}^{x}$ ($e_{c_{i}}^{x}\in Seed_{c_{i}}$) as the context of $c_{i}$.
+Correspondingly, we can get an object set for each seed pair $<c_i, e_{c_{i}}^{x}>$ corresponding to the entity list and the concept list in
+$\Gamma_{hearst}$. Meanwhile, we can get the training vector of $c_i$ by merging all objects in each object set of $<c_i, e_{c_{i}}^{x}>$ below.
+$$V_{c_{i}} =\{<obj^{1}_{c_{i}}, w_{c_{i}}^{1}>, ..., <obj^{x}_{c_{i}}, w_{c_{i}}^{x}>,...\}$$
+$$s.t.,~w^{x}_{c_{i}} = tf\cdot idf = \frac{f_{obj^{x}_{c_{i}}}}{\sum_{x=1}^{|V_{c_{i}}|}f_{obj^{x}_{c_{i}}}}\cdot
+log\frac{N_{c_{i}}}{n_{obj^{x}_{c_{i}}}+1}$$
+Where $f_{obj^{x}_{c_{i}}}$ refers to the occurrences of $obj^{x}_{e_{ij}}$ in the context, $|V_{c_{i}}|$ indicates the count of objects in the context
+of $c_{i}$, $N_{c_{i}}$ indicates the total number of sentences in the context of $c_{i}$ and $n_{obj^{x}_{c_{i}}}$ indicates the count of sentences
+containing the object $obj^{x}_{c_{i}}$.
+
+, where
+objects refer to entities and concepts involved in the database of $\Gamma_{hearst}$.  Lastly,
+we merge all objects in the context to create an object set of $<c_i, e_{ij}>$. Information in the object set is in the form of
+($obj^{x}_{e_{ij}}, w^{x}_{e_{ij}}$), where $obj^{x}_{e_{ij}}$ refers to an object co-occurring with $c_i$ and $e_{ij}$, and $w^{x}_{e_{ij}}$
+refers to the importance of $obj^{x}_{e_{ij}}$ occurring in the context. We evaluate this importance in the tf-idf weight popularly used in
+information retrieval and text mining. Thus, we can denote the test vector of the current pair below.
+
+
+In comparison to
+ in AM and IM is only 0.02 and 0.08 respectively while it is up to 0.55 in CM. The prediction score on $<country, malaya>$ in AM and IM is only 0.04 and 0.16 respectively while it is up to 0.85 in CM. The probabilistic score on $<country, turkistan>$ in AM and IM is 0.19 and 0.09 respectively while it is up to 1 in CM.
+
+
+
+\textbf{Score Analysis} According to the distributional hypothesis, we can get that the lager the similarity score of a pair, the higher the
+probability that it is a good pair. In other words, as the similarity score increases, the number of good pairs gets more and more. For example,
+Figure 3 reports a data distribution of the similarity score evaluated on all test pairs in country. From this figure, we can see that regarding
+those good pairs with the lower similarity scores (e.g., $\leq 0.05$) in Figures 2, their prediction scores are improved in the most cases as
+shown in Figure 3. Meanwhile, regarding those bad pairs with the higher similarity scores (e.g., $> 0.2$), their prediction scores are reduced
+in the most cases. For example, the similarity score of $<country, turkistan>$ is improved from 0.03 in OM to 0.19 in AM while the similarity
+score of $<country, california>$ is reduced from 0.32 in OM to 0.07 in AM. In addition, as compared to OM, more bad pairs present lower
+similarity scores and more good pairs present higher similarity in AM. More precisely, 58\% bad pairs have similarity scores lower than 0.1
+while 80\% good pairs have similarity scores higher than 0.1. However, there are still some bad pairs with higher similarity scores, such as
+<\emph{country},\emph{indochina}> and <\emph{country}, \emph{darfur}>. Meanwhile, there are some good pairs with lower similarity scores in AM
+while their prediction scores are higher in OM, such as $<country, malaya>$.
+
+\textbf{Score Analysis} According to this function, we can get that the probability score that it is an isA relationship between $e_j$ and
+$c_i$. Figure 4 shows an example about the data distribution of the probabilistic scores predicted on all test pairs in country. We can observe
+that 1) IM could partition good pairs and bad ones better than OM and AM. This is because more bad pairs present lower similarity scores, more
+precisely, 88\% bad pairs present similarity scores lower than 0.1. In addition, regarding those good pairs with the lower similarity scores
+(e.g., $\leq 0.05$) in Figure 3, many of their prediction scores are improved as shown in Figure 4. For example, the prediction score on
+$<country, oz>$ in IM is up to 0.08 while it is only 0.002 in AM, and the prediction score on $<country, malaya>$ is up to 0.16 in IM while it
+is only 0.04 in AM. Regarding those bad pairs with similarity scores higher than 0.5 in Figure 3, most of pairs present lower probabilistic
+scores in Figure 4. For example, the scores predicted on $<country, darfur>$ and $<country, indochina>$ are decreased to 0.04 and 0.07 in IM
+respectively from 0.60 and 0.51 in AM. 2) As compared to the prediction results in OM, there are some good pairs who present lower prediction
+scores in IM in the index range of [21, 146]. For example, the prediction score on $<country, oz>$ is 0.28 in OM while it is 0.08 in IM. This is because \emph{oz} is an ambiguous entity, and there are more other isA patterns to support that ``oz is not a country''.
+
+the~last~word~of ``C_{c_{i}}^x''\bigcap``c_{i}'' != \emptyset
+the~last~word~of~``C_{e_{j}}^x'' \cap ``c_{i}''=\emptyset
+
+Where $\emph{Attr}_{c_{i}} \bigcap \emph{Attr}_{e_{j}}$ refers to the size of an intersection set of attributes between $\emph{c}_{\emph{i}}$ and
+$\emph{e}_{\emph{j}}$, $f_{c_{i}}(\emph{attr}_{\emph{x}})$ and $\emph{f}_{e_{j}}(\emph{attr}_{x})$ indicates the normalized frequency of
+attributes in $\emph{c}_{i}$ and $\emph{e}_{j}$ respectively.
+
+
+
+According to the definition on the subclass set and superclass set in Section 4.2.1, we can get both sets below:
+$C_{sup}(c_{i},e_{j})=\{C_{e_{j}}^1,...,C_{e_{j}}^x,...,C_{e_{j}}^{K_{sup}}\}$ (the last word of ``$C_{e_{j}}^x$'' $\cap$
+``$c_{i}$''=$\emptyset$) and $C_{sub}(c_{i},e_{j})=\{C_{c_{i}}^1,...,C_{c_{i}}^x,...,C_{c_{i}}^{M_{sub}}\}$ (the last
+word of ``$C_{c_{i}}^x$'' $\cap$ ``$c_{i}$''$!=\emptyset$), where $K_{sup}$ and $\emph{M}_{sub}$ refer to the numbers of super classes and subclasses.
+\STATE Collect the attribute contexts for the current pair $<c_{i}, e_{ij}>$ using $\Gamma_{attr}$;
+
+\STATE Collect the context information of pairs, such as $C_{sup}(c_{i},e_{ij})$, $C_{sub}(c_{i},e_{ij})$, $\Gamma_{attr}$ and $\Gamma_{isA}$;
+
+
+and and we know that the more the context information used in the approach, the better the prediction accuracy in the labeling sparse extraction. , we conclude that 1) CM presents the highest value of  the number of bad pairs dividing that of good pairs killed, in other words, when handling the same number of bad pairs, the cost of killing good pairs in CM is lowest. 2) AM and IM could performs better on bad pairs. Thus, in our approach, we first use the CM method to filter a part of bad pairs. Secondly, we
+\begin{displaymath}
+\begin{aligned}
+w_{c_{i}}^{x} = \frac{f_{c_{i}}(attr_{x})}{\sum_{k=1}^{|Attr_{c_{i}}|}f_{c_{i}}(attr_{x})}\\
+w_{e_{ij}}^{x} = \frac{f_{e_{ij}}(attr_{x})}{\sum_{k=1}^{|Attr_{e_{ij}}|}f_{e_{ij}}(attr_{x})}\\
+\end{aligned}
+\end{displaymath}
+
+\begin{displaymath}
+\begin{aligned}
+\frac{\sum_{x=1}^{|Attr_{c_{i}}\bigcap Attr_{e_{ij}}|}f_{c_{i}}(attr_{x}) \cdot
+f_{e_{j}}(attr_{x})}{\sqrt{\sum_{x=1}^{|Attr_{c_{i}}|}f_{c_{i}(attr_{x})}^{2}} \cdot \sqrt{\sum_{x=1}^{|Attr_{e_{ij}}|}f_{e_{ij}(attr_{x})}^{2}}}\\
+and~~f_{c_{i}}(attr_{x}) = \frac{freq_{x}}{\sum_{k=1}^{|Attr_{c_{i}}|}freq_{k}} (attr_{x}\in Attr_{c_{i}})\\
+and~~f_{e_{ij}}(attr_{x}) = \frac{freq_{x}}{\sum_{k=1}^{|Attr_{e_{ij}}|}freq_{k}} (attr_{x}\in Attr_{e_{ij}})\\
+\end{aligned}
+\end{displaymath}
+
+s.t., \begin{displaymath}
+\begin{aligned}
+cosine(A_{c_{i}},A_{e_{ij}})=\frac{A_{c_{i}} \cdot A_{e_{ij}}}{||A_{c_{i}}|| \cdot ||A_{e_{ij}}||}=\\
+\frac{\sum_{x=1}^{|A_{c_{i}}\bigcap A_{e_{ij}}|}f_{c_{i}}(attr_{x}) \cdot
+f_{e_{j}}(attr_{x})}{\sqrt{\sum_{x=1}^{|A_{c_{i}}|}f_{c_{i}(attr_{x})}^{2}} \cdot \sqrt{\sum_{x=1}^{|A_{e_{ij}}|}f_{e_{ij}(attr_{x})}^{2}}}\\
+\end{aligned}
+\end{displaymath}
+
+That, we selects all objects of each sentence as the basic context instead of
+bags-of-words in WM, and conceptualizes objects in each sentence into a set of most representative concepts (e.g., top K_{top} concepts). Secondly, it uses the conceptualized concepts as the context to build the training vector and the test vector.
+This is because objects in $\Gamma_{hearst}$ are more meaningful compared to other words in the same sentence. It is beneficial to create a cleaner data distribution of the context for each given pair.
+
+Experiments show that it is very efficient. Furthermore, to predict the accuracy of our semantic approach, we randomly select 1806 test pairs extracted from 12 isA-relationships with no more than 10 occurrences and label them manually. Experimental results demonstrate that our weighting approach performs best compared to three syntactic context-based assessment approaches and three semantic context-based ones in this paper. Meanwhile, it outperforms the state-of-the-art language-modeled approach RELAM\cite{Downey:Sparse}\cite{Ahuja:Improved} for spare extractions and the other clustering-based
+baseline method\cite{Wang:Semantic} on the precision, recall and F-score.
+
+If the object $obj_{c_{i}^{x}}$ or the object $obj_{e_{j}}^{x}$ is an entity, $sup(obj_{c_{i}^{x}})$ and $sup(obj_{e_{j}}^{x})$ indicates top
+$K_{class}$ concepts containing the entity of $obj_{c_{i}^{x}}$ and $obj_{e_{j}}^{x}$ respectively. Otherwise, $sup(obj_{c_{i}^{x}})$ and
+$sup(obj_{e_{j}}^{x})$ indicates the object itself, namely $sup(obj_{c_{i}^{x}})$ = $obj_{c_{i}^{x}}$ and $sup(obj_{e_{j}}^{x})$ =
+$obj_{e_{j}}^{x}$.
+
+we know that he larger the value of $\alpha$, the more the number of bad pairs labeled in these methods, namely the more the number of killed pairs. To avoid too many overkilled good pairs, the value of $\alpha$ should be small.
+
+
+Considering the overall performance on both
+of $BF_{1}$ and \emph{$GF_{1}$} from 12 sets of experimental results, COAI performs best seven times compared to AM and
+IM, while AM performs best once.
+
+
+ \includegraphics[width=.68\textwidth]{OM-sorted-similarity-data-distribution.eps}\\
+(b) Data distribution of similarity scores in the bag-of-objects-based context matching method (OM) on Country\\
+
+Figure 6 shows the prediction results of each point (1-\emph{BR}, \emph{GR}) varying with $\alpha$ from 0.2 to 1 with step 0.01 on the test data, where \emph{BR} and \emph{GR} refer to the recall on bad pairs and good ones respectively. According to the ROC curve, we know that the left-top points are better while the right-bottom points are worse. In this figure, the arrow line indicates that as the value of $\alpha$ increases, the point of (1-\emph{BR}, \emph{GR}) moves from right to left. Thus, we can get that the prediction results in CAI are acceptable in the case of $\alpha \in $[0.23, 0.6]. In the following experiments, we select an optimal candidate value $\alpha$ =0.45 in CAI.
+In a similar way,
+
+%\begin{figure}[t]
+\makeatletter\def\@captype{figure}\makeatother
+ \centerline{
+ \includegraphics[width=0.4\textwidth]{ROC_Curve_varying_with_a.eps}}
+ \caption{The ROC curve of CAI varying with values of $\alpha$} \label{Fig. k-7}
+%\end{figure}
+
+
+  only consist of those concepts who contain the given concept $\emph{c}_{i}$ in $\Gamma_{hearst}$
+indicates we can get a subclass set containing ``$c_i$'' and a super class set exclusive of classes containing ``$c_{i}$''. More precisely,.
+
+ For example, given two pairs $<\emph{feral animal}, \emph{wolf}>$ and $<\emph{animal}, \emph{wolf}>$, \emph{feral~animal} is a subclass of the concept \emph{animal}, this is because the head of ``\emph{feral~animal}'' contains ``\emph{animal}''. However, the superclass set of $e_{ij}$ consist of all concepts without containing ``$c_{i}$'' occurring in the Hearst pattern sentences whose entities contains $e_{j}$. Both class sets are denoted as and $C_{sup}(c_{i},e_{ij})=\{C_{e_{ij}}^x|the~last~word~of ``C{_{c_{i}}^x}''\bigcap``c_{i}'' = \emptyset\}$ respectively.
+
+$$
+C_{sub}(c_{i},e_{ij})=\{(c_{c_{i}}^x,w_{c_{i}}^x)|L(c{_{c_{i}}^x})\bigcap``c_{i}'' \neq \emptyset,~w_{c_{i}}^x = P(c_{c_{i}}^x|e_{ij})$$
+$$,~and~<c_{c_{i}}^x, e_{ij}> \in \Gamma_{hearst}\}$$
+C_{sup}(c_{i},e_{ij})=\{(c_{e_{ij}^x},w_{e_{ij}}^x)|e_{ij})|L(c{_{e_{ij}}^x})\bigcap``c_{i}'' = \emptyset,~w_{c_{i}}^x = P(c_{c_{i}}^x|e_{ij})$$ $$<c{_{e_{ij}}^x}, e_{ij}> \in \Gamma_{hearst}\}
+$$
+$P(c_{e_{ij}}^x$
+
+reflecting the likelihood that the direct and indirect isA patterns between $e_{ij}$ and $c_{i}$ occur in $\Gamma_{isa}$ and $M=|C_{sub}(c_{i},e_{ij})|$ and $K_{sup} = |C_{sup}(c_{i},e_{ij})|$
+
+
+In the above analysis, let $\psi(c_{i},e_{ij})$ be $\gamma(c_{i},e_{ij})$, $\upsilon(c_{i},e_{ij})$, $\phi(c_{i},e_{ij})$, $\kappa(c_{i},e_{j})$ respectively, we can get four semantic context-based assessment method for sparse extractions correspondingly.
+
+C_{sub}(c_{i},e_{ij})=\{(c_{c_{i}}^x,w_{c_{i}}^x)|L(c{_{c_{i}}^x})\bigcap``c_{i}'' \neq \emptyset,~w_{c_{i}}^x = P(c_{c_{i}}^x|e_{ij})~~~~~~\\
+~and~<c_{c_{i}}^x, e_{ij}> \in \Gamma_{hearst}\}~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\\
+
+Where $C_{sub}(c_{i},e_{ij})$ is a subclass set of $\emph{c}_{i}$, $C_{sup}(c_{i},e_{ij})$ is a superclass set of $e_{ij}$ and $L(\cdot)$ indicates the last word of the current concept.
+According to the definitions on the subclass and superclass, we can obtain that the subclass is complicated for the superclass.
+
+The other refers to the isA relationship between subclasses of the current concept $c_{i}$. The subclass relies on the string similarity compared to the given concept, namely, the string
+of a subclass should contain the given concept. In this case, it is more probable that both classes are closely relevant. Meanwhile, according to the definition on the subclass and superclass, we know that subclasses are complementary to the super classes. For example,
+give a pair of $<oolong, animal>$, we could get a subclass of \emph{animal}, i.e., ``anthropomorphic animal'' in the database $\Gamma_{hearst}$,
+which is not a popular super class of ``oolong''. However, we can find a lot of patterns of ``an anthropomorphic animal is an animal'' in $\Gamma_{isa}$.
+
+Firstly, on the isA-relationships of city and company, our CAI method performs best compared to other two REALM and
+Clustering methods on four evaluation metrics relevant to precision and recall. Correspondingly, the overall performance on the
+evaluation metrics of $BF_{1}$ and \emph{$GF_{1}$} is improved by 12.6\% and 4.9\% respectively at least.
+
+Secondly, on the isA-relationships of animal, disease and language, CAI outperforms other two methods on at least three evaluation metrics about \emph{precision} and \emph{recall}. For example,
+On the isA relationships of disease and language, the prediction values on \emph{BR}, \emph{BP} and \emph{GR} in CAI is averagely improved by 39.6\%, 48.5\% and 11.0\% respectively compared to REALM and Clustering, while the prediction result on \emph{GR} is reduced by only 2.7\% at most. In this case, the overall performance of our CAI method on
+$BF_{1}$ and \emph{$GF_{1}$} also present the highest values. The least improvement is about 28.6\% and 1.7\% respectively compared to REALM and Clustering.
+
+Thirdly, on the isA-relationships of country, sport, painter, seasoning, currency and film, CAI only performs best on two evaluation metrics from \emph{BR}, \emph{BP}, \emph{GR} and \emph{GP} at most, but it also performs best on at least one of evaluation metrics of \emph{BF1} and \emph{GF1}. Meanwhile,
+compared to other two baseline method, while it performs worse on \emph{BR} and \emph{GP} compared to the best
+algorithm of REALM. However, the overall performance on $BF_{1}$ and \emph{$GF_{1}$} is also superior to REALM. For example,
+on animal, the values of $BF_{1}$ and \emph{$GF_{1}$} in CAI are 51.2\% and 85.4\% respectively while they are only 29.4\%
+and 77.8\% respectively in REALM.
+
+Lastly, on the remaining isA-relationships of painter, film and city, CAI performs best on evaluation metrics of \emph{BP} and \emph{GR} while performs worse on \emph{BR} and \emph{GP} compared to other baseline methods. However, on the overall performance
+of \emph{$GF_{1}$} and $BF_{1}$, the worst performance in CAI is that the value of \emph{$GF_{1}$} is lower than
+Clustering by 3.6\% on city and the value of $BF_{1}$ is lower than Clustering by 6.1\% on film, but the value of
+$BF_{1}$ in CAI is higher than Clustering by 7.1\% on city and the value of \emph{$GF_{1}$} is higher than Clustering by up
+to 61.5\% on film. These data also reveal that CAI performs better than REALM and Clustering, because it could kill more bad pairs while overkilling fewer good pairs.
+
+
+In sum, regarding these twelve test sets, our CAI method wins eight times, nine times and nine times on \emph{BR},
+\emph{BP} and \emph{GP} respectively compared to other two baseline methods. However, considering the prediction
+results on the evaluation metric of GR, our method wins six times while REALM and Clustering win three times and three times respectively. Regarding the overall performance on $BF_{1}$ and \emph{$GF_{1}$}, our approach wins ten times in
+total, while Clustering wins once and twice on $BF_{1}$ and on \emph{$GF_{1}$} respectively.
+
+
+get that an optimal value range of \emph{ratio} for IMDB-F (and IMDB-ECC-F) is $ratio \leq 0.15$ while it is 0.4$\leq ratio \leq $0.7 for other databases. In the following experiments, we select \emph{ratio}=0.5 as an optimal candidate value for all databases, this is because the classification performance on IMDB-F and IMDB-ECC-F in the case of $ratio \leq 0.5$ is approximate to that of $ratio \leq 0.15$.
+ Actually, if uses want to reduce the space overhead, they could select the value of \emph{k} = \emph{lmax}/2, that is, the recent \emph{lmax}/2 instances collected at leaves.
+ To reduce the typicality of the parameter setting on \emph{ratio}, we select a uniform value of \emph{ratio}=0.5 as an optimal candidate value for all databases in the following experiments. This is because it is not an optimal value for for IMDB-F and IMDB-ECC-F, but there are no obvious difference on the values of four example-based evaluation measures in this case compared to those in the case of \emph{ratio}= 0.15.
+
+the best results always occur DTML could perform best on two measures. As shown in Tables 2-3, the value of \emph{rankingLoss} in DTML is smaller
+than the second best algorithm IBLR by the range of [1.7\%, 7.1\%], and the value of \emph{avePrec} is more than IBLR by the range of [1.3\%,
+3.0\%]. However, in Tables 4-5, IBLR and RDTBest perform nearly best on all of ranking-based measures, but the advantages are not obvious. For
+example, as shown in Table 5, the value of \emph{coverage} in RDTBest is lower
+than DTML by only 0.009 while the value of \emph{ranklingLoss} is lower by only 1.1\%.
+To validate the overall performance on both example-based measures and ranking-based measures, we use two evaluation metrics--\emph{tradeOff}
+and $\emph{tradeOff}^{2}$. Therefore, in terms of values of \emph{tradeOff}, we can obtain that DTML wins three times while RDTBest winsb once.
+Meanwhile, considering values of \emph{$\emph{tradeOff}^{2}$} (where $\emph{tradeOff}^{2}$ is defined in equation 7. There are invalid values on
+\emph{accuracy}, \emph{recall} and \emph{precision} for several baseline algorithms, the denominators are hence not relevant to these measures.
+According to equation 7, we know that the smaller the value of $\emph{tradeOff}^{2}$, the better the overall performance, we can obtain that
+DTML wins three times while IBLR wins once. This indicates that DTML may perform not as well as baseline algorithms on some evaluation
+metrics, but it also could present the advantage in the overall performance.
+
+Last, we also use values of $tradeOff^{2}$ and \emph{tradeOff} (reported in Tables 6-8) to compare the overall performance on both
+example-based evaluation metrics and ranking-based ones, and we conclude that our DTML algorithm outperforms all baseline algorithms on all of
+the three large scale data sets.
+
+is relevant to the probability that the minimum label count belonging to $Y_{x}$ is no less than the maximum label count belonging
+to the complementary set of $Y_{x}$, denoted \emph{PE}. This probability is defined as equation 4, which shows that the larger the value of
+\emph{PE}, the higher the rank of the label belonging to $Y_{x}$. This indicates the less the classification risk.
+\begin{equation}
+PE = P(min_{\lambda_{i}\in Y_{x}}(c(\lambda_{i}))\geq max_{\lambda_{j}\in \bar{Y}_{x}}(c(\lambda_{j})))
+\end{equation}
+
+Moreover, according to equation 3 and equation 4, we could obtain the qualitative conclusion that the classification risk at a leaf for DTML is relevant to
+the value of $\emph{c}(\lambda_{\emph{i}})$ while the value of $\emph{c}(\lambda_{\emph{i}})$ is relevant to the value of \emph{ln}. That is,
+the classification risk is relevant to the height of the decision tree. To validate this relationship, we will provide a qualitative study in
+the section of experiments. The study shows that (See Section 4.3 for details).
+
+In fact, the semantic context is beneficial to improve the assessment accuracy.
+
+ given two Hearst pattern sentences (all words are in the lowercase formats except of the first word.) containing sparse extractions $<country,~filipinas\footnote{\emph{filipinas} is the original Spanish name for the Philippines.}>$ and $<country,~california>$,
+
+it is another challenge, called assessing sparse extractions\cite{Downey:Sparse}.
+That is, a large number of extractions present a low frequency, namely most of $<concept,~entity>$ pairs occur infrequently on the Web.
+
+, without manually-labeled instances
+
+\textbf{Supervised and Semi-supervised Assessment Methods:}
+{\noindent\textbf{Unsupervised Assessment Methods:}}
+Therefore, we will select the semantic context-based approach to assess the sparse extractions
+For example, if the training vector and the test vector is only composed of an object $hu~jingtao$ and $barack~obama$ respectively. The similarity score is zero in the cosine function. However, we know that they belong to some concepts, such as \emph{president}, \emph{leader} and so on, in this case, the similarity score between $hu~jingtao$ and $barack~obama$ should not be zero.
+
+\begin{aligned}
+f_{\gamma}(c_{i}, e_{ij})=\gamma(c_{i},e_{ij})=cosine(V_{c_{i}}, V_{e_{ij}})\\
+\frac{\sum_{x=1}^{|\{ V_{c_{i}}\bigcap V_{e_{ij}}\}|}(w_{c_{i}}^{x} \cdot
+w_{e_{j}}^{x})}{\sqrt{\sum_{x=1}^{|V_{c_{i}}|}(w^{x}_{c_{i}})^{2}} \cdot \sqrt{\sum_{x=1}^{|V_{e_{ij}}|}(w^{x}_{e_{j}})^{2}}}
+\end{aligned}
+\end{equation}
+=Max\{cosine(CV_{e_{ij}}^{y}, CV_{c_{i}}^{x}), 1\leq x\leq |CV_{c_{i}}|, 1\leq y\leq |CV_{e_{ij}}|\}\\
+
+\subsubsection{IM: IsA pattern-based Matching Method}
+In this subsection, we use the probability of the direct and indirect isA-patterns in the isA-pattern database $\Gamma_{isa}$ to predict the probabilistic score of a given pair $<\emph{c}_{i},\emph{e}_{ij}>$. The direct isA relationships between $\emph{c}_{i}$ and
+$\emph{e}_{ij}$ refer to the patterns of ``$\emph{e}_{ij}$ is a $\emph{c}_{i}$'' in $\Gamma_{isa}$ and the indirect isA relationships between $\emph{c}_{i}$ and $\emph{e}_{ij}$ refer to the patterns of ``a superclass of $\emph{e}_{ij}$ is a
+$\emph{c}_{i}$''. In IM, we collect the indirect
+isA patterns except of the direct isA patterns between $\emph{e}_{ij}$ and $\emph{c}_{i}$ using $\Gamma_{isa}$. This is because not all
+pairs have direct isA relationships in $\Gamma_{isa}$, but there is a potentially indirect isA relationships between the
+current entity and the given concept below. For example, given a pair $<sage~grouse, animal>$, the isA pattern of ``\emph{sage grouse} is an \emph{animal}'' could
+not be found in $\Gamma_{isa}$, but we could get a popular superclass of \emph{sage grouse} from $\Gamma_{hearst}$, i.e., \emph{bird}. There are
+a lot of patterns to support ``\emph{bird} is an \emph{animal}'' in $\Gamma_{isa}$. It is apparently necessary to consider the isA relationship between the super classes of $e_{ij}$ and the given concept $c_{i}$. However, we know that the lower the probabilistic score of a superclass, the
+more the probability that it is a noisy superclass, thus, we only select top
+$K_{sup}$ super classes of $e_{ij}$ from $\Gamma_{hearst}$ instead of all super classes, namely $C_{sup}(c_{i},e_{ij})=\{(c_{e_{ij}}^{x},w_{e_{ij}}^{x})|order~by~w_{e_{ij}}^{x}~desc,~1\leq x \leq K_{sup}\}$.
+
+In terms of the direct and indirect isA relationships, we use the sum of probabilistic scores of all collected patterns to evaluate the probability that $\emph{e}_{ij}$ belongs to
+$\emph{c}_{i}$. Let $\kappa(\emph{c}_{\emph{i}}, \emph{e}_{\emph{ij}})$ be a score function reflecting the likelihood that $\emph{e}_{ij}$ belongs to
+$\emph{c}_{i}$, we can formalize it as shown in Eq. 4.
+\begin{equation}
+\begin{aligned}
+f_{\kappa}(c_{i},e_{ij})=\kappa(c_{i},e_{ij}))=\frac{P(c_{i}|e_{ij})+P(c_{i}|C_{sup}(c_{i},e_{ij}))}{NF}
+\end{aligned}
+\end{equation}
+\begin{displaymath}
+\begin{aligned}
+=\frac{P_{\Gamma_{isa}}(c_{i}|e_{ij})+\sum_{x=1}^{K_{sup}}{P_{\Gamma_{isa}}(c_{i}|c_{e_{ij}}^x )}}{NF}
+\end{aligned}
+\end{displaymath}
+Where values of $P_{\Gamma_{isa}}(c_{i}|e_{ij})$ and $P_{\Gamma_{isa}}(c_{i}|c_{e_{ij}}^x)$ indicate the probabilities of isA patterns $<e_{ij},c_{i}>$ and $<c_{e_{ij}}^x,c_{i}>$ in $\Gamma_{isa}$, and \emph{NF} indicates the normalization factor.
+
+\section{Problem Definition and Approach}
+We formalize our problem definition as follows. Given a set of concept-entity pairs with lower frequency (e.g., no more than 10) extracted using
+Hearst patterns, namely a set of sparse extractions, denoted as
+$\emph{TE}=\{<\emph{c}_{\emph{i}},\emph{e}_{\emph{ij}}>|\emph{c}_{\emph{i}}\in \emph{C}, \emph{e}_{ij} \in \emph{E}\}$, our approach aims to rank these pairs with the results that good pairs rank higher than bad pairs and labeling the
+pairs corresponding to the prediction score and the specified threshold (e.g., $0<\alpha<1$). Let
+$\psi(\emph{c}_{\emph{i}},\emph{e}_{\emph{ij}})$ be a score function reflecting the likelihood that the entity $\emph{e}_{\emph{ij}} \in
+\emph{E}$ belongs to the concept $\emph{c}_{\emph{i}} \in \emph{C}$, where
+$\emph{C}=\{\emph{c}_{i}|1\leq i \leq m\}$ and $\emph{E}=\{\emph{e}_{ij}|1\leq j \leq n\}$, it is the concept and entity set respectively in $\Gamma_{hearst}$. Thus, we can formalize the problem definition as shown in Eq. 1, where $label_{<c_{i},e_{ij}>}=1$ refers to a good pair while $label_{<c_{i},e_{ij}>}=0$ refers to a bad one.
+\begin{equation} \label{e1}
+F_{score}=\psi(c_{i},e_{ij})
+\end{equation}
+Subject~to:~\begin{displaymath}
+{label_{<c_{i},e_{ij}>} = \left\{
+\begin{aligned}
+1 & ~~~~~if~~F_{score}\geq \alpha\\
+0 & ~~~~~~~~~~otherwise
+\end{aligned}
+\right.}
+\end{displaymath}
+%\input{BaselineMethod}
+\input{SimilarityEvaluation}
+\input{OurAlgorithm}
+
+
+\subsection{An Aggregate Semantic Context-based Assessment Approach}
+In this subsection, we propose an aggregate semantic context-based assessment approach for sparse extractions, that is, we use a logistic regression function to integrate the aforementioned three semantic context based matching methods (CO, AM and IM), called the CAI approach. This is because in the analysis of CO, AM and IM in Section 3.3, we know that each method adopt different semantic context
+information to tackle the assessment of sparse extractions, the prediction performance is hence complementary for each other. Let $\gamma(\emph{c}_{i},\emph{e}_{\emph{ij}})$ be a score function in
+CO, $\phi(\emph{c}_{i},\emph{e}_{\emph{ij}})$ be a score function in AM and $\kappa(\emph{c}_{\emph{i}}, \emph{e}_{\emph{ij}})$ be a score
+function in IM. Thus, we can solve the problem involved in Eq. 1 using Eq. 5.
+\begin{equation} \label{e2}
+F_{score} = \psi(c_{i},e_{ij}) = \frac{1}{1+e^{f_{\pi}(c_{i},e_{ij})}}
+\end{equation}
+s.t.,
+\begin{displaymath}
+\begin{aligned}
+f_{\pi}(c_{i},e_{ij}) = \omega_{0}+\omega_{1}\gamma(c_{i},e_{ij})+\omega_{2}\phi(c_{i},e_{ij})+\omega_{3}\kappa(c_{i},e_{ij})
+\end{aligned}
+\end{displaymath}
+\begin{displaymath}
+{and~~label_{<c_{i},e_{ij}>} = \left\{
+\begin{aligned}
+1 & ~~~~~if~~F_{score}\geq \alpha\\
+0 & ~~~~otherwise
+\end{aligned}
+\right.}
+\end{displaymath}
+In this case, the value of $F_{score}$ is limited in [0,1] and it is in direct proportional to the value of $f_{\pi}(c_{i},e_{ij})$.
+\begin{figure}[t]
+%\makeatletter\def\@captype{figure}\makeatother
+ \centerline{
+ \includegraphics[width=0.5\textwidth]{PseudoCode.eps}}
+% \caption{Pseudo-code of our context-based semantic cleaning approach} \label{Fig. k-7}
+\end{figure}
+
+In addition, we outline the pseudo-code of our CAI approach in Algorithm 1. That is, we firstly use the conceptualized object-based context matching method to get the probabilistic score for each pair (Line 2-7). Secondly, we use the attribute-based matching method (Lines 8-9) and the isA-pattern-based matching method (Lines 10-12) to evaluate the similarity score between the contexts of concept and entity respectively. Lastly, we generate an aggregate semantic context-based assessment method using a logistic regression model to combine all above evaluation function (Lines 13-14).
+
+below.
+\begin{displaymath}
+V_{e_{ij}} =\{<c^{x}_{e_{ij}}, w^{x}_{e_{ij}}>|w^{x}_{e_{ij}}=P(c^{x}_{e_{ij}}|O_{e_{ij}})\}
+\end{displaymath}
+
+\begin{displaymath}
+V_{c_{i}} =\{<c^{x}_{c_{i}}, w^{x}_{c_{i}}>|w^{x}_{c_{i}}=P(c^{x}_{c_{i}}|O_{c_{i}})\}
+\end{displaymath}
+\begin{aligned}
+V_{c_{i}} =\{CV_{c_{i}}^{x}|CV_{c_{i}}^{x}=\{<c^{x}_{c_{i}}, w^{x}_{c_{i}}>|w^{x}_{c_{i}}=P(c^{x}_{c_{i}}|O_{c_{i}})\}\}\\
+V_{e_{ij}} =\{CV_{e_{ij}}^{x}|CV_{e_{ij}}^{x}=\{<c^{x}_{e_{ij}}, w^{x}_{e_{ij}}>|w^{x}_{e_{ij}}=P(c^{x}_{e_{ij}}|O_{e_{ij}})\}\}
+\end{aligned}
+If we directly evaluate the probabilistic score between the contexts of $india$ and $rhodesia$ using the cosine function, we can get the probability score only 0.427, however, if we evaluate the probabilistic score after clustering, it is up to 0.455.
+
+In terms of the generated attribute database $\Gamma_{attr}$, given a pair $<c_{i}, e_{ij}>$, we can obtain the attribute sets of $e_{ij}$ and $c_i$ as follows. It is necessary to mention that regarding the attribute set of the concept $c_{i}$, we use the attribute set of top $K_{seed}$ seeds in $c_{i}$ instead.
+\begin{displaymath}
+\begin{aligned}
+A_{c_{i}}=\{(a_{c_{i}}^{x},w_{c_{i}}^{x})|w_{c_{i}}^{x} = \frac{f_{a_{c_{i}}^{x}}}{\sum_{x=1}^{|A_{c_{i}}|}f_{a_{c_{i}}^{x}}}, 1\leq x \leq |A_{c_{i}}|\}\\
+A_{e_{ij}}=\{(a_{e_{ij}}^{x},w_{e_{ij}}^{x})|w_{e_{ij}}^{x} = \frac{f_{a_{e_{ij}}^{x}}}{\sum_{x=1}^{|A_{e_{ij}}|}f_{a_{e_{ij}}^{x}}},1\leq x \leq |A_{e_{ij}}|\}\\
+\end{aligned}
+\end{displaymath}
+Where $f_{a_{c_{i}}^{x}}$ refers to
+the occurrences of $a_{c_{i}}^{x}$ in the \emph{of-phrase}-based patterns of top $K_{seed}$ seeds in $c_{i}$ and $f_{a_{e_{ij}}^{x}}$ refers to
+the occurrences of $a_{e_{ij}}^{x}$ in the \emph{of-phrase}-based patterns of $e_{ij}$. $|A_{c_{i}}|$ and $|A_{e_{ij}}|$
+indicates the attribute count in the attribute set of the concept $\emph{c}_{i}$ and the entity $\emph{e}_{\emph{ij}}$ respectively.
+ and then filter too long sentences (e.g. more than 600 characters) and too short ones (e.g., less than 5 tokens). This is because too long sentences contain more redundant information while too short
+ones contain insufficient information
+to get the probabilistic score of an entity $e_{ij}$ given a concept $c_{i}$.
+we abstract a set of most representative concepts that can best describe the objects.
+According to the context extraction method mentioned above,
+
+ Lastly, to determine the weights in our CAI approach, we randomly select 2/3 test pairs corresponding to the class distribution of 12 isA relationships as the training data set to learn the logistic regression function in the Weka Tool, and get a set of optimal weights below: $(\omega_{0}, \omega_{1}, \omega_{2}, \omega_{3})$= (-1.00, 1.278, 3.17, 7.57). The rest 1/3 pairs consist of the test data set and the following prediction results are conducted on this set of test data.
+
+
+   Due to the enormous variety of distinct concepts expressed on the
+  Web, it is a challenge for traditional information extraction
+  techniques to train a classifier using labeled instances. Meanwhile,
+  in a massive corpus, a substantial fraction of extractions appear
+  infrequently. It is hence another challenge to assess these sparse
+  extractions. Motivated by above challenges, this paper shows how to
+  assess the correctness of sparse extractions by utilizing the semantic context-based assessment approach. The proposed
+  method depends on two assumptions: one is that the Web provides
+  sufficient information to assess sparse extractions and the
+  other is that instances of the same relation are ``distributionally
+  similar''. According to these assumptions, we first use the conceptualization method to get a set of representative concepts from all objects of each sentence and generate the bag-of-concepts as the context of seeds and test pairs.
+  Secondly, we implement a
+  similarity evaluation on all extractions using the attribute-based
+  context matching function and rank extractions by the likelihood
+  that they are correct. Thirdly, we combine a subclass-based and super class-based matching method using
+  the knowledge database of isA patterns to improve the assessment accuracy. Experiments conducted 1806
+  manually-labeled extractions from 12 isA-relationships show that our
+  approach could improve values of precision and recall on both of
+  bad pairs and good ones. Correspondingly, the overall performance on F-scores is respectively improved by 34.6\% and 11.2\%
+  on average, when comparing with the state-of-the-art assessment method for sparse extractions called REALM and the other clustering-based baseline method. In addition, we apply our approach into the cleaning of the database of isA relationships from Probase, which contains
+  2425558 concepts and 15805500 pairs extracted using Hearst patterns
+  from 1.68 billion web pages. Evidences show that our semantic context-based approach is efficient and effective in the assessment of sparse extractions.
+
+  \begin{figure*}[tb]
+\centering
+  \begin{tabular}{c}
+ \includegraphics[width=.7\textwidth]{WM-sorted-similarity-data-distribution.eps}\\
+(a) Distribution of probabilistic scores in the bag-of-Words-based context Matching method on Country\\
+ \includegraphics[width=.7\textwidth]{PM-sorted-similarity-data-distribution.eps}\\
+(b) Distribution of probabilistic scores in the trigram-Pattern-based context Matching method on Country\\
+ \includegraphics[width=.7\textwidth]{CM-sorted-similarity-data-distribution.eps}\\
+(c) Distribution of probabilistic scores in the Conceptualized-object-based context Matching method on Country\\
+ \includegraphics[width=.7\textwidth]{AM-sorted-similarity-data-distribution.eps}\\
+(d) Distribution of probabilistic scores in the Attribute-based context Matching method on Country\\
+ \includegraphics[width=.7\textwidth]{IM-sorted-similarity-data-distribution-revision.eps}\\
+(e) Distribution of probabilistic scores in the Isa-pattern-based context Matching method on Country\\
+ \includegraphics[width=.7\textwidth]{REALM_country.eps}\\
+(f) Distribution of probabilistic scores in the REALM method on Country\\
+\end{tabular}
+\caption{Data distribution of probabilistic scores in different assessment methods on \emph{Country}}
+\label{fig:context}
+\end{figure*}
+
+\begin{table}
+\centering{\caption{The concept-subconcept relationship space}{\centering\scriptsize{\begin{tabular}{|c|c|c|c|c|} \hline
+&& avg\# of &avg\# of &\\
+&\#isA pairs & children &parents &avg level\\\hline
+WordNet & 283,070 & 11.0 & 2.4 &1.265\\\hline
+WikiTaxonomy &90.739 &3.7 &1.4 &1.483\\\hline
+YAGO &366,450 &23.8&1.04 &1.063\\\hline
+Freebase & 0 &0&0&1\\\hline
+Probase &4,539,176 &7.53 &2.33 &1.086\\\hline
+\end{tabular}
+}}}
+\end{table}
+
+\begin{table}
+\centering{\caption{Scale of open-domain taxonomies}{\centering\scriptsize{\begin{tabular}{|c|c|} \hline
+Existing Taxonomies& Number of Concepts\\\hline
+Freebase\cite{Yao:Collective} & 1,450\\\hline
+WordNet\cite{Ritter:What} & 25229 \\\hline
+WikiTaxonomy\cite{Ponzetto:Wiki}\cite{Wu:Open} &111,654\\\hline
+YAGO\cite{S:YAGO}\cite{S:YAGO2} &352,297\\\hline
+DBPedia\cite{Auer:DBPedia} & 259\\\hline
+ResearchCyc & $\approx$ 120,000 \\\hline
+KnowItAll\cite{Etzioni:Unsupervised} &N/A\\\hline
+TextRunner\cite{Banko:TextRunner} & N/A\\\hline
+OMCS\cite{Singh:OMCS} & N/A \\\hline
+NELL\cite{Carlson:NELL} & 123\\\hline
+Probase &2,653,872\\\hline
+\end{tabular}
+}}}
+\end{table}
+
+@INPROCEEDINGS{S:YAGO,
+    AUTHOR = "Fabian M. Suchanek, Gjergji Kasneci, and Gerhard Weikum",
+    TITLE = "YAGO: a core of the semantic knowledge",
+    BOOKTITLE = "WWW'07",
+    PAGES = "697-706",
+    YEAR = {2007}   }
+
+@INPROCEEDINGS{S:YAGO2,
+    AUTHOR = "Johannes Hoffart, Fabian M. Suchanek, Klaus Berberich, Edwin Lewis Kelham, Gerard de Melo, and Gerhard Weikum",
+    TITLE = "YAGO2: Exploring and Querying World Knowledge in Time, Space, Context, and Many Languages",
+    BOOKTITLE = "WWW'11",
+    PAGES = "229-232"
+    YEAR = {2011}   }
+
+@INPROCEEDINGS{Ponzetto:Wiki,
+    AUTHOR = "Simone Paolo Ponzetto and Michael Strube",
+    TITLE = "Deriving a Large-Scale Taxonomy from Wikipedia",
+    BOOKTITLE = "AAAI'07",
+    PAGES = "1440-1445",
+    YEAR = {2007}   }
+
+@INPROCEEDINGS{Auer:DBPedia,
+    AUTHOR = "S\"{o}ren Auer, Christian Bizer, Georgi Kobilarov, Jens Lehmann, Richard Cyganiak, and Zachary Ives",
+    TITLE = "DBpedia: A Nucleus for a Web of Open Data",
+    BOOKTITLE = "ISWC/ASWC'07",
+    PAGES = "722-735",
+    YEAR = {2007}   }
+
+@INPROCEEDINGS{Carlson:NELL,
+    AUTHOR = "Andrew Carlson, Justin Betteridge, Bryan Kisiel, Burr Settles, Estevam R. Hruschka, and Tom M. Mitchell",
+    TITLE = "Toward an Architecture for Never-Ending Language Learning",
+    BOOKTITLE = "AAAI'10",
+    PAGES = "1306-1313",
+    YEAR = {2010}   }
+
+
+@INPROCEEDINGS{Singh:OMCS,
+    AUTHOR = "Push Singh, Thomas Lin, Erik T. Mueller, Grace Lim, Travell Perkins, and Wan Li Zhu",
+    TITLE = "Open Mind Common Sense: Knowledge Acquisition from the General Public",
+    BOOKTITLE = "On the Move to Meaningful Internet Systems: DOA/CoopIS/ODBASE",
+    PAGES = "1223-1237",
+    YEAR = {2002}   }
+
+    based on concept clusters divided by a clustering algorithm
+    , namely collecting the attribute-based contexts of $\emph{c}_{\emph{i}}$ and $\emph{e}_{\emph{ij}}$ from the attribute database $\Gamma_{attr}$ selectively
+
+    \begin{displaymath}
+f_{\gamma}(c_{i}, e_{ij})=\gamma(c_{i},e_{ij})~~~~~~~~~~~~~~~~~~~~~~~~~~~
+\end{displaymath}
+\begin{equation} \label{e2}
+=argMax{_{x=1}^{|CV_{e_{ij}}|}}(argMax{_{y=1}^{|CV_{c_{i}}|}}cosine(CV_{e_{ij}}^{x}, CV_{c_{i}}^{y}))
+\end{equation}
+\begin{displaymath}
+=argMax{_{x=1}^{|CV_{e_{ij}}|}}(argMax{_{y=1}^{|CV_{c_{i}}|}}\frac{\sum_{k=1}^{| CV_{e_{ij}}^{x}\bigcap CV_{c_{i}}^{y}|}(w_{c_{i}}^{k} \cdot
+w_{e_{ij}}^{k})}{\sqrt{\sum_{k=1}^{|CV_{c_{i}}|}(w^{k}_{c_{i}})^{2}} \cdot \sqrt{\sum_{k=1}^{|CV_{e_{ij}}|}(w^{k}_{e_{ij}})^{2}}}
+\end{displaymath}
+
+, denoted as $\sum_{x=1}^{|A_{e_{ij}}|}f_{a_{e_{ij}}^{x}}$.
+\begin{equation} \label{e2}
+\begin{aligned}
+f_{\gamma}(c_{i}, e_{ij})=\gamma(c_{i},e_{ij})~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\\
+=\arg\max_{x}\{\arg\max_{y}cosine(CV_{e_{ij}}^{x}, CV_{c_{i}}^{y})\}~~~~~~~~~~\\
+=\arg\max_{x}\{\arg\max_{y}\frac{\sum_{k=1}^{| CV_{e_{ij}}^{x}\bigcap CV_{c_{i}}^{y}|}(w_{c_{i}}^{k} \cdot
+w_{e_{ij}}^{k})}{\sqrt{\sum_{k}(w^{k}_{c_{i}})^{2}} \cdot \sqrt{\sum_{k}}(w^{k}_{e_{ij}})^{2}}\}
+\end{aligned}
+\end{equation}
+\begin{equation} \label{e3}
+\begin{aligned}
+f_{\phi}(c_{i}, e_{ij})=\phi(c_{i},e_{ij})=
+cosine(A_{c_{i}},A_{e_{ij}})=\\\frac{A_{c_{i}} \cdot A_{e_{ij}}}{||A_{c_{i}}|| \cdot ||A_{e_{ij}}||}=
+\frac{\sum_{x=1}^{|A_{c_{i}}\bigcap A_{e_{ij}}|}w_{a_{c_{i}}^{x}} \cdot
+w_{a_{e_{ij}}^{x}}}{\sqrt{\sum_{x}w_{a_{c_{i}}^{x}}^{2}} \cdot \sqrt{\sum_{x}w_{a_{e_{ij}}^{x}}^{2}}}\\
+\end{aligned}
+\end{equation}
+Where $A_{c_{i}}$ and $A_{e_{ij}}$ refer to the selected attribute sets of $c_i$ and $e_{ij}$ respectively.
+\begin{equation} \label{e4}
+\begin{aligned}
+f_{\kappa}(c_{i},e_{ij})=\kappa(c_{i},e_{ij}))~~~~~~~~~~~~~~~~~~\\
+=\arg\max_{x}\{\arg\max_{y}cosine(CV_{e_{ij}}^{x}, CV_{c_{i}}^{y})\}
+\end{aligned}
+\end{equation}
+Where $CV_{c_{i}}$ and $CV_{e_{ij}}$ refer to the isA-concept-cluster-based context sets of $c_i$ and $e_{ij}$ respectively
+, denoted as $Seed_{c_{i}}=\{e_{c_{i}}^{x}|1 \leq x\leq K_{seed}\}$
+
+
+Moreover, considering the value of $\emph{K}_{sup}$, it is relevant to the identification rate\footnote{It indicates the value that the number of pairs having the pattern of ``the super class of the current entity is the given concept'' divides the total number of test pairs.} of isA patterns and the prediction accuracy in IM. Figure 6 reports the corresponding experimental results in IM varying with values of $\emph{K}_{sup}$ from 2 to 100. In this figure, we can see that as the value of $\emph{K}_{sup}$ increases, the identification rate will increase gradually in the case of $\emph{K}_{sup}\geq $10 and then maintain invariably in the case of $\emph{K}_{sup}\geq$35. However, the fluctuation of prediction accuracy in IM is no more than 1\% if $\emph{K}_{sup}\geq $ 10. It apparently shows that the value of $\emph{K}_{sup}$ does not significantly impact on the identification rate and the prediction result if $\emph{K}_{sup}\geq $ 10. In our experiments, we select the value of $\emph{K}_{sup}$ = 20 as a candidate optimal value.
+
+\begin{figure}[t]
+%\makeatletter\def\@captype{figure}\makeatother
+ \centerline{
+ \includegraphics[width=0.5\textwidth]{Kclass.eps}}
+ \caption{Prediction accuracies in IM varying with values of $\emph{K}_{\emph{sup}}$} \label{Fig. k-7}
+\end{figure}
+
+\begin{table}[t]\centering
+%\makeatletter\def\@captype{table}\makeatother
+{\caption{Parameters} \scriptsize{\begin{tabular}{|c|l|}\hline
+$\emph{K}_{seed}$ & Top $\emph{K}_{seed}$ popular seeds of a concept in $\Gamma_{hearst}$;\\\hline
+\emph{freqT} &a threshold relevant to the total occurrence of attributes;\\\hline
+$K_{attr}$ & Top $K_{attr}$ attributes of the concept in AM;\\\hline
+$\emph{K}_{isa}$ &Top $\emph{K}_{isa}$ isA concepts in $\Gamma_{hearst}$ for a given concept;\\\hline
+$\emph{K}_{con}$ & concept count in the conceptualization method\\\hline
+$\omega_{i}$ & the weights in our CAI method, $i\in \{0,1,2,3\}$;\\\hline
+$\alpha$ & threshold in the partition of good extractions and bad ones;\\\hline
+\end{tabular}}
+}
+\end{table}
+Regarding the value of $\alpha$ in all syntactic and semantic context based methods, we draw the ROC curve to select the optimal value of $\alpha$. Due to the page limit, we only give the experimental conclusion. That is, we get an optimal value of $\alpha$ below: $\alpha$=0.05 for WM, CM, AM and IM, and $\alpha$=0.1 for PM and $\alpha$=0.1 for CAI.
+\subsection{Prediction performance}
+In this subsection, we will show the performance of our approach in two dimensions, including the effectiveness and the efficiency.
+
+\subsubsection{Effectiveness}
+We validate the effectiveness of our aggregate semantic context-based assessment approach CAI for sparse extractions in two dimensions. One refers to the performance of our CAI approach compared to five syntactic context-based and semantic context-based baseline methods including WM, PM, CM, AM and IM. The other refers to the performance of our CAI method compared to a state-of-the art assessment method for sparse extractions, namely the language modeling-based method called REALM\cite{Downey:Sparse}\cite{Ahuja:Improved}. In our experiments, we use the classic evaluation metrics of precision and recall to evaluate the performance on good pairs and bad ones respectively. Meanwhile, to trade-off the precision and recall on both types of pairs, we also use the F-score to measure the overall
+performance on each type of pairs. Suppose the statistics of prediction results on good pairs and bad ones are as shown in Table 3, we can define the precision,
+recall and F-score on each type of pairs below.
+
+\begin{table}[!t]
+%\makeatletter\def\@captype{table}\makeatother
+\centering {\caption{Statistics of prediction results} {\scriptsize{\begin{tabular}{|c|c|c|} \hline
+ & Predicted good pairs & Predicted bad pairs  \\\hline Good pairs & \emph{a} & \emph{b} \\\hline Bad pairs & \emph{c} & \emph{d}\\\hline
+\end{tabular}}}}
+\end{table}
+\begin{displaymath}
+\begin{aligned}
+BR: &~bad\_pair\_recall = d/(d+c)\\
+BP: &~bad\_pair\_precision = d/(d+b)\\
+BF_{1}:~& bad\_pair\_F1 = (2\cdot BP\cdot BR) / (BP+BR)\\
+GR: &~good\_pair\_recall = a/(a+b)\\
+GP: &~good\_pair\_precision= a/(a+c)\\
+GF_{1}: &~good\_pari\_F1 = (2\cdot GP\cdot GR) /(GP+GR)
+\end{aligned}
+\end{displaymath}
+
+In one dimension, Table 4 reports the performance of our six syntactic context-based and semantic context-based assessment methods on the precision, recall and F1. From the experimental results conducted on the test data set with 1/3 test pairs from 12 isA relationships, we can see that 1) as compared to the syntactic context-based assessment methods WM and PM, the semantic context-based assessment methods CM, AM, IM and CAI could win ten times on both evaluation metrics of $BF_{1}$ and \emph{$GF_{1}$} except on the isA relationships of company and river. 2) Regarding the prediction results in our four semantic context-based methods, CM/AM/IM/CAI wins 0/3/2/5 and 2/0/2/7 times respectively on $BF_{1}$ and \emph{$GF_{1}$}. Meanwhile, CAI could win three times on both evaluation metrics of \emph{BF1} and \emph{GF1}, while CM, AM and IM only wins zero, zero and once respectively. 3) Considering the overall performance in our four semantic context-based methods on total test data, the aggregated CAI method could kill more bad pairs with less loss in the overkilling of good pairs compared to CM, AM and IM. More precisely, CAI could kill 56.7\% bad pairs while only overkill 11.5\% good pairs. However, AM kills 41.9\% bad pairs with 14.4\% overkilled good pairs and IM kills 64.6\% bad pairs with 23.5\% overkilled good pairs. As compared to AM and IM, CM overkills fewer good pairs, namely killing 8.1\% good pairs, but it maintains more bad pairs, only killing 7.9\% bad pairs. These data show that our CAI method performs best compared to other syntactic context-based and semantic context-based baseline methods.
+
+In the other dimension, Figure 7 reports the performance of our CAI method on six evaluation
+metrics compared to the state-of-the-art assessment method for sparse extractions called the REALM
+method \cite{Downey:Sparse}\cite{Ahuja:Improved}. In the observation of experimental results, we can get the following conclusions.
+Firstly, considering the prediction results on the evaluation metrics of \emph{BR}, \emph{BP}, \emph{GR} and \emph{GP}, CAI/REALM wins
+10/2, 7/5, 10/2 and 11/1 times respectively over 12 isA relationships. Secondly, considering the overall performance on the evaluation metrics of \emph{BF1} and \emph{GF1}, CAI/REALM wins 10/2 and 11/1 times respectively. Meanwhile, CAI wins nine times on both evaluation metrics of \emph{BF1} and \emph{GF1}. More specifically, considering the average experimental results on 12 isA relationships, our CAI method could improve the prediction values on $BF_{1}$ and \emph{$GF_{1}$} by 34.6\% and 11.2\% respectively compared to the REALM method. These data reveal that our CAI method is very superior to the REALM method, namely it could clean more bad pairs without less loss in good pairs.
+
+%\end{multicols}
+%\onecolumn
+\begin{figure*}[t]
+ \centerline{
+ \includegraphics[width=1\textwidth]{two-New-methods-on-12-Concepts-REALM-CAI.eps}}
+ \caption{Prediction results of our aggregated method compared to two baseline methods} \label{Fig. k-8}
+\end{figure*}
+%\begin{multicols}{2}
+
+\subsubsection{Efficiency}
+Figure 8 reports the training and test time overheads in our CAI method compared to the REALM method over 12 isA relationships. Experiments are performed on an Intel Core 2 Duo CPU, 2.66GHz PC with 4G main memory, running Windows 7 Enterprise. It is necessary to address that in
+\begin{table}[!t]\centering{
+%{\makeatletter\def\@captype{table}\makeatother
+\caption{Prediction results on 12 isA relationships}{\centering\scriptsize{\begin{tabular}{|c|c|c|c|c|c|c|c|} \hline
+data& & BR & BP& GR&GP &$BF_{1}$&$GF_{1}$\\\hline
+        &WM &11.0  &71.4  &94.5  &46.0  &19.0  &61.9\\\cline{2-8}
+      &PM &34.6   &68.2   &80.9   &50.8   &47.0   &62.4\\\cline{2-8}
+ country &CM &7.1   &78.9   &\textbf{97.8}  &47.2   &13.1   &87.3\\\cline{2-8}
+&AM &39.0   &78.1   &86.8   &54.1   &52.0   &66.7\\\cline{2-8}
+   &IM &\textbf{67.1}  &84.5   &85.2   &\textbf{68.2}   &\textbf{74.8}  &\textbf{75.8}\\\cline{2-8}
+     &CAI&57.0  &\textbf{84.8}   &88.9   &65.5   &68.2   &75.4\\\hline
+        &WM &19.4  &41.9  &93.3  &82.2  &26.5  &87.4\\\cline{2-8}
+   sport     &PM &20.0   &26.5   &84.8   &79.4   &22.8   &82.0\\\cline{2-8}
+  &CM &7.4  &19.0   &\textbf{93.5}   &83.0   &10.7   &31.6\\\cline{2-8}
+        &AM &73.1   &\textbf{49.0}  &81.0   &92.3   &\textbf{58.7}   &86.3\\\cline{2-8}
+   &IM &\textbf{80.6}  &44.3   &74.6   &\textbf{93.9}  &57.1   &83.2\\\cline{2-8}
+       &CAI    &62.8    &42.9   &84.4   &92.4   &50.9   &\textbf{88.2}\\\hline
+       &WM  &30.3  &27.0  &85.9  &87.8  &28.6  &86.8\\\cline{2-8}
+ city      &PM &25.8    &16.7   &78.7   &86.6   &20.3   &82.5\\\cline{2-8}
+ &CM &23.3  &36.8   &93.4   &88.1   &28.6   &52.8\\\cline{2-8}
+       &AM  &33.3   &\textbf{73.3}   &\textbf{98.0}   &89.8   &45.8   &93.7\\\cline{2-8}
+    &IM &\textbf{60.6}   &44.4   &87.4   &93.0  &51.3 &90.1\\\cline{2-8}
+       &CAI    &52.4   &64.7   &96.2   &\textbf{93.9}   &\textbf{57.9}   &\textbf{95.0}\\\hline
+       &WM  &7.9   &8.6   &78.2  &76.7  &8.2   &77.4\\\cline{2-8}
+       &PM &20.0    &41.2   &92.8   &82.1   &26.9   &87.1\\\cline{2-8}
+ animal&CM &13.9    &11.1   &69.2   &74.4   &13.9   &11.1\\\cline{2-8}
+       &AM  &\textbf{39.5}   &28.8   &75.2   &\textbf{83.0}   &33.3   &78.9\\\cline{2-8}
+   &IM &7.9    &37.5   &\textbf{96.6}  &80.4   &13.0   &\textbf{87.8}\\\cline{2-8}
+       &CAI  &31.8 &\textbf{70.0}   &94.9   &78.9   &\textbf{43.8}   &86.2\\\hline
+       &WM  &2.4   &25.0  &97.6  &75.2  &4.4   &84.9\\\cline{2-8}
+      &PM &2.6 &7.7    &90.6   &75.2   &3.8    &82.1\\\cline{2-8}
+ seasoning &CM &0.0 &0.0    &\textbf{98.4}  &75.9   &0.0    &\textbf{85.7}\\\cline{2-8}
+&AM  &22.0   &50.0   &93.0  &78.8   &30.5   &85.3\\\cline{2-8}
+&IM&\textbf{92.7} &31.4   &35.2   &\textbf{93.8}   &46.9   &51.1\\\cline{2-8}
+    &CAI     &65.4 &53.1   &81.3   &87.8   &\textbf{58.6}   &84.4\\\hline
+       &WM  &\textbf{53.9}  &25.9  &76.5  &91.6  &\textbf{35.0}  &83.3\\\cline{2-8}
+      &PM &18.2    &20.0   &90.0   &88.9   &21.0   &89.4\\\cline{2-8}
+ company &CM &0.0   &0.0    &95.2  &92.3  &0.0    &93.8
+\\\cline{2-8}
+&AM    &20.0   &16.7   &86.3   &88.7   &18.2   &87.5\\\cline{2-8}
+   &IM &20.0   &25.0   &91.8   &89.3   &22.2   &90.5\\\cline{2-8}
+  &CAI  &20.0   &\textbf{50.0}    &\textbf{98.4}    &\textbf{93.8}    &28.6   &\textbf{96.1}\\\hline
+      &WM   &20.0  &9.1   &86.8  &94.3  &12.5  &90.4\\\cline{2-8}
+      &AM   &60.0  &15.0  &77.6  &96.7   &24.0   &86.1\\\cline{2-8}
+      &PM   &25.0  &7.7   &83.8  &95.4   &11.8   &89.2\\\cline{2-8}
+ painter  &CM   &0.0    &0.0    &\textbf{93.3}   &94.6   &0.0    &94.0\\\cline{2-8}
+      &IM &\textbf{100.0} &\textbf{15.6}   &64.5   &\textbf{100.0} &\textbf{27.0}   &78.4\\\cline{2-8}
+      &CAI   &0.0  & 0.0& 91.3    &\textbf{100.0}  & 0   &\textbf{95.5}\\\hline
+     &WM    &12.5  &25.0  &95.5  &90.0  &16.7  &92.7\\\cline{2-8}
+     &PM &12.5  &5.3    &73.5   &87.7   &7.4    &80.0\\\cline{2-8}
+ currency &CM &14.3 &\textbf{50.0}   &\textbf{98.4}  &91.3   &22.2   &\textbf{94.7}
+\\\cline{2-8}
+&AM    &62.5   &31.3   &84.3   &95.2   &\textbf{41.7}   &89.4\\\cline{2-8}
+&IM    &\textbf{100.0} &21.1   &57.1   &\textbf{100.0} &34.8   &72.7\\\cline{2-8}
+    &CAI    &83.3  & 26.3   & 77.4   & 98.0   & 40.0  &  86.5
+\\\hline
+     &WM    &37.5  &21.4  &80.0  &89.8  &27.3  &84.6\\\cline{2-8}
+     &PM &12.5  &16.7   &91.4   &88.3   &14.3   &89.8\\\cline{2-8}
+ disease &CM &16.7  &12.5   &86.3   &89.8   &14.3   &88.0
+\\\cline{2-8}
+&AM    &\textbf{55.6}  &62.5   &95.0   &93.4  &\textbf{58.8}  &94.2\\\cline{2-8}
+   &IM &44.4   &28.6   &83.3   &90.9   &34.8   &87.0\\\cline{2-8}
+ &CAI    &50.0  &\textbf{66.7}   & \textbf{97.0}    &\textbf{94.1}   & 57.1  &  \textbf{95.5}
+\\\hline
+     &WM    &46.7  &51.9  &72.3  &68.0  &49.1  &70.1\\\cline{2-8}
+film     &PM &\textbf{96.6}  &38.9   &4.4    &66.7   &22.3   &8.2\\\cline{2-8}
+&CM &0.0    &0.0    &\textbf{100.0} &68.0   &0.0    &81.0
+\\\cline{2-8}
+     &AM    &32.0   &66.7   &90.0   &67.9   &43.2   &77.4\\\cline{2-8}
+    &IM &56.0  &\textbf{77.8}   &90.0   &76.6  &65.1  &82.8\\\cline{2-8}
+    &CAI    &75.0  & 75.0  &  87.5  &  \textbf{87.5}  &  \textbf{75.0} &   \textbf{87.5}
+\\\hline
+    &WM &39.0   &78.1   &86.8   &54.1   &52.0   &66.7\\\cline{2-8}
+    &PM &50.0   &42.9   &90.2   &92.5   &46.2   &91.4\\\cline{2-8}
+language &CM &0.0   &0.0    &\textbf{92.7}   &86.4   &0.0    &89.4
+\\\cline{2-8}
+&AM    &50.0   &16.7   &66.7   &90.9   &25.0   &76.9\\\cline{2-8}
+   &IM &\textbf{66.7}  &28.6   &77.8   &\textbf{94.6}  &40.0   &85.4\\\cline{2-8}
+    &CAI    &\textbf{66.7}  & \textbf{57.1}   & 90.6    &93.5 &   \textbf{61.5}   & \textbf{92.1}\\\hline
+     &WM    &0.0   &0.0   &83.3  &85.4  &0.0   &84.3\\\cline{2-8}
+  river     &PM &\textbf{50.0}  &25.0   &\textbf{92.1}   &\textbf{97.2}   &33.3   &\textbf{94.6}\\\cline{2-8}
+  &CM &0.0  &0.0    &82.4   &93.3   &0.0    &87.5
+\\\cline{2-8}
+       &AM    &48.3   &10.1   &67.5   &80.6   &16.8   &73.5\\\cline{2-8}
+   &IM &48.6   &22.1   &72.1   &81.2   &30.4   &76.4\\\cline{2-8}
+    &CAI   &0.0 &0.0 &70.8  &  94.4   & 0   &81.0\\\hline
+     &WM    &14.9  &30.3  &87.7  &74.1  &19.9  &80.3\\\cline{2-8}
+overall     &PM &18.0  &36.5   &88.8   &75.2   &24.1   &81.4\\\cline{2-8}
+&CM &7.9    &24.2   &\textbf{91.9}   &75.2   &11.9   &82.7\\\cline{2-8}
+     &AM    &41.9   &50.3   &85.6   &81.0   &45.7   &83.2\\\cline{2-8}
+ &IM &\textbf{64.6 }  &49.1   &76.5   &\textbf{86.1}   &55.8  &81.0\\\cline{2-8}
+    &CAI    &56.7    &\textbf{62.0}    &88.5    &86.0    &\textbf{59.2}    &\textbf{87.2}
+\\\hline
+\end{tabular}
+}}}
+%}
+\end{table}
+our CAI method, the training time consists in the construction time of the feature vector containing three dimensions (namely the probabilistic scores predicted in three semantic context-based methods AM, IM and CM) on the selected labeled data (namely 2/3 pairs from 12 isA relationships in this paper) and the time consumption of the weight selection in the logistic regression function, while the test time overhead consists in the construction time of the feature vector containing three dimensions in three semantic context-based methods and the evaluation time overhead using the logistic regression model on the test pairs (namely the rest 1/3 pairs from 12 isA relationships). However, in REALM, the training time overhead indicates the building time of the HMM-based and \emph{n}-gram-based model using the corpus, and the test time overhead indicates the evaluation time on the same test pairs using the built model. In the observation of experimental results, we can see that our CAI method is much faster than REALM regarding the total time overhead. More specifically, our CAI method consumes on the training time no more than twice compared to the REALM method, while it consumes only about 1/100 of REALM at most on the test time. For example, on the isA relationship of country, the training time consumed in CAI and REALM is 489 and 377 seconds, while the test time consumed is 5660 and 56 seconds respectively. These data shows the distinct evaluation in a HMM-based and \emph{n}-gram-based model built in REALM is very time consuming compared to the construction time of the feature vector added the evaluation time using the logistic regression function in CAI.
+
+\begin{figure}[t]
+%\makeatletter\def\@captype{figure}\makeatother
+ \centerline{
+ \includegraphics[width=0.5\textwidth]{CAI-REALM-time-overhead.eps}}
+ \caption{Time overheads in CAI and REALM on 12 isA relationships} \label{Fig. k-7}
+\end{figure}
+
+It uses 361 million Google trigrams as the
+context to build models for sparse extractions. More precisely, given a sparse extraction $<c_i, e_{ij}>$, the trigram-based approach first collects all trigrams containing one of top $K_{seed}$ seeds in $c_i$ and the entity $e_{ij}$ respectively from the corpus as the contexts.
+Thus, in the trigram-based approach, the context consists in bags-of-patterns of all trigrams. It is in the format of $\{(p_{1}, w_{1}), ..., (p_{x}, w_{x}),...\}$, where $p_{x}$ refers to a pattern and $w_{x}$ refers to the frequency that the pattern $p_{x}$ occur in the corresponding context. More precisely, given a sparse extraction $<c_i, e_{ij}>$, patterns of $c_i$ indicate all phrases of trigrams containing one of top $K_{seed}$ seeds in $c_i$ while patterns of $e_{ij}$ indicate all phrases of trigrams containing $e_{ij}$ itself. For example, suppose there is a trigram ``in the $e_{ij}$'', ``in the'' is hence called a pattern of $e_{ij}$. Lastly, we compare the context of seeds against that of entity as similarly as WM to get the similarity score of the current extraction.
+
+
+a good extraction has is a good one if surrounding textual contexts are non-identical. However, if we could use
+the semantic information hidden in the surrounding textual contexts,
+such as some representative concepts abstracted from sentences, we
+know that the surrounding textual contexts such as $cambodia$,
+$somalia$, $england$, $france$ are countries. It is hence beneficial
+to induce that $rhodesia$ is also a country. This is a point to be
+addressed in our method, namely using more semantic contexts to assess
+sparse extractions.
+More specifically, to access a sparse extraction $<country, rhodesia$\\$>$, REALM requires building a language model to reflect the textual contexts surrounding $rhodesia$ and a seed in $country$ (e.g., $india$) with similar state distributions, while our method only requires collecting some representative concepts conceptualized from the textual contexts surrounding $rhodesia$ and $india$ simply or other semantic information (such as the attributes of seeds and entities) using pre-prepared knowledge databases. Thus, our method is more efficient in the handling of large scale sparse extractions. It is the other point to be addressed in this paper, namely using the pre-prepared semantic information as the contexts of the seeds and entities to match each other instead of the context-based bootstrapping and the context-based language model building involved in the aforementioned methods.
+
+The HMM
+model treats each token in the corpus as generated by a single hidden
+state variable, in which the hidden states take integral values from
+\{1,...,\emph{T}\} and each hidden state variable is itself generated
+by some number \emph{k} of previous hidden states.
+. Formally, given a
+corresponding vector of states \emph{\textbf{t}}, the joint
+distribution of the corpus represented as a vector of tokens
+\emph{\textbf{w}} is formalized in
+$P(\textbf{w}|\textbf{t})=\prod_{i}P(w_{i}|t_{i})P(t_{i}|t_{i-1},...,t_{i-k})$.
+
+\begin{displaymath}
+\begin{aligned}
+C_{e_{ij}}=\{(c_{e_{ij}}^x,w_{e_{ij}}^x)|<c{_{e_{ij}}^x}, e_{ij}> \in \Gamma_{hearst},~w_{e_{ij}}^x = P(c_{e_{ij}}^x|e_{ij})\}\\
+E_{c_{i}}=\{(e_{c_{i}}^x,w_{c_{i}}^x)|<c_{i},e_{c_{i}}^x> \in \Gamma_{hearst},~w_{c_{i}}^x = P(e_{c_{i}}^x|c_{i})\}~~~~~~~~
+\end{aligned}
+\end{displaymath}
+
+\begin{table}[t]
+\centering{\caption{Scale of open-domain taxonomies}{\centering\scriptsize{\begin{tabular}{|c|c|} \hline
+Existing Taxonomies& Number of Concepts\\\hline
+Freebase\cite{Yao:Collective} & 1,450\\\hline
+WordNet\cite{Ritter:What} & 25229 \\\hline
+WikiTaxonomy\cite{Ponzetto:Wiki}\cite{Wu:Open} &111,654\\\hline
+YAGO\cite{S:YAGO}\cite{S:YAGO2} &352,297\\\hline
+DBPedia\cite{Auer:DBPedia} & 259\\\hline
+ResearchCyc\cite{Lenat:Building} & $\approx$ 120,000 \\\hline
+KnowItAll\cite{Etzioni:Unsupervised} &N/A\\\hline
+TextRunner\cite{Banko:TextRunner} & N/A\\\hline
+OMCS\cite{Singh:OMCS} & N/A \\\hline
+NELL\cite{Carlson:NELL} & 123\\\hline
+Probase &2,653,872\\\hline
+\end{tabular}
+}}}
+\end{table}
+
+ That is, we first select top $K_{seed}$ popular entities in the
+concept $c$ corresponding to the probabilistic score in $\Gamma_{hearst}$ as seeds. Secondly, to reduce the noisy context of the concept $c$, we select sentences that have a
+co-occurrence of the concept $c$ and one of seeds as the candidate context of the current seed. Lastly, i
+
+
+% THIS IS SIGPROC-SP.TEX - VERSION 3.1
+% WORKS WITH V3.2SP OF ACM_PROC_ARTICLE-SP.CLS
+% APRIL 2009
+%
+% It is an example file showing how to use the 'acm_proc_article-sp.cls' V3.2SP
+% LaTeX2e document class file for Conference Proceedings submissions.
+% ----------------------------------------------------------------------------------------------------------------
+% This .tex file (and associated .cls V3.2SP) *DOES NOT* produce:
+%       1) The Permission Statement
+%       2) The Conference (location) Info information
+%       3) The Copyright Line with ACM data
+%       4) Page numbering
+% ---------------------------------------------------------------------------------------------------------------
+% It is an example which *does* use the .bib file (from which the .bbl file
+% is produced).
+% REMEMBER HOWEVER: After having produced the .bbl file,
+% and prior to final submission,
+% you need to 'insert'  your .bbl file into your source .tex file so as to provide
+% ONE 'self-contained' source file.
+%
+% Questions regarding SIGS should be sent to
+% Adrienne Griscti ---> griscti@acm.org
+%
+% Questions/suggestions regarding the guidelines, .tex and .cls files, etc. to
+% Gerald Murray ---> murray@hq.acm.org
+%
+% For tracking purposes - this is V3.1SP - APRIL 2009
+%\documentclass[fleqn]{sig-alternate}
+\documentclass{acm_proc_article-sp}
+\usepackage{multicol}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{url}
+\usepackage{caption}
+\begin{document}
+
+{
+%\makeatletter\def\@captype{algorithm}\makeatother
+\renewcommand\algorithmicrequire{\textbf{Input:}}
+\renewcommand\algorithmicensure {\textbf{Output:}}
+\begin{algorithm}[h]
+%\begin{center}
+\captionof{algorithm}{Semantic context-based assessment method}
+%\caption{Context-based semantic cleaning approach} \label{algo_minball}
+\begin{algorithmic}[1]
+\REQUIRE $\Gamma_{hearst}$: the Hearst pattern database with a concept \\~~~~~~~~~~~~~~~~~set \emph{C} and an entity set \emph{E}; \\
+~~~~~~$D=\{<c_{i},e_{ij}>|c_{i}\in C,e_{ij}\in E\}$: test extractions;\\
+~~~~~~$\Gamma_{sent}$: the corpus of sentences;\\
+~~~~~~$\Gamma_{attr}$: the attribute database; \\
+~~~~~~$\Gamma_{isA}$: the isA-pattern database;
+\ENSURE A similarity score $\psi(c_{i}$, $e_{ij})$ for each extraction;
+\FOR {each extraction $<c_{i}, e_{ij}> \in D$}
+\STATE Select top $K_{seed}$ seeds of the concept $c_{i}$ corresponding to the probabilistic score in the Hearst pattern database $\Gamma_{hearst}$;
+\STATE Collect all available sentences from $\Gamma_{sent}$;
+\STATE Identify all objects using the concept set \emph{C} and the entity set \emph{E} in $\Gamma_{hearst}$;
+\STATE Conceptualize all objects of each sentence into a set of representative concepts corresponding to the evaluation value of $P(c_{k}|O_{e_{ij}})$ using a Na\"{\i}ve Bayes model;
+\STATE Merge all conceptualized concepts relevant to $c_{i}$ and $e_{ij}$ and create the contexts of $c_{i}$ and $e_{ij}$ selectively;
+\STATE Generate clusters of conceptualized concepts for each context using the KMedians clustering algorithm;
+\STATE $\gamma(c_{i},e_{ij})\leftarrow$ the conceptualized concept cluster-based context matching;
+\ENDFOR
+\FOR {each extraction $<c_{i}, e_{ij}> \in D$}
+\STATE Collect attributes of $c_{i}$ and $e_{ij}$ selectively from the attribute database $\Gamma_{attr}$ as the contexts respectively;
+\STATE $\phi(c_{i},e_{ij}) \leftarrow$ the attribute-based context matching;
+\ENDFOR
+\FOR {each extraction $<c_{i}, e_{ij}> \in D$}
+\STATE Collect the isA patterns of $c_{i}$ and $e_{ij}$ selectively from the isA-pattern database $\Gamma_{isa}$;
+\STATE $\kappa(c_{i},e_{ij})\leftarrow$ the isA pattern-based context matching;
+\ENDFOR
+\FOR {each extraction $<c_{i}, e_{ij}> \in D$}
+\STATE $\psi(c_{i},e_{ij}) = \omega_{1}\gamma(c_{i},e_{ij})+\omega_{2}\phi(c_{i},e_{ij})+\omega_{3}\kappa(c_{i},e_{ij}) \leftarrow$ use a weighted function to integrate three semantic matching methods mentioned above;
+\STATE Get the similarity score of $<c_{i}$, $e_{ij}>$ by $\psi(c_{i},e_{ij})$;
+\ENDFOR
+\end{algorithmic}
+%\end{center}
+\end{algorithm}
+}
+
+\end{document}
+
+\subsubsection{Efficiency}
+Figure 8 reports the training and test time overheads in our CAI method compared to the REALM method over 12 isA relationships. Experiments are performed on an Intel Core 2 Duo CPU, 2.66GHz PC with 4G main memory, running Windows 7 Enterprise. It is necessary to address that in our CAI method, the training time consists in the construction time of the feature vector containing three dimensions (namely the probabilistic scores predicted in three semantic context-based methods AM, IM and CM) on the selected labeled data (namely 2/3 pairs from 12 isA relationships in this paper) and the time consumption of the weight selection in the logistic regression function, while the test time overhead consists in the construction time of the feature vector containing three dimensions in three semantic context-based methods and the evaluation time overhead using the logistic regression model on the test pairs (namely the rest 1/3 pairs from 12 isA relationships). However, in REALM, the training time overhead indicates the building time of the HMM-based and \emph{n}-gram-based model using the corpus, and the test time overhead indicates the evaluation time on the same test pairs using the built model. In the observation of experimental results, we can see that our CAI method is much faster than REALM regarding the total time overhead. More specifically, our CAI method consumes on the training time no more than twice compared to the REALM method, while it consumes only about 1/100 of REALM at most on the test time. For example, on the isA relationship of country, the training time consumed in CAI and REALM is 489 and 377 seconds, while the test time consumed is 5660 and 56 seconds respectively. These data shows the distinct evaluation in a HMM-based and \emph{n}-gram-based model built in REALM is very time consuming compared to the construction time of the feature vector added the evaluation time using the logistic regression function in CAI.
+
+Because our work in this paper mainly focus on the improvement in two dimensions of effectiveness and efficiency compared to REALM. Thus, we give more details of REALM below. REALM begins by automatically selecting from the input extractions a set of boostrapped seeds intended to serve as correct examples of the relation, and outputs a ranking of those extractions by utilizing the following two language-modeling components. Firstly, it utilizes an HMM to estimate whether each extraction has arguments of the proper type for the relation. Secondly, it builds a relational \emph{n}-gram model of the arguments in the corpus to assess the extractions, namely using the context distribution around the seed extraction to match that of given entities. REALM overcomes the problems involved in previous approaches.
+
+In the following experiments, we select equal weights in our CAI approach for simplicity. Meanwhile, we specify other relevant parameter values below, namely $K_{seed}$ = 10, $freqT$ = 10, $K_att$ = 500, $K_{isa}$ = 500, $K_{con}$ = 20 and $\alpha$ = 0.1. We omit details of parameter settings due to the page limit. All experimental results are averaged over 10 runs.
+
+
+\begin{table}[!t]\centering{
+%{\makeatletter\def\@captype{table}\makeatother
+\caption{Prediction results on 12 isA relationships}
+\label{OurMethodsOnIsAR}{\centering\scriptsize{\begin{tabular}{|c|c|c|c|c|c|c|} \hline
+method& BR & BP& GR&GP &$BF_{1}$&$GF_{1}$\\\hline
+ \multicolumn{7}{c|}{\textbf{country}} \\\hline
+        Bag-of-Words &11.0  &71.4  &94.5  &46.0  &19.0  &61.9\\\hline
+      Bag-of-neighboring-bigrams &34.6   &68.2   &80.9   &50.8   &47.0   &62.4\\\hline
+Concept-based &7.1   &78.9   &\textbf{97.8}  &47.2   &13.1   &87.3\\\hline
+Attribute-based &39.0   &78.1   &86.8   &54.1   &52.0   &66.7\\\hline
+   IsA-based &\textbf{67.1}  &84.5   &85.2   &\textbf{68.2}   &\textbf{74.8}  &\textbf{75.8}\\\hline
+     Our approach&57.0  &\textbf{84.8}   &88.9   &65.5   &68.2   &75.4\\\hline
+        Bag-of-Words &19.4  &41.9  &93.3  &82.2  &26.5  &87.4\\\hline
+        \multicolumn{7}{c|}{sport}\\\hline
+      Bag-of-neighboring-bigrams &20.0   &26.5   &84.8   &79.4   &22.8   &82.0\\\hline
+  Concept-based &7.4  &19.0   &\textbf{93.5}   &83.0   &10.7   &31.6\\\hline
+        Attribute-based &73.1   &\textbf{49.0}  &81.0   &92.3   &\textbf{58.7}   &86.3\\\hline
+   IsA-based &\textbf{80.6}  &44.3   &74.6   &\textbf{93.9}  &57.1   &83.2\\\hline
+       Our approach    &62.8    &42.9   &84.4   &92.4   &50.9   &\textbf{88.2}\\\hline
+       \multicolumn{7}{c|}{city}\\\hline
+       Bag-of-Words  &30.3  &27.0  &85.9  &87.8  &28.6  &86.8\\\hline
+       Bag-of-neighboring-bigrams &25.8    &16.7   &78.7   &86.6   &20.3   &82.5\\\hline
+ Concept-based &23.3  &36.8   &93.4   &88.1   &28.6   &52.8\\\hline
+       Attribute-based  &33.3   &\textbf{73.3}   &\textbf{98.0}   &89.8   &45.8   &93.7\\\hline
+    IsA-based &\textbf{60.6}   &44.4   &87.4   &93.0  &51.3 &90.1\\\hline
+       Our approach    &52.4   &64.7   &96.2   &\textbf{93.9}   &\textbf{57.9}   &\textbf{95.0}\\\hline
+       \multicolumn{7}{c|}{animal}\\\hline
+       Bag-of-Words  &7.9   &8.6   &78.2  &76.7  &8.2   &77.4\\\hline
+       Bag-of-neighboring-bigrams &20.0    &41.2   &92.8   &82.1   &26.9   &87.1\\\hline
+ Concept-based &13.9    &11.1   &69.2   &74.4   &13.9   &11.1\\\hline
+       Attribute-based  &\textbf{39.5}   &28.8   &75.2   &\textbf{83.0}   &33.3   &78.9\\\hline
+   IsA-based &7.9    &37.5   &\textbf{96.6}  &80.4   &13.0   &\textbf{87.8}\\\hline
+       Our approach  &31.8 &\textbf{70.0}   &94.9   &78.9   &\textbf{43.8}   &86.2\\\hline
+       \multicolumn{7}{c|}{seasoning} \\\hline
+       Bag-of-Words  &2.4   &25.0  &97.6  &75.2  &4.4   &84.9\\\hline
+      Bag-of-neighboring-bigrams &2.6 &7.7    &90.6   &75.2   &3.8    &82.1\\\hline
+ Concept-based &0.0 &0.0    &\textbf{98.4}  &75.9   &0.0    &\textbf{85.7}\\\hline
+Attribute-based  &22.0   &50.0   &93.0  &78.8   &30.5   &85.3\\\hline
+IsA-based&\textbf{92.7} &31.4   &35.2   &\textbf{93.8}   &46.9   &51.1\\\hline
+    Our approach     &65.4 &53.1   &81.3   &87.8   &\textbf{58.6}   &84.4\\\hline
+    \multicolumn{7}{c|}{company}\\\hline
+       Bag-of-Words  &\textbf{53.9}  &25.9  &76.5  &91.6  &\textbf{35.0}  &83.3\\\hline
+      Bag-of-neighboring-bigrams &18.2    &20.0   &90.0   &88.9   &21.0   &89.4\\\hline
+  Concept-based &0.0   &0.0    &95.2  &92.3  &0.0    &93.8
+\\\hline
+Attribute-based    &20.0   &16.7   &86.3   &88.7   &18.2   &87.5\\\hline
+   IsA-based &20.0   &25.0   &91.8   &89.3   &22.2   &90.5\\\hline
+  Our approach  &20.0   &\textbf{50.0}    &\textbf{98.4}    &\textbf{93.8}    &28.6   &\textbf{96.1}\\\hline
+  \multicolumn{7}{c|}{painter}\\\hline
+      Bag-of-Words   &20.0  &9.1   &86.8  &94.3  &12.5  &90.4\\\hline
+      Attribute-based   &60.0  &15.0  &77.6  &96.7   &24.0   &86.1\\\hline
+      Bag-of-neighboring-bigrams   &25.0  &7.7   &83.8  &95.4   &11.8   &89.2\\\hline
+   Concept-based   &0.0    &0.0    &\textbf{93.3}   &94.6   &0.0    &94.0\\\hline
+      IsA-based &\textbf{100.0} &\textbf{15.6}   &64.5   &\textbf{100.0} &\textbf{27.0}   &78.4\\\hline
+      Our approach   &0.0  & 0.0& 91.3    &\textbf{100.0}  & 0   &\textbf{95.5}\\\hline
+      \multicolumn{7}{c|}{currency} \\\hline
+     Bag-of-Words    &12.5  &25.0  &95.5  &90.0  &16.7  &92.7\\\hline
+     Bag-of-neighboring-bigrams &12.5  &5.3    &73.5   &87.7   &7.4    &80.0\\\hline
+ Concept-based &14.3 &\textbf{50.0}   &\textbf{98.4}  &91.3   &22.2   &\textbf{94.7}
+\\\hline
+Attribute-based    &62.5   &31.3   &84.3   &95.2   &\textbf{41.7}   &89.4\\\hline
+IsA-based    &\textbf{100.0} &21.1   &57.1   &\textbf{100.0} &34.8   &72.7\\\hline
+    Our approach    &83.3  & 26.3   & 77.4   & 98.0   & 40.0  &  86.5
+\\\hline
+\multicolumn{7}{c|}{disease} \\\hline
+     Bag-of-Words    &37.5  &21.4  &80.0  &89.8  &27.3  &84.6\\\hline
+     Bag-of-neighboring-bigrams &12.5  &16.7   &91.4   &88.3   &14.3   &89.8\\\hline
+ Concept-based &16.7  &12.5   &86.3   &89.8   &14.3   &88.0
+\\\hline
+Attribute-based    &\textbf{55.6}  &62.5   &95.0   &93.4  &\textbf{58.8}  &94.2\\\hline
+   IsA-based &44.4   &28.6   &83.3   &90.9   &34.8   &87.0\\\hline
+Our approach   &50.0  &\textbf{66.7}   & \textbf{97.0}    &\textbf{94.1}   & 57.1  &  \textbf{95.5}
+\\\hline
+\multicolumn{7}{c|}{film}\\\hline
+     Bag-of-Words    &46.7  &51.9  &72.3  &68.0  &49.1  &70.1\\\hline
+Bag-of-neighboring-bigrams &\textbf{96.6}  &38.9   &4.4    &66.7   &22.3   &8.2\\\hline
+Concept-based &0.0    &0.0    &\textbf{100.0} &68.0   &0.0    &81.0
+\\\hline
+     Attribute-based    &32.0   &66.7   &90.0   &67.9   &43.2   &77.4\\\hline
+    IsA-based &56.0  &\textbf{77.8}   &90.0   &76.6  &65.1  &82.8\\\hline
+    Our approach    &75.0  & 75.0  &  87.5  &  \textbf{87.5}  &  \textbf{75.0} &   \textbf{87.5}
+\\\hline
+\multicolumn{7}{c|}{language}\\\hline
+    Bag-of-Words &39.0   &78.1   &86.8   &54.1   &52.0   &66.7\\\hline
+    Bag-of-neighboring-bigrams &50.0   &42.9   &90.2   &92.5   &46.2   &91.4\\\hline
+Concept-based &0.0   &0.0    &\textbf{92.7}   &86.4   &0.0    &89.4
+\\\hline
+Attribute-based     &50.0   &16.7   &66.7   &90.9   &25.0   &76.9\\\hline
+   IsA-based &\textbf{66.7}  &28.6   &77.8   &\textbf{94.6}  &40.0   &85.4\\\hline
+    Our approach    &\textbf{66.7}  & \textbf{57.1}   & 90.6    &93.5 &   \textbf{61.5}   & \textbf{92.1}\\\hline
+    \multicolumn{7}{c|}{river}\\\hline
+     Bag-of-Words    &0.0   &0.0   &83.3  &85.4  &0.0   &84.3\\\hline
+     Bag-of-neighboring-bigrams &\textbf{50.0}  &25.0   &\textbf{92.1}   &\textbf{97.2}   &33.3   &\textbf{94.6}\\\hline
+  Concept-based &0.0  &0.0    &82.4   &93.3   &0.0    &87.5
+\\\hline
+       Attribute-based    &48.3   &10.1   &67.5   &80.6   &16.8   &73.5\\\hline
+   IsA-based &48.6   &22.1   &72.1   &81.2   &30.4   &76.4\\\hline
+    Our approach  &0.0 &0.0 &70.8  &  94.4   & 0   &81.0\\\hline
+    \multicolumn{7}{c|}{overall}\\\hline
+     Bag-of-Words    &14.9  &30.3  &87.7  &74.1  &19.9  &80.3\\\hline
+     Bag-of-neighboring-bigrams &18.0  &36.5   &88.8   &75.2   &24.1   &81.4\\\hline
+Concept-based &7.9    &24.2   &\textbf{91.9}   &75.2   &11.9   &82.7\\\hline
+     Attribute-based    &41.9   &50.3   &85.6   &81.0   &45.7   &83.2\\\hline
+ IsA-based &\textbf{64.6 }  &49.1   &76.5   &\textbf{86.1}   &55.8  &81.0\\\hline
+    Our approach  &56.7    &\textbf{62.0}    &88.5    &86.0    &\textbf{59.2}    &\textbf{87.2}
+\\\hline
+\end{tabular}
+}}}
+%}
+\end{table}
+
+\begin{table}[!t]\centering{
+%{\makeatletter\def\@captype{table}\makeatother
+\caption{Prediction results on 12 isA relationships: part1}
+\label{OurMethodsOnfirstSixIsAR}{\centering\scriptsize{\begin{tabular}{|c|c|c|c|c|c|c|} \hline
+2	nation	0.016035764
+2	country	0.01332089
+2	ideology	0.006660445
+2	historical document	0.006660445
+2	passive measure	0.006660445
+2	complicated shape	0.006660445
+2	western military academy	0.006660445
+2	socialism	0.006660445
+2	sport memorabilia	0.006545647
+2	defense mechanism	0.006536147
+2	founding document	0.005988708
+2	east european country	0.005943324
+2	response-focused strategy	0.005847213
+2	historical event	0.005518887
+2	political ideology	0.005421646
+2	economic system	0.005153166
+2	political group	0.004978755
+2	political document	0.004891881
+2	communist country	0.00454573
+2	democratic regime	0.004292377
+  \end{tabular}
+}}}
+\begin{table}[!t]\centering{
+%{\makeatletter\def\@captype{table}\makeatother
+\caption{Prediction results on 12 isA relationships: part1}
+\label{OurMethodsOnfirstSixIsAR}{\centering\scriptsize{\begin{tabular}{|c|c|c|c|c|c|c|} \hline
+3	african country	0.046408304
+3	country	0.043086345
+3	nation	0.037033834
+3	market	0.029880572
+3	power	0.028873855
+3	poor country	0.022409617
+3	colony	0.022287795
+3	societal factor	0.021527915
+3	african nation	0.020458475
+3	developing country	0.017822717
+3	low-income country	0.017570067
+3	exciting place	0.017102498
+3	popular genre	0.01656215
+3	neighbouring country	0.016297391
+3	unpleasant mental reaction	0.015812399
+3	emotion	0.015272326
+3	meaningless conventional phrase	0.015222528
+3	regional power	0.013520539
+3	society	0.010998855
+3	multiethnic country	0.010018706
+  \end{tabular}
+}}}
+
+\begin{table}[!t]\centering{
+%{\makeatletter\def\@captype{table}\makeatother
+\caption{Prediction results on 12 isA relationships: part1}
+\label{OurMethodsOnfirstSixIsAR}{\centering\scriptsize{\begin{tabular}{|c|c|c|c|c|c|c|} \hline
+4	country	0.080634541
+4	african country	0.076182941
+4	nation	0.050914696
+4	neighbouring country	0.032817099
+4	southern african country	0.032582692
+4	poor country	0.030879895
+4	landlocked country	0.02904754
+4	colonialist case	0.024471517
+4	settler area	0.024465404
+4	white-ruled possession	0.024465404
+4	free nation	0.024419134
+4	democratic regime	0.024385176
+4	developed country	0.024306654
+4	outside group	0.023602014
+4	colony	0.022517891
+4	african nation	0.022368918
+4	low-income country	0.021967545
+4	territory	0.021679464
+4	state	0.021118732
+4	sub-saharan african country	0.019921635
+  \end{tabular}
+}}}
+		
+
+
+\begin{table}[!t]\centering{
+%{\makeatletter\def\@captype{table}\makeatother
+\caption{Concepts of example 1}
+\label{conceptOfE1}{\centering\scriptsize{\begin{tabular}{|c|c|} \hline
+nation	&0.0160\\\hline
+country	&0.0133\\\hline
+ideology	&0.0067\\\hline
+historical document	&0.0067\\\hline
+passive measure	&0.0067\\\hline
+complicated shape	&0.0067\\\hline
+western military academy	&0.0067\\\hline
+socialism	&0.0067\\\hline
+sport memorabilia	&0.0065\\\hline
+defense mechanism	&0.0065\\\hline
+founding document	&0.0060\\\hline
+east european country	&0.0059\\\hline
+response-focused strategy	&0.0058\\\hline
+historical event	&0.0055\\\hline
+political ideology	&0.0054\\\hline
+economic system	&0.0052\\\hline
+political group	&0.0050\\\hline
+political document	&0.0049\\\hline
+communist country	&0.0045\\\hline
+democratic regime	&0.0043\\\hline
+  \end{tabular}
+}}}
+\end{table}
+
+\begin{table}[!t]\centering{
+%{\makeatletter\def\@captype{table}\makeatother
+\caption{Concepts of example 2}
+\label{conceptOfE2}{\centering\scriptsize{\begin{tabular}{|c|c|} \hline
+african country	&0.0464 \\\hline
+country	&0.0431\\\hline
+nation	&0.0370\\\hline
+market	&0.0299\\\hline
+power	&0.0289\\\hline
+poor country	&0.0224\\\hline
+colony	&0.0223\\\hline
+societal factor	&0.0215\\\hline
+african nation	&0.0205\\\hline
+developing country	&0.0178\\\hline
+low-income country	&0.0176\\\hline
+exciting place	&0.0171\\\hline
+popular genre	&0.0166\\\hline
+neighbouring country	&0.0163\\\hline
+unpleasant mental reaction	&0.0158\\\hline
+emotion	&0.0153\\\hline
+regional power	&0.0135\\\hline
+society	&0.0110\\\hline
+multiethnic country	&0.0100\\\hline
+democratic regime	&0.00981028\\\hline
+
+  \end{tabular}
+}}}
+\end{table}
+
+\begin{table}[!t]\centering{
+%{\makeatletter\def\@captype{table}\makeatother
+\caption{Concepts of example 3}
+\label{conceptOfE3}{\centering\scriptsize{\begin{tabular}{|c|c|} \hline
+country	&0.0806\\\hline
+african country	&0.0762\\\hline
+nation	&0.0509\\\hline
+neighbouring country	&0.0328\\\hline
+southern african country	&0.0326\\\hline
+poor country	&0.0309\\\hline
+landlocked country	&0.0290\\\hline
+colonialist case	&0.0245\\\hline
+settler area	&0.0245\\\hline
+white-ruled possession	&0.0245\\\hline
+free nation	&0.0244\\\hline
+democratic regime	&0.0244\\\hline
+developed country	&0.0243\\\hline
+outside group	&0.0236\\\hline
+colony	&0.0225\\\hline
+african nation	&0.0224\\\hline
+low-income country	&0.0220\\\hline
+territory	&0.0217\\\hline
+state	&0.0211\\\hline
+sub-saharan african country	&0.0199\\\hline
+  \end{tabular}
+}}}
+\end{table}
+		

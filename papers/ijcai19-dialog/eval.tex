@@ -1,0 +1,102 @@
+\section{Experiment Setup}
+\label{sec:eval}
+
+In this section, we explain the baselines and the adjustments of our full model. Next, we define the evaluation metrics. Finally, we show the details of hyperparameters in our model.
+
+\subsection{Baseline}
+\subsubsection{Greedy strategy (GD)} 
+A simple baseline \textit{Greedy} is that, when a question is posed by $role_Q$, we can directly match the following several non-question sentences said by $role_P$ as the answer until meeting another question or $role_Q$ said a non-question sentence. Specially, GD1 select only one satisfied answer, and GDn select multiple satisfied answers. The rules with \textit{Jump} (\textbf{J}) is that, we can jump the non-question sentence said by $role_Q$ when matching the answers. Four rules are adopted and their results of sample in Figure \ref{fig:sample} are shown in Table \ref{tab:res-simple}.
+% Disadvantages: This baseline does not consider internet delay. Besides, side messages will all be assigned to one question.
+
+
+\begin{table}[h]
+	\small
+    \centering
+    \begin{tabular}{p{1.3cm}<{\centering}p{1.3cm}<{\centering}p{1.3cm}<{\centering}p{2.2cm}<{\centering}}
+        \toprule[1pt]
+         Greedy Rules & ID of Question & Ground Truth & Predicted Alignments\\
+         \midrule[0.5pt]
+         GD1 & $U_3$ & $U_4$ & $U_4$ \\
+         GDN & $U_3$ & $U_4$ & $\{U_4,U_5,U_6\}$ \\
+         GD1+J & $U_3$ & $U_4$ & $U_4$ \\
+         GDN+J & $U_3$ & $U_4$ & $\{U_4,U_5,U_6,U_8\}$ \\
+         \bottomrule[1.2pt]
+    \end{tabular}
+    \caption{Identified QA pairs by simple greedy rules.}
+    \label{tab:res-simple}
+\end{table}
+
+\subsubsection{Distance}
+Considering distance is an important feature for QA matching, we just implement a simple model that inputs a 10-dimension one-hot distance vector into a fully-connected layer and outputs the score for each Q-NQ pair.  
+
+
+\subsubsection{Word-by-word match LSTM (mLSTM)}
+This model is proposed by Wang et al.~\shortcite{wang2015learning}, used for natural language inference. They use an LSTM to perform word-by-word matching based on attention mechanism, with the aims of predicting the relation between two sentences.
+
+
+\subsubsection{Recurrent Pointer Network (RPN)}
+We also implemented the model proposed by He et al.~\shortcite{he2019learning} with some modifications to fit our task since they assume that the questions always posed by one party in their problem. 
+%They used one LSTM + RPN to achieve QA matching. 
+Here, we use two parallel RPN to distinguish questions from two parties. Beside, we compare their proposed classification and regression loss and choose the one that can get the best performance on our dataset.
+%for each NQ said by one party, we try to find the most suited question posed by another role so that two parallel pointer networks are used. 
+%As our dataset is much smaller than their custom service dataset (training data size=1:6.5), we replaced CNN by a pooling strategy to get the sentence embedding. We also replaced the original AdamOptimizer by AdadeltaOptimizer to get a better performance.
+
+\subsection{Our Models}
+We adjust our complete model by wiping off some of its components and name the following models: %\KZ{Consider using more intuitive abbrev?}
+\begin{itemize}
+    %\item \textbf{Q-NQ model} only takes two sentence as input and ignore the distance and history information at all.
+    %\item \textbf{D model} only consider the distance information with fully-connected layer and softmax layer to get the final score.
+    \item \textbf{Distance Model (DM)} wipe off the history information. It directly put Q-NQ pairs with the distances into the Part II of the complete model in Figure \ref{fig:model1}.
+    \item \textbf{History model (HM)} only wipe off the distance information at the last prediction layer.
+    \item \textbf{History-Distance model (HDM)} is the complete model we have explained in Section \ref{sec:method}.
+    
+\end{itemize}
+
+
+\subsection{Evaluation Metrics}
+We first separately evaluate the performance of each model on all non-questions. With the ground truth, we can calculate the accuracy of two kinds of labels: A and O, corresponding to Taccuracy (\textbf{Tacc}) and Faccuracy (\textbf{Facc}) respectively.
+%one is A (\textbf{Tacc}) and the other is O (\textbf{Facc}). 
+
+%Based on the human-labeled dataset, we first evaluate the matching accuracy of each non-question in total and the matching accuracy for non-question with A or O label separately.
+
+Once identified all the QA pairs, we count the true positive, false positive and false negative for each question. Micro-averaging precision (\textbf{P}), recall (\textbf{R}) and F1-score (\textbf{F1}) are calculated for equally treating all $n$ questions in test dataset to measure the quality of predicted QA pairs. 
+
+%the precision, recall and micro-averaging F1-score can be adopted. 
+%For each question, we count the true positive, false positive and false negative. Finally, micro-averaging precision (\textbf{P}), recall (\textbf{R}) and F1-score (\textbf{F1}) are calculated for equally treating all $n$ questions in test set.
+
+%To evaluate the quality of QA pairs we labeled, we also use precision (\textbf{P}), recall (\textbf{R}) and micro-averaging F1-score as our evaluation metrics. For each question, we count the True Positive (\textbf{TP}), False Positive (\textbf{FP}) and False Negative (\textbf{FN}). Finally, micro-averaging precision, recall and F1-score are calculated for equally treating all $n$ questions in test set, as indicated in Equation \ref{equation:micro}.
+
+%\begin{equation}
+%\begin{aligned}
+%    &P_{micro} = \frac{\overline{TP}}{\overline{TP}+\overline{FP}} = \frac{\sum_{i=1}^{n}{TP_i}}{\sum_{i=1}^{n}{TP_i}+\sum_{i=1}^{n}{FP_i}} \\
+%    &R_{micro} = \frac{\overline{TP}}{\overline{TP}+\overline{FN}} = \frac{\sum_{i=1}^{n}{TP_i}}{\sum_{i=1}^{n}{TP_i}+\sum_{i=1}^{n}{FN_i}} \\
+%    &F_{micro} = \frac{2 \times P_{micro} \times R_{micro}}{P_{micro}+R_{micro}}
+%\end{aligned}
+%\label{equation:micro}
+%\end{equation}
+
+
+
+\subsection{Experiment Set-up}
+ 
+ To construct the pairwise dataset used for our approach, we extract Q-NQ pairs based on the 1000 annotated sessions. If the pair exits QA relation, this pair is labeled as True(T). Otherwise, it is labeled as False(F). We randomly select 100 sessions from the training set as development set. The distribution of positive and negative data on three datasets are shown in Table \ref{tab:pairdata}.
+ % For a non question, we extract it with each question before it raised by the other participants.
+ 
+ \begin{table}[h]
+ 	\small
+    \centering
+    \begin{tabular}{cccc}
+        \toprule[1.1pt]
+        Label &Train& Dev& Test\\
+        \midrule[0.8pt]
+        True &7540 & 1226  & 2116\\
+        \hline
+        False & 80631 & 14889 & 23893  \\
+        \bottomrule[1.1pt]
+    \end{tabular}
+    \caption{The distribution of positive and nagative Q-NQ pairs on three datasets.}
+    \label{tab:pairdata}
+\end{table}
+
+
+We use Jieba\footnote{\url{https://github.com/fxsjy/jieba}} to do Chinese word segmentation on all the utterances and pre-train the 100 dimentional word embeddings with Skip-gram model~\cite{mikolov2013efficient}. For our proposed models, we use LSTM with hidden state size equaling 128 and 256 for Part I and Part II of the model respectively. We adopt Adam optimizer with 0.001 learning rate and 0.3 dropout. Learning rate decay is 0.95 and the training process terminates if the loss stop reducing for 3 epochs.

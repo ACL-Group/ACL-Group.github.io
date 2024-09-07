@@ -1,0 +1,15 @@
+all:
+	latex paper
+	latex paper
+	bibtex paper
+	latex paper
+	latex paper
+	dvipdf paper.dvi
+#	dvipdfm -p letter paper.dvi
+#	dvips -t letter -Ppdf paper.dvi -o paper.ps
+#	ps2pdf paper.ps
+#	dvipdf paper.dvi
+
+clean: 
+# rm -f *.bbl *.blg *.aux *.dvi *.log *.ent paper.pdf *.ps
+	rm -f *.bbl *.blg *.aux *.dvi *.log *.ent *.ps *.spl *.pdf

@@ -1,0 +1,282 @@
+\section{Information-Theoretic Scoring}
+\label{sec:scoring}
+
+%>>>>0. we follow information theory to define the cost function
+In this section, we follow information theory to define the function
+$cost(EP, S)$, which is used to measure the cost of a schema describing
+a set of positive entity pairs.
+
+%>>>>1. what's MDL? bytes transmitting data & desc
+    % with the form cost(EP, OS) = cost(OS) + cost(EP | OS), which is most suitable in our work
+% some similar words in popl2008 can be put here, for example, what is compact and precise
+The \textit{Minimum Description Length} (MDL) \cite{grunwald2007minimum}
+is a common principle from information theory,
+which states that a good description is one that minimizes the cost (in bits) of transmitting
+the data.
+% MDL is used in tasks of data representations \cite{}.
+The intuition of MDL comes from compression problem: a user is going to transmit some data
+to another user through network, he/she could send original data directly, or instead, try to compress
+the data by a program, then sending both the program and compressed data to others.
+A compression program (data description) is the best, if it minimizes the sum cost of transmitting both
+the program itself and the compressed data.
+
+Similar idea also holds in our paraphrasing scenario.
+A schema is the description for positive entity pairs. One can query schema over knowledge
+graph first, producing all its hit pairs, and then apply constraints (mentioned later) to hit pairs,
+which reconstructs all positive pairs.
+Since a highly general schema brings large hit pairs (increasing the size of constraints),
+while a perfect specific schema costs too much for transmitting itself, MDL principle
+could handle this trade-off when searching for a most suitable schema.
+% why we have this idea?  data compression, data representing
+% similar: use schema to represent
+% then we have a tradeoff: too general v.s. too specific
+
+
+%cite Grunwald 2007 here
+Formally, the transmitting cost consists of two parts in our task:
+\begin{equation}
+    \label{eqn:mdl}
+    cost(EP,\, S) = cost(S) + cost(EP\, |\, S),
+\end{equation}
+
+\noindent
+where $cost(S)$ is the number of bits to transmit the description (schema) itself, and
+$cost(EP\, |\, S)$ is the number of bits to transmit the data (positive entity pairs) given the schema.
+
+%>>>>2. cost(S)
+%Obviously, a good  is a connected graph. If $S$ contains some vertices which are not connected
+%to $x_{subj}$ and $x_{obj}$ through predicates, those vertices are nothing with the relation that
+%$S$ wants to describe. Removing those vertices can decrease the cost of transmitting $S$ itself without
+%harming the effectiveness for transmitting entity pairs.
+%Due to multiple schemas available, the cost of transmitting $\vec{S}$ equals to the sum of transmitting
+%each schema.
+
+Now we define the cost (in bits) of transmitting a schema graph as \eqnref{eqn:costs}.
+The first row defines the cost to be the sum of transmitting each predicate and node in the schema.
+the second row presents the cost of transmitting one predicate. It's made up of transmitting
+indices of two nodes, the predicate name with its category.
+The remaining part defines the cost for a node and a predicate name.
+Note that the predicate name can only be ``isa'' if the category is $isa$,
+therefore we don't need to transmit this duplicated information.
+\begin{equation}
+\label{eqn:costs}
+\begin{aligned}
+    & cost(S)      = \sum\limits_{p_s \in P_S} cost(p_s) + \sum\limits_{v \in E' \cup T' \cup X} cost(v), \\
+    & cost(p_s)    = 2\log{|E' \cup T' \cup X|} + cost(pred) + \log{|C|}, \\
+    & cost(v)      = \left\{
+        \begin{aligned}
+        \log{|X|} & ~     & v \in X  \\
+        \log{|E|} & ~     & v \in E' \\
+        \log{|T|} & ~     & v \in T'
+        \end{aligned}
+    \right., \\
+    & cost(pred)   = \left\{
+        \begin{aligned}
+        & 0         & ~     & pred = \text{isa}  \\
+        & \log{|L|} & ~     & pred \in L \\
+        \end{aligned}
+    \right.,
+\end{aligned}
+\end{equation}
+
+%>>>>3. cost'(EP | S) (EP \in Hit(S))
+Next, we focus on the cost of transmitting entity pairs given a schema.
+Due to the fact that a single schema is not able to cover all positive pairs,
+we split $EP$ into two parts.
+We define $EP(S)$ as the hit pairs in $EP$, that is, $EP(S) = EP \cap HP(S)$.
+For entity pairs excluded from $EP(S)$, the schema has no way to describe them,
+and we have to transmit this pair directly, costing $2\log{|E|}$ bits.
+Therefore the cost of transmitting pairs given schema is defined as \eqnref{eqn:cost-ep-s}:
+\begin{equation}
+\label{eqn:cost-ep-s}
+    cost(EP|S) = cost(EP(S)|S) + |EP \backslash EP(S)|*2\log{|E|}
+\end{equation}
+
+Recap that $HP(S)$ are retrieved by querying the schema in the knowledge graph.
+The retrieval step resembles querying a view in relational database,
+where the resulting $HP(S)$ is a table with 2 columns, representing $e_1$ and $e_2$.
+Note that $S$ can only hit at most $|E|^2$ different entity pairs, the more specific
+a schema is, the fewer pairs it hits.
+
+For the calculation of $cost(EP(S)\, |\, S)$,
+since $EP(S) \subseteq HP(S)$, when transmitting one entity pair,
+we can either send two entities directly, or send the row number of the pair in $HP(S)$.
+The former one costs $2\log|E|$ bits, while the latter costs $\log{|HP(S)|}$ bits,
+which is always no larger than $2\log|E|$.
+We call this method as \textbf{inclusive} strategy.
+
+There is an alternative \textbf{exclusive} strategy: suppose $EP(S)$ covers more than
+half of pairs in $HP(S)$, instead of transmitting all pairs belonging to $EP(S)$,
+we can only transmit pairs excluded from the set. Under this circumstance, the exclusive
+strategy goes more efficient.
+
+Combining both inclusive and exclusive strategies, the cost of transmitting entity pairs
+given a schema is defined as \eqnref{eqn:costd}:
+\begin{equation}
+\label{eqn:costd}
+\begin{aligned}
+cost(EP(S)\, |&\, S) = 1 + \log|HP(S)| \cdot   \\
+    &\min\{|EP(S)|,\, |HP(S)\, \backslash\, EP(S)|\},
+\end{aligned}
+\end{equation}
+\noindent
+where it cost extra 1 bit to describe whether to use inclusive or exclusive strategy.
+
+%>>>>4. Removing assignment and define f.
+Finally, merging equations together, we get the full definition of $cost(EP, S)$,
+which guides the paraphrase system picking a suitable searching direction
+in the schema generation step.
+%Finally, we define the MDL-based cost function $f$
+%over a schema and entity pairs as follows:
+%\begin{equation}
+%\label{eqn:f}
+%f(EP,\, S) = cost(S) + cost(EP(S)\, |\, S).
+%\end{equation}
+%As we can see, minimizing the whole cost $Z$ in our paraphrasing problem (see \defref{def:pp})
+%is equivalent to minimizing the transmitting cost in \eqnref{eqn:mdl}.
+%In the next section, we will discuss the method to generate candidate schemas
+%and necessary information ($|HP(S)|$ and $|EP(S)|$) used in the cost function.
+
+%
+%%>>>>4. state "assignment matrix" A, because one schema is not enough, we need to assign tasks.
+%    % 1-to-many, we will explain why later
+%    % use a diagram to show "hit" v.s. "assign"
+%    % formal def. of assign
+%    % Then we have f(EP, S) = min_A \in A_space {cost(S) + cost(Grp_A(S) | S)}
+%In order to properly define the cost function $f$ based on MDL principle, we are going to
+%explore what does a single schema contributes to the transmitting cost in \eqnref{eqn:mdl}.
+%Since each schema in $OS$ is independent of each other, therefore
+%$cost(OS) = \sum\nolimits_{S \in OS} cost(S)$, which is the summation cost of transmitting each schema.
+%
+%Now we focus on $cost(EP\, |\, OS)$. Due to the fact that a single schema is not able to cover
+%all pairs in $EP$, we assign each schema with a small part of entity pairs,
+%such that each pair will be described by some schemas.
+%
+%\begin{defn}
+%\textit{Assignment Matrix}
+%
+%Let $EP$ be entity pairs $\{ep_1, ..., ep_n\}$, $OS$ be output schemas $\{S_1, ..., S_m\}$.
+%An \textit{assignment matrix} $A_{n \times m}$ is a 0/1 matrix satisfying:
+%\begin{itemize}
+%    \item[-] $A_{ij} = 1 \Rightarrow ep_i \in HP(S_j)$,
+%    \item[-] $\forall ep_i, \exists S_j$, such that $A_{ij} = 1$.
+%\end{itemize}
+%Besides, we define $EP_A(S)$ as all entity pairs assigned to $S$.
+%\end{defn}
+%
+%Given an assignment matrix $A$, the cost of transmitting entity pairs is
+%made up of each schema transmitting its own pairs:
+%$cost(EP\, |\, OS) = \sum\nolimits_{S \in OS} cost(EP_A(S)\, |\, S)$.
+%
+%\KQ{figure again, different assignments.}
+%Figure b shows two example assignments on ``parentOf'' entity pairs.
+%\KQ{Note that one entity pair can be assigned to more than one schema.
+%We will explain why later.}
+%As we can see in the example, more than one assignment is available.
+%Let $\mathbb{A}$ be the space of all assignments, we define $\hat{A}$ as
+%the assignment at minimum cost:
+%\begin{equation}
+%\hat{A} = \arg\underset{A \in \mathbb{A}}{\min} \sum\limits_{S \in OS} cost(S) + cost(EP_A(S)\, |\, S)
+%\end{equation}
+%Therefore, we define MDL-based cost function $f$ based on the assignment bringing
+%the minimum cost, as follows:
+%\begin{equation}
+%f(EP,\, S) = cost(S) + cost(EP_{\hat{A}}(S)\, |\, S)
+%\end{equation}
+%
+%
+%
+%
+%%>>>>5. summary
+%In summary, we follow the MDL principle and define the cost function of a schema
+%describing entity pairs. In the next section, we model our paraphrasing problem
+%as a task of integer linear programming.
+
+%
+%The cost of transmitting entity pairs given schemas is defined as Equation 3.
+%The whole cost is the sum of transmitting each individual entity pair.
+%For each $\langle e_1, e_2 \rangle,$ if it's hit by at least one schema in $\vec{S}$,
+%the schema with smallest hits is chosen to transmit the pair;
+%otherwise, we transmit $e_1$ and $e_2$ directly.
+%Besides, we need extra $\log{(|\vec{S}|+1)}$ bits to indicate which schema it chooses or not.
+%
+%\begin{equation}
+%\begin{aligned}
+%    & cost(EP|\vec{S})= \sum\limits_{ep \in EP} cost(ep | \vec{S}), \\
+%    & cost(ep | \vec{S}) = \log{(|\vec{S}|+1)} + \\
+%    & \left\{
+%        \begin{aligned}
+%        & \min_{S : ep \in HP(S)} & \log{|HP(S)|} &    & \exists S \in \vec{S}, ep \in HP(S)\\
+%        &                         & 2 \log{|E|}   &    & \text{otherwise}  \\
+%        \end{aligned}
+%    \right. \\
+%\end{aligned}
+%\end{equation}
+
+%
+%The intuition that a good $S$ can reduce the cost of transmitting $EP$ is,
+%the entity pairs are highly related with the hitting pairs of $S$, such that we
+%do not need to transmit every entity in $EP$, instead, we just transmit constraints
+%to control which pairs are transmitted from its hitting set $HP(S)$. \KQ{I'm not sure the word
+%``constraint'' is suitable or not}
+%
+%For example, suppose user has already get $S$ \KQ{we use a true graph $S$ representing ``mother of'' relation},
+%and the user want to transmit $\langle Bill Gates, Mary Gates\rangle$ in $EP$. Since $HP(S)$ has the pair,
+%specifying ``subject is $Bill Gates$'' is informative enough to return the pair in $HP(S)$.
+%
+%%Given an entity pair $\langle e_1, e_2 \rangle$, the the intuition of reducing transmission
+%%cost is that, with the knowledge of $S$ and $KB$,
+%
+%The intuition that a good $S$ can reduce the cost of transmitting $EP$ is,
+%given an entity $e$, if a ground graph $G$ generated from $S$ has $e_{subj} = e$,
+%then the object argument $e_{obj}$ is likely to form a pair with $e$ in $EP$.
+%Similar intuition holds when $e$ occurs in the object side.
+%%Alright, that sentence is so long......
+%
+%For example, suppose a group $\{ \langle e', e_1 \rangle, ..., \langle e', e_{20} \rangle \}$ with
+%the same $e'$ at the subject side.
+%If $S$ generates 20 ground graphs with $e_{subj} = e'$, hitting every pair in the group, then
+%we can transmit entity $e'$ only, instead of 21 different entities.
+%Even if $S$ generates 25 related ground graphs, where 5 hits are not in $EP$, the entities
+%for transmitting is 6, which is still much fewer than original 21 entities.
+%
+%We define the cost of transmitting a pair group as below:
+%\begin{itemize}     % we can add a running example figure illustrating these notions
+%  \item[*] A pair group $grp$ is a set of pairs $\{\langle e', e_1 \rangle, ..., \langle e', e_n \rangle\}$
+%  sharing subjects, or $\{\langle e_1, e' \rangle, ..., \langle e_n, e' \rangle\}$ sharing objects.
+%  The side of sharing entity $e'$ is called \textbf{sharing side}, the other side called \textbf{different side}.
+%  \item[*] A hit group $hgrp(S, grp)$ is a set of entity pairs $\langle e_{subj}, e_{obj} \rangle$
+%  hit by $S$, where all $e_{subj} = e'$ if $grp$ shares subject, or vice versa.
+%  \item[*] $ED(grp)$ is the set of \textbf{E}ntities at the \textbf{D}ifferent side of $grp$.
+%  \item[*] $EH(S, grp)$ is the set of \textbf{E}ntities at the different side
+%  of \textbf{H}it group $hgrp(S, grp)$.
+%  \item[*] The cost of transmitting the pair group given $S$ is:
+%\end{itemize}
+%
+%\begin{equation}
+%\begin{aligned}
+%cost & (grp|S) = \{\min \{|grp|, |ED(grp) \cup EH(S, grp)| \\
+%     & - |ED(grp) \cap EH(S, grp)|\} + 1\} * |E|
+%\end{aligned}
+%\end{equation}
+%
+%
+%Learnt from Equation 3, for one $grp$, the sharing entity $e'$ must be transmitted.
+%For the remaining part, we have two strategies:
+%transmitting entities at different side one by one,
+%or only transmitting part of entities not in ED or EH.
+%
+%$cost(EP | S)$ is defined as Equation 4.
+%We assign each pair in $EP$ into groups (could be more than one), which satisfies that
+%each relation group shares one subject or object. For one assignment, the bits of transmitting
+%$EP$ equals to the summation cost of transmitting each group.
+%Therefore, the cost of transmitting $EP$ is the minimum cost among all possible assignments.
+%
+%\begin{equation}
+%cost(EP | S) = \min_{ass \in assSpace} \sum\limits_{i=1}^{|ass|} cost(grp_i | S)
+%\end{equation}
+%
+%% Add formula here.
+%% Therefore, this is really a searching problem.
+%
+

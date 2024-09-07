@@ -1,0 +1,112 @@
+\section{Candidate Schema Generation}
+In this section, we propose a searching algorithm to generation
+a bunch of candidate schemas (CS) used in the paraphrasing task.
+Besides, we also explore the size of hit pairs and all hit pairs in $EP$.
+%which satisfies what?
+
+%basic framework 5 sents
+%1 Intro
+Basically, the searching process is made up of three parts.
+%2 BFS
+In the first part, we generate a list of most simple schema candidates,
+which are descriptive over a part of $EP$.
+%3 DFS
+With simple schema candidates as the starting point, in the second part, we expand schemas by 
+recursively adding new schema predicates to previous candidates, making schemas more and more 
+specific.
+%4 HP maintain
+During the searching process, we maintain ground graphs of each candidate, and
+calculate number of hit pairs that a candidate schema has.
+%5 Selection
+Finally, we select a finite number of well descriptive schemas from all candidates,
+measured by a cost function which is similar with \eqnref{eqn:f}
+
+\subsection{Simple Schema Retrieval}
+%BFS part (with hit pair gen.)
+%1. what is simple path
+At first, we state the ``most simple'' schema as a \textbf{solid} path, that is,
+all vertices in the schema are variables, connecting $x_{subj}$ and $x_{obj}$.
+%2. intuition
+Intuitively, this path represents a join operation over necessary predicates in $KB$, 
+which is the skeleton of more complex schemas.
+
+%3-6. where the path comes
+
+In order to find this kind of 
+
+In order to search descriptive paths for $EP$, we use breadth-first search algorithm 
+to find paths for each entity pair $\langle e_1, e_2 \rangle$.
+The basic idea is to use a breadth-first search algorithm to 
+Due to the existence of various predicates and popular entity in $KB$, a exhausted search
+could result in many long paths, but meaningless in natural language.
+Therefore, we use a parameter $k$ to limit the maximum length of a path, which
+controls the searching scope.
+In practice, we use a bidirectional strategy to save time:
+We start from both $e_1$ and $e_2$, then search $k/2$ layers at each side simultaneously,
+recording different intermediate entity $e'$ with all paths between $\langle e_1, e' \rangle$
+and $\langle e', e_2 \rangle$.
+By merging paths on $e'$, we retrieve all paths from $e_1$ to $e_2$.
+\KQ{Add figures showing example paths in the running ex.}
+
+%7-9. how to bring subgraphs. (including sampling)
+In the process of breadth-first search, we actually recorded all entities in each individual schema $S$ (a path),
+so all ground graphs within $EP$ are stored. \KQ{Add a figure to show how an example
+ground graph is generated in BFS.}
+Therefore, we keep these ground graphs and count the number of hit pairs of $S$ in $EP$.
+Besides, we aim to calculate the size of $|HP(S)|$ within the scope of whole $KB$, 
+which is processed by querying relations in $KB$.
+
+\KQ{Suppose we have an example schema $x_{subj}--rel_1--x_1--rel_2--x_2--rel_3--x_{obj}$, adding into a fig.}
+By querying $rel_1$ in $KB$, we retrieve all possible $\langle e_{subj}, e_1 \rangle$ pairs.
+Then we take all possible $e_1$ and further query $rel_2$, resulting in possible $\langle e_{subj}, e_1, e_2 \rangle$ triples.
+Finally, by querying $rel_3$, all $\langle e_{subj}, e_1, e_2, e_{obj} \rangle$ tuples could be retrieved,
+representing different ground graphs of the schema.
+\KQ{Replace all $rel_x$ with specific predicates.}
+However, due to the difference of intermediate entities, the size of ground graphs could be too large to store and process.
+Thus, we sample subgraphs in each query step. 
+For example, suppose we get too many $\langle e_{subj}, e_1, e_2 \rangle$ triples,
+we first group triple by $\langle e_{subj}, e_2 \rangle$, and then equally select some group of triple,
+which reduces the size of ground graphs to a satisfiable limit.
+
+\subsection{Schema Expansion}
+%DFS part
+%6 sents
+%1. input?
+In the second part of searching process, we take the simple schemas (paths) and 
+corresponding ground graphs as input, and explore more specific schemas.
+%2. how to expand
+Based on the definition of schema graph, there are two kinds of adding strategies listed below:
+\begin{itemize}
+    \item[-] Add a new variable, and use a \textit{solid} relation to connect the variable with an existing variable, 
+    but \textbf{except} $x_{subj}$ and $x_{obj}$;
+    \item[-] Add a specific entity (or type), and use a \textit{dashed} (or \textit{isa}) relation to
+    connect the entity (or type) with an existing variable.
+\end{itemize}
+%3. dfs
+While there are many specific possible adding edges for one schema, we adopt
+a depth-first search to recursively add edges one by one.
+%4. formula
+Therefore, we need to determine which edge is to added for the current state of schema in the DFS process.
+Among several potential schemas (after adding an edge), we use a cost function to measure the quality
+of each schema:
+\begin{equation}
+\label{eqn:dfs}
+\begin{aligned}
+g(EP,\, S) = & Cost(S) + Cost(EP(S)\, |\, S) \\
+             & + 2 \log |E| \cdot (|EP| - |EP(S)|).
+\end{aligned}
+\end{equation}
+
+\noindent
+Note that the difference of $g$ and $f$ (\eqnref{eqn:f}) is to increase
+$2 \log |E|$ bits for each entity pair not in $EP(S)$.
+Since a schema cannot cover all pair in $EP$, the intuition of $g$ is the cost of 
+transmitting $EP$ by using $S$ only: if $S$ cannot describe some entity pair in $EP$,
+we have to directly transmit these two entities.
+Therefore, we can compare the quality between general and specific schemas.
+
+%5. limit
+Also, we need to limit the scope schemas in DFS process. We follow the idea of $k$
+in the step of simple schema retrieval, and limits the variables in the expanded
+schema.
+

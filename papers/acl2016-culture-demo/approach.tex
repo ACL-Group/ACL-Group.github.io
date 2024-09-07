@@ -1,0 +1,140 @@
+\section{Approach}
+\label{sec:approach}
+This section discusses the preprocessing of our text corpora,
+an overview of the Skip-grams model, which is the basis for capturing
+word semantics, as well as our four methods
+to compute the cultural difference score.
+
+\subsection{Data Preprocessing}
+\label{sec:data}
+
+%\subsubsection{Literature corpus}
+We use non-parallel corpora to train word embeddings.
+We collect these corpora (both English and Chinese) from online
+electronic books including such categories as poetry,
+science fictions, politics, biography, fables, etc.
+The English corpus contains 2,988 books, totaling 1.8GB, while the
+Chinese corpus is made up of 25,000 books, with a combined size of 5.1GB.
+For English, we lemmatize the text
+and reduce all words to their original forms.
+Meanwhile, for Chinese, we apply a word segmentation tool
+called NLPIR \cite{NLPIR} to the text and remove all the non-Chinese terms.
+We also remove all punctuation charaters and those terms with
+frequency less than 10 for both English and Chinese to make
+sure every term in the corpora is meaningful.
+
+%\subsubsection{Translation pairs}
+
+Because our goal is to compute cultural difference score between a
+pair of equivalent English and Chinese terms, we need to prepare such
+term pairs in advance.
+%In our study, we use 5000 translation pairs to establish relationships across English and Chinese embedding spaces.
+First, we get the all English entities with a name that is a
+single word from WordNet as our candidate English terms.
+Then we filter out words that are highly ambigious from the above list.
+To do that, we search each word on English Wikipedia and
+keep those words that have only one dominant Wikipedia page, that is,
+when such a word is searched, Wikipedia directly takes you to
+its corresponding article, instead of a disambiguation page.
+After that we translate English words into Chinese by Youdao online
+dictionary \footnote{\url{http://dict.youdao.com}.}, and select the first noun translation as
+the equivalent Chinese term.
+
+%In this study, our input data is English and Chinese literature including categories such as poetry, science fictions, politics, biography, fables, etc.
+%
+%Firstly, we generate a list of word pairs using WordNet and Wikipedia. Each pair contains a English word which is a noun according to WordNet and its corresponding Chinese translation.
+%
+%
+%Then for English, we lemmatize the text and reduce all words to original form.
+%Meanwhile, for Chinese, we apply segmentor tools to the text. After that every component in the corpus is a meaningful term.
+%We remove stopwords from the paragraphs for both English and Chinese.
+%Stopwords include names of persons or places \cite{names},
+%prepositions, pronouns,
+%conjunctions, numerals and modal verbs, etc. which do not have significant
+%meanings.
+
+%Finally, we use Skip-gram model to train word embedding from English and Chinese corpus separately. In this step, two vector representations are generated for every word pair, one for English and the other for Chinese.
+%And we apply each of the following algorithms to calculate the similarity of each pair. The similarity between the two gives a numerical measurement to identical cultural difference.
+
+\subsection{The Skip-gram Model}
+
+We use Skip-gram model to train word embedding from English and Chinese
+corpus separately. At this step, two vector representations are generated
+for every word pair, one for English and the other for Chinese.
+
+In the Skip-gram model, the objective is to maximize the average
+log probability
+\begin{equation*}
+\frac{1}{T} \sum_{t=1}^{T} \sum_{j=-c}^{c} \log p(w_{t+j}|w_t)
+\end{equation*}
+where $c$ is the size of training window,
+and $T$ is the total size of training corpus.
+
+$p(w_i|w_j)$ is defined by a softmax function
+\begin{equation*}
+p(w_i|w_j)=\frac{\exp(u_{w_i}^{\top} v_{w_j})}{\sum_{l = 1}^{V} \exp(u_l^{\top} v_{w_j})}
+\end{equation*}
+where $V$ is the size of the vocabulary, $u_w$ and $v_w$ are the ``input'' and ``output'' vectors representing the word $w$. In our experiments, we set the window size $c$ as 10 and the size of ``input'' and ``output'' vectors equals to 100.
+
+After we train this model on each monolingual corpus, vector representations are generated for every word appearing in our vocabulary and we have two vector spaces: one for English corpus and the other for Chinese corpus.
+
+\subsection{Similarity Calculation}
+
+In this part, we will introduce four similarity calculation methods.
+The inverse of similarity between the vector representations for
+corresponding English and Chinese gives the amount of cultural difference
+for a pair.
+
+\subsubsection{Linear-transformation Algorithm}
+
+English and Chinese vector spaces trained from the Skip-gram model
+are not directly comparable due to unknown meaning of each dimension.
+However, experiments \cite{Mikolov:2013tp} have shown that the relationship
+between these vector spaces can be possibly captured by
+rotation and scaling, represented by a linear transformation matrix $W$.
+This matrix can be learned using a number of words with {\em little}
+cultural difference and the following optimization problem:
+
+\begin{equation*}
+\argmin_{W}\sum_{i=1}^{n}\norm{Wx_{i}-t_{i}}^2
+\end{equation*}
+where $x_{i}$ is a word in Chinese while $t_{i}$ is its
+corresponding translation in English and $n$ is the size of
+training samples.
+
+Thus we train a linear transformation matrix from Chinese to English spaces and map each Chinese word vector to the English space. Finally we calculate the cosine similarity between the two vectors in the English space.
+
+\subsubsection{KNN-set Algorithm}
+
+For each pair of English and Chinese terms, we find $k$ nearest neighbors
+for both the Chinese and English word in their respective embedding space.
+We use two distance metrics, namely cosine similarity and Euclidean distance,
+to find $k$ nearst neighbors. In our experiment, we tune $k$ to be 100. Once we have these neighbors, we can use
+this set of terms to represent the orginal English or Chinese term.
+Since we can translate between Chinese and English terms,
+we can map the words in the Chinese set to English and calculate
+Jaccard similarity between this translated set and original English set as follows:
+
+\begin{equation*}
+J(A,B)=\frac{|A \cap B|}{|A \cup B|}
+\end{equation*}
+where $A$ and $B$ are two sets.
+
+\subsubsection{Distance-vector Algorithm}
+
+For English, we calculate the distance by cosine similarity from a
+term vector to all other terms in word embedding space,
+in order to get an $n$-dimensional vector, where $n$ is the total number of
+terms in our vocabulary. We call this $n$-dimensional vector
+{\em distance vector}, and the $i^{th}$ dimension for the distance
+vector represents the distance to word $w_i$ in the vocabulary.
+We do the same for all terms in the Chinese space.
+Since each dimension in this new representation corresponds to a word in the
+vocabulary and each word has its mapping to another language,
+these distance vectors are comparable in two different spaces.
+Hence we can calculate the cosine similarity of all pairs using
+the distance vectors.
+
+%\subsubsection{Linear-transformation Plus KNN-set Algorithm}
+%
+%In this method, we combine the advantages of linear-transformation algorithm and distance-vector algorithm. Firstly we project the Chinese words to English space. Then we create k-nearest-neighbour set according to the location in English space. This set might contain both Chinese words and English words. So we translate the words in Chinese set to English. Finally we calculate similarity using Jaccard.

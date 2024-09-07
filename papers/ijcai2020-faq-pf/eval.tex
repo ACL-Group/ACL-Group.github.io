@@ -1,0 +1,165 @@
+\section{Experiment and Evaluation}
+\label{sec:eval}
+In this section, we first introduce the metric to evaluate each module of the pipelines and the entire QA pairs.
+We then discuss the result of each module to select the best combination for the pipeline method and the filtering method.
+Finally, we will discuss the results of pipeline methods and filtering methods, and the performance of the aspect.
+
+\subsection{Evaluation Metric}
+For individual modules, we use the well-known metrics to evaluate the performance of each model.
+For paragraph retrieval, we choose the average F1@$K$ and MRR@$K$ to score the list of paragraphs ranked with the relevance to the aspect, where $K$ is the number of the ground truth paragraphs.
+For answer span extraction, we evaluate the performance of answer spans as Subramanian et al.~\shortcite{subramanian2017neural} did. 
+We calculate the token-level F1 score matrix of elements $f_{i,j}$ between the two answers $a_i$ and $a_j$ and obtain the mean precision, recall, F1 among the paragraphs.
+For question generation, we choose the widely used generation metrics, such as BLEU, METEOR, and ROUGE-L which are implemented by Sarma's work~\cite{sharma2017relevance}.
+
+For the entirety of QA pairs, we design an end-to-end metric to score each pair of generated QA.
+We use the aspect as a unit to judge the QA pairs.
+Given a document and an aspect keyword, there is a set of ground truth QA pairs $(Q, A)$ and a set of generated QA pairs $(\hat{Q}, \hat{A})$.
+We calculate the QA score matrix $M$ of elements $S_{i,j}$ between the ground truth QA pair $(q_i, a_i)$ and $a_j$ and predicted QA pair $(\hat{a_j}, \hat{q_j})$.
+The pairwise score is:
+\begin{equation}
+\scriptsize
+\begin{aligned}
+\text{J-BLEU} &= Jaccard(a_i, \hat{a_j})\times \text{BLUE}(q_i, \hat{q_j})\\
+\text{J-METEOR} &=Jaccard(a_i, \hat{a_j})\times \text{METEOR}(q_i, \hat{q_j})\\
+\text{J-ROUGE} &= Jaccard(a_i, \hat{a_j})\times \text{ROUGE}(q_i, \hat{q_j})\\
+\end{aligned}
+\end{equation}
+
+Where $a_i$ and $\hat{a_j}$ are the tokens of ground truth answer span and predicted answer span respectively, and $q_i$ and $\hat{q_j}$ are the strings of ground truth question and predicted question respectively.
+
+Max-pooling along the ground truth axis of score matrix $M$ assesses the precision of each QA pair generated for the aspect: $p_j=max_i(S_{i,j})$.
+Max-pooling along the predict axis of $M$ assesses the recall:  $r_i=max_j(S_{i,j})$.
+The multi-QA metric is:
+\begin{equation}
+\scriptsize
+\begin{split}
+&Precision=mean(p)\\
+&Recall=mean(r)\\
+&F1=\frac{2\times Precison\times Recall}{Precison+Recall}
+\end{split}
+\end{equation}
+
+\subsection{Results of Individual Module from Pipelines}
+The pipeline method and filtering method are designed as the QA pairs generation frameworks which take the state-of-the-art of different areas into consideration.
+We have separately introduced the methods of each module in Section \ref{sec:method}.
+The comparison of the results for each module is listed in Table \ref{tab:retrieval}, \ref{tab:answer}, \ref{tab:QG}.
+
+\subsubsection{Paragraph Retrieval}
+From Table~\ref{tab:retrieval}, TF-IDF and BM25 have similar performance and BERT is much better than the former two traditional methods. Here we just use the base model of BERT due to the limit of the GPU resource. 
+
+\begin{table}[th]
+\small
+\centering
+\begin{tabular}{ccc}
+\hline
+\textbf{} & \textbf{F1@K} & \textbf{MRR@K} \\ \hline\hline
+\textbf{TF-IDF} & 54.94 & 57.22 \\ 
+\textbf{BM25} & 55.86 & 58.45 \\ 
+$\text{\textbf{BERT}}_{\text{\textbf{base}}}$ & \textbf{76.50} & \textbf{73.48} \\ \hline
+\end{tabular}
+\caption{\label{tab:retrieval} The results of paragraph retrieval module.}
+\end{table}
+
+
+\subsubsection{Answer Extraction}
+
+From Table~\ref{tab:answer}, the NER model has a high recall and low precision. Because the largest proportion of the answers in our dataset are entities. We keep all ner results of the NER model, so the precision is low. Bi-LSTM+CRF gets the maximum recall but also performance bad on precision. We think the reason is in the training part we only use the sentences with answers. This may make the model predict answer tags for every sentence. The pointer network gets the highest F1 score. But the recall is the lowest. Because it's a generative model and it's difficult for it to generate the same answer in the ground truth.
+
+\begin{table}[th]
+\small
+\centering
+\begin{tabular}{cccc}
+\hline
+\textbf{} & \textbf{F1} & \textbf{Precision} & \textbf{Recall} \\ \hline\hline
+\textbf{NER} & 20.63 & 14.58 & 35.26 \\ 
+\textbf{Bi-LSTM+CRF} & 31.17 & 22.50 & \textbf{50.72} \\ 
+\textbf{Ptr} & \textbf{32.6}1 & \textbf{32.03} & 33.21 \\ \hline
+\end{tabular}
+\caption{\label{tab:answer} The results of answer extraction module. \textbf{NER} is the entity tagging model. \textbf{Bi-LSTM+CRF} is the combination of Bi-LSTM and CRF. \textbf{Ptr} is the pointer network.}
+\end{table}
+
+%\begin{table}[th]
+%\begin{tabular}{|c|c|c|c|c|c|c|}
+%\hline
+%\textbf{} & \textbf{BLEU-1} & \textbf{BLEU-2} & \textbf{BLEU-3} & \textbf{BLEU-4} & \textbf{METEOR} & \textbf{ROUGE-L} \\ \hline
+%\textbf{Seq2seq} & 43.93 & 28.24 & 20.17 & 14.92 & 19.97 & 43.84 \\ \hline
+%\textbf{UNILM} & 49.50 & 34.58 & 26.30 & 20.65 & 24.37 & 49.36 \\ \hline
+%\textbf{Seq2Seq+Aspect} & 45.32 & 29.09 & 20.77 & 15.27 & 20.40 & 43.58 \\ \hline
+%\textbf{UNILM+Aspect} & 51.42 & 36.57 & 28.12 & 22.27 & 25.63 & 50.85 \\ \hline
+%\end{tabular}
+%\caption{\label{tab:QG} The results of question generation module.}
+%\end{table}
+
+\subsubsection{Question Generation}
+
+From Table~\ref{tab:QG}, we find seq2seq with aspect and UNILM with aspect both have better performance than the original model, which means the aspect can help the question generation model to generate questions closer to the targets. 
+The performance of UNILM is much better than seq2seq.
+
+\begin{table}[th]
+\small
+\centering
+\begin{tabular}{cccc}
+\hline
+\textbf{} & \textbf{BLEU-4} & \textbf{METEOR} & \textbf{ROUGE-L} \\ \hline\hline
+\textbf{Seq2seq} & 14.92 & 19.97 & 43.84 \\ 
+$\text{\textbf{Seq2seq}}_{\text{\textbf{Aspect}}}$ & 15.27 & 20.40 & 43.58 \\ \hline
+\textbf{UNILM} & 20.65 & 24.37 & 49.36 \\ 
+$\text{\textbf{UNILM}}_{\text{\textbf{Aspect}}}$ & \textbf{22.27} & \textbf{25.63} & \textbf{50.85} \\ \hline
+\end{tabular}
+\caption{\label{tab:QG} The results of question generation module. \textbf{Seq2Seq} is the seq2seq mdoel with gated self-attention and copy mechanism. $\text{\textbf{Seq2seq}}_{\text{\textbf{Aspect}}}$ is the seq2seq model with aspect. $\text{\textbf{UNILM}}_{\text{\textbf{Aspect}}}$ is the UNILM model with aspect.}
+\end{table}
+
+
+\subsection{Results of Aspect-based QA Generation}
+In Figure \ref{tab:allres}, we display the result of our pipeline method and the filtering method. Sine BERT is much better than the other two methods, we just use BERT in retrieval step. In filtering experiment, we only use UNILM as the generation model for the same reason.
+%Due to the limit of space, we 
+%The discussion is as follows.
+\subsubsection{Different Combination of Pipeline Method}
+The results in the first four rows show LSTM+CRF performance worse than the pointer network in the pipeline method. So we just use pointer network in the UNILM pipelines and from the results, we can see the combination of BERT, pointer network and UNILM with the aspect is the best. Each of them also has the best performance in individual module evaluation.
+
+
+\subsubsection{Using Filtering with Retrieval}
+If we use filtering at the end of the pipeline method, the precision is better but the recall is lower. Because the filter can remove the QA pairs which is irrelevant to the aspect. However, the filter also removes some relevant pairs which leads to a lower recall. Overall, the filtering method can get better performance on F1 score and precision but lower performance on recall.
+
+\subsubsection{Using Filtering without Retrieval}
+If we don't use retrieval in the first step, the final performance is the worst in precision. Without retrieval the pipeline model will generate QA pairs for each paragraph, so the recall is lower than filtering with retrieval.  
+
+
+%\begin{table*}[th]
+%\small
+%\centering
+%\begin{tabular}{cccccccccc}
+%\hline
+% & \multicolumn{3}{c}{\textbf{J-BLEU}} & \multicolumn{3}{c}{\textbf{J-METEOR}} & \multicolumn{3}{c}{\textbf{J-ROUGE}} \\ 
+% & \textbf{F1} & \textbf{Precison} & \textbf{Recall} & \textbf{F1} & \textbf{Precision} & \textbf{Recall} & \textbf{F1} & \textbf{Precision} & \textbf{Recall} \\ \hline\hline
+%\textbf{BERT+Ptr+Seq2seq} & 0.83 & 0.90 & 0.76 &  &  &  & 6.85 & 6.91 & 6.79 \\ 
+%\textbf{BERT+Ptr+}$\text{\textbf{Seq2seq}}_{\text{\textbf{Aspect}}}$  & 0.79 & 0.83 & 0.75 &  &  &  & 6.91 & 6.96 & 6.85 \\ 
+%\textbf{BERT+Ptr+UNILM} & 2.23 & 2.22 & 2.23 &  &  &  & 9.80 & 9.67 & 9.93 \\ 
+%\textbf{BERT+Ptr+}$\text{\textbf{UNILM}}_{\text{\textbf{Aspect}}}$ & 2.30 & 2.35 & 2.25 &  &  &  & \textbf{10.00} & 9.92 & \textbf{10.08} \\ \hline
+%\textbf{Ptr+UNILM+Filtering} & 0.92 & 0.72 & 1.26 &  &  &  & 5.02 & 3.71 & 7.79 \\ 
+%\textbf{Ptr+}$\text{\textbf{UNILM}}_{\text{\textbf{Aspect}}}$\textbf{+Filtering}& 1.31 & 1.10 & 1.62 &  &  &  & 5.25 & 3.93 & 7.87 \\ \hline
+%\textbf{BERT+Ptr+UNILM+Filtering} & 2.18 & 2.77 & 1.80 &  &  &  & 9.31 & 11.45 & 7.85 \\ 
+%\textbf{BERT+Ptr+}$\text{\textbf{UNILM}}_{\text{\textbf{Aspect}}}$\textbf{+Filtering} & 2.32 & 3.14 & 1.84 &  &  &  & 9.39 & \textbf{11.99} & 7.71 \\ \hline
+%\end{tabular}
+%\end{table*}
+
+\begin{table*}[th]
+\small
+\centering
+\begin{tabular}{cccccccccc}
+\hline
+ & \multicolumn{3}{c}{\textbf{J-BLEU}} & \multicolumn{3}{c}{\textbf{J-METEOR}} & \multicolumn{3}{c}{\textbf{J-ROUGE}} \\ 
+ & \textbf{Precision} & \textbf{Recall} & \textbf{F1} & \textbf{Precision} & \textbf{Recall} & \textbf{F1} & \textbf{Precision} & \textbf{Recall} & \textbf{F1} \\ \hline\hline
+ \textbf{BERT+Bi-LSTM\_CRF+Seq2seq} & 0.15 &  0.63  & 0.25  & 1.23  & 4.75  & 1.95 & 2.37 &  9.12  & 3.76\\
+ \textbf{BERT+Bi-LSTM\_CRF+}$\text{\textbf{Seq2seq}}_{\text{\textbf{Aspect}}}$ & 0.24 &  0.61 &   0.35 &  1.46 &  3.47  & 2.06 &  2.80  & 6.63  & 3.94\\
+\textbf{BERT+Ptr+Seq2seq} & 0.90  &  0.76  &  0.83  &  4.18  & 4.34  & 4.26 &  6.91  &  6.79   & 6.85  \\ 
+\textbf{BERT+Ptr+}$\text{\textbf{Seq2seq}}_{\text{\textbf{Aspect}}}$  & 0.83  &  0.75  &  0.79  &  4.22  & 4.20  & 4.21 &  6.96  &  6.85  &  6.91  \\ 
+\textbf{BERT+Ptr+UNILM} & 2.22 & 2.23  &  2.23  &  5.30 & 5.36  & 5.33 &  9.67 &   9.93  &  9.80  \\ 
+\textbf{BERT+Ptr+}$\text{\textbf{UNILM}}_{\text{\textbf{Aspect}}}$ & 2.35  & \textbf{2.25}   & 2.30   & 5.36  & 5.35 & \textbf{5.35} &  9.92 &   \textbf{10.08} &  \textbf{10.00}  \\ \hline
+\textbf{Ptr+UNILM+Filtering} & 0.72   &  1.26  &  0.92   & 2.78 &  5.23  & 3.63  & 3.71 &   7.79  &  5.02  \\ 
+\textbf{Ptr+}$\text{\textbf{UNILM}}_{\text{\textbf{Aspect}}}$\textbf{+Filtering}& 1.10 & 1.62  &  1.31   & 2.77  &  \textbf{5.39} &  3.66 &  3.93  &  7.87   & 5.25  \\ \hline
+\textbf{BERT+Ptr+UNILM+Filtering} & 2.77  &  1.80   & 2.18  &  6.44  & 4.30  & 5.16  & 11.45  & 7.85   & 9.31  \\ 
+\textbf{BERT+Ptr+}$\text{\textbf{UNILM}}_{\text{\textbf{Aspect}}}$\textbf{+Filtering} & \textbf{3.14}  &  1.84  &  \textbf{2.32}  &  \textbf{6.59} &  4.16 &  5.08 &  \textbf{11.99}  & 7.71  &  9.39  \\ \hline
+\end{tabular}
+\caption{\label{tab:allres} The result of pipeline framework in first four columns and filtering framework in last four columns.}
+\end{table*}

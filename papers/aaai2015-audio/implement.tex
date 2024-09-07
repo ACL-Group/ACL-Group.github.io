@@ -1,0 +1,198 @@
+\section{Implementation and Discussion}
+\label{sec:impl}
+
+This section discusses a few implementation details which are necessary for
+creating a prototype system and makes some additional remarks about
+our approach.
+
+\subsection{Expansion of Audible Event Terms}
+In the growing phase of the vocabulary construction process, we expand the
+candidate pool by collecting tags or filenames of the returned results
+from the sound search engine.
+Our source of event terms as well as audio clips come from the following
+sources:
+\begin{itemize}
+\item FreeSound: \url{http://www.freesound.org}
+\item SoundJax: \url{http://soundjax.com}
+\item FindSounds: \url{http://www.findsounds.com}
+\item MediaCollege: \url{http://www.mediacollege.com}
+\item SoundRangers: \url{http://www.soundrangers.com}
+\end{itemize}
+
+%This audible concept set defines what audible events we concern about, which makes a big difference. So we tried our best to make it complete and strict.
+%Firstly, we initiate the audible concept from three parts:
+%\begin{itemize}
+%\item Sound types list in FindSounds\footnote{http://www.findsounds.com/types.html}, MediaCollege\footnote{http://www.mediacollege.com/downloads/sound-effects/} and Soundrangers\footnote{http://www.soundrangers.com/index.cfm?category=1\&left\_cat=1}
+%\item Entities of "sound", "noise", "animal", "sound effect" (over 5500 entities, e.g, "barking dog", "phone ring", "footstep")
+%\item Hyponyms of "sound", "noise" in WordNet (over 200 words, e.g, "bell", "yip", "crack")
+%\end{itemize}
+%During the initialization process, we find many concepts from Probase inaudible. In a subjective check over a sample set within 100 concepts, an error rate of $10\%$ is obatained and $38\%$ of them are names of particular animal species, which are useless. Taken the form inconsistency of some concepts and the frequency information in Probase into consideration, frequency filtering and lemmatization are applied by following steps:
+%\begin{itemize}
+%\item For one-word concepts (e.g, "cars", "plane"), we add the frequency of plural format to its singular format.
+%\item We throw off multi-word concepts with improper punctuations (e.g, his first album "mother's tea")
+%\item Many concepts are too specific (e.g, "police dog", "guide dog", "hunting dog" are all hyponyms of "dog"), which we add their frequency to their hypernyms.
+%\item We merge synonyms to enhance concepts's frequency using WordNet synsets. (e.g, "bell" ($F(C=sound|I=bell) = 26$) and "doorbell" ($F(C=sound|I=doorbell) = 18$) contribute to each other, as a consequence, their frequency are both 44)
+%\item Finally, we abandon the concepts of which frequency is less than 5.
+%\end{itemize}
+%In our work, normalized and clear audible concept set is important. So we strickly merge concepts again. We observe our set and find that there are not only sound makers (e.g, "baby", "ambulance"), but also verbs (e.g, "beat", "knock on"), sometimes with their objects (e.g, "beat drums", "knock on a door") or their subjects (e.g, "water run", "dog bark"). So we merge concepts into lemmatized representations as follows:
+
+The tags or keywords obtained from these engines can be noisy. We thus
+lemmatize the words and remove redundant words like ``... noise'',
+``... sound effects'', ``sound of ...'', ``... ambience''. For example,
+we transform ``the sound of barking dog'' into ``barking dog'',
+``churr sound'' into ``churr'', before matching them in Probase. The reason
+we require all these new terms to be Probase entities because we hope to find
+their conceptual siblings in the taxonomy to further expand the vocabulary.
+
+%\item Cast present participles and past participles into its base form.
+%\end{itemize}
+%As the recognition of present participles from WordNet stemmer is not precise as we expected, we designed four more rules:
+%\begin{itemize}
+%\item A present participles should end with suffix "-ing" and be a verb in WordNet.
+%\item If it is also an adjective in WordNet, such as "interesting", we think it is not a present participle.
+%\item If its noun senses is less than one third of its verb senses, we regard it as present participle.
+%\item Otherwise, we check the glosses of its noun senses. If there are some particular expressions such as "... action of ...", "... process of ...", etc., we also regard it is.
+%\end{itemize}
+%So far, the set is clean enough, but it is of a small size. Thus, we try to expand the set iteratively, using sound search engine to filter and knowledge base to expand.
+%To make sure that we can get enough audio training data and the new concept is audible, filtering by sound search engine is necessary. The steps are shown below:
+%\begin{enumerate}
+%\item Query every audibel concept on one or more sound search
+%engines.
+%%SoundJax\footnote{http://soundjax.com/}, FindSound\footnote{http://www.findsounds.com/} and FreeSound\footnote{http://www.freesound.org/}.
+%\item Ignore return files whose length is longer than 40 seconds.
+%\item Exact match and synonym match for file name are both conducted.
+%\item Add frequent file names or tags taht are not in our set yet.
+%\end{enumerate}
+%After filtering, we use Probase and WordNet to bootstrap more audible concept, by adding confident siblings of existing concepts into set. Figure\ref{fig:expand} shows how we add siblings using WordNet. "dog" is the hypernyms of "bulldog", "police dog", "guide dog", etc. in current set, then we find some hyponyms of "dog" that are not in set yet, "sheep dog", "puppy", "hunting dog", etc. to add into our set.
+%
+
+We are conservative about adding siblings of an existing candidate event into
+the pool. For example, if we already have ``dog'', ``cat'' and ``donkey''
+in the pool, we may be able to deduce that ``animal'' is their common
+super-concept by clustering.
+However, many entities under ``animal'', such as ``oyster'' make virtually
+no sound. We only admit entities of a concept $c$ into the pool if
+the proportion of entities in $c$ that are already in the pool is larger
+than a threshold, say 0.5.
+
+Building the audible event vocabulary is one of the most critical steps in
+this work. While Probase and the sound search engine provide indications
+of whether a term is audible, they are not always reliable. Also, the current
+approach restricts the vocabulary to terms which are in Probase, which means
+some audible event terms might be excluded.
+
+%Obviously, a lot of concepts in our set have a large quantities of hypernyms, result in even more candidate hyponyms to add in, which causes a lot of noise. For example, "dog" has a hypernym "animal", which has a hyponym "oyster". Since "oyster" is not very audible, we should avoid adding it to our set. We set two thresholds\ref{equ:t} to avoid such noise:
+%\begin{equation}
+%\label{equ:t}
+%r(c,P) = \frac{\sum_{e \in c, e \in P} f(e, P)}{h(w)},
+%\end{equation}
+%where, $s(w,V)$ is the number of concepts $w$'s hyponyms in current set $V$, $h(w)$ is the number of all hyponyms of concept $w$.
+%
+
+\subsection{Collection of Text Contexts}
+When extracting contexts for scenes in transcripts, we used a
+stricter approach that guarantees the text segment being extracted indeed
+describes the scene, because we match the scene word or its synonyms with
+open scene patterns in the scripts. This, however, can lead to insufficient
+number of contexts and thus unreliable event-scene distributions or biases.
+Another approach is to extract scene texts which {\em contains}
+the scene word or its synonyms. We didn't implement our system this way
+because while it improves the coverage, it brings about much more noise.
+The volume of our corpus is not statistically large enough to reflect the
+true dependency between the scene words and associated audible event terms.
+This statistical significance, however, may be achieved by mining the relations
+between the two on much larger web corpus using for example simple
+co-occurrences. This is a possible direction of future work.
+
+%\label{subsec:filter}
+%As mentioned above, there is a particular sentence indicating plot switch, which makes it easy to cut transcripts into contexts by regular expression. Then we get context paragraphs including its indicating sentence and context description. However, there are conversations in contexts. We think conversations are noise, so we just filter them. Conversations are always as follows:
+%\begin{lstlisting}
+%Stan: God this sucks!
+%\end{lstlisting}
+%\begin{lstlisting}
+%...
+%HELEN (CONT'D)
+%(Pause)
+%Yes, I did it. And here's why."
+%...
+%\end{lstlisting}
+%
+%Based on relatively fixed pattern of conversations, we filter them following several steps:
+%\begin{enumerate}
+%\item Delete parenthesis and contents inside.
+%\item For any line, which begins with names entities, sometimes with time, and colon follows, e.g, "Stan:", "Guy 13:", "(18:30) HELEN:", we regard it as conversation ane then delete the whole line.
+%\item For any line as descriped in 2 but there are nothing following colon, we regard its next line as conversation, and then delete it and its next line.
+%\item For a line just below an empty line and including no more than 15 characters, we also regard it as conversation and we delete this line and following lines till another empty line exists.
+%\end{enumerate}
+%
+%\begin{enumerate}
+%\item Calculate TF \eqn{TF} of each event in each context, i.e,
+%\begin{equation}
+%\label{eqn:TF}
+%tf_i = \frac{F_i}{\displaystyle \sum_{j = 0}^{n - 1}F_j},
+%\end{equation}
+%where $F_i$ is the frequency of event $i$.
+%\item Exclude events of less than $10^{-3}$ TF value.
+%\item Normalize TF of each event according to equation \ref{equ:nor} and calculate its variance \eqn{nor}¡£
+%\begin{equation}
+%\label{eqn:nor}
+%tf_{i, j} = \frac{tf_{i, j}}{\displaystyle \sum_{k = 0}^Ntf_{i, k}},
+%\end{equation}
+%\begin{equation}
+%\label{eqn:var}
+%variance_{tf} = \frac{\displaystyle \sum_{k = 0}^N(tf_k - \bar{tf})^2}{N},
+%\end{equation}
+%where, $tf_{i, j}$ is the TF value of event $i$ in context $j$.
+%\item Finally, delete events of less than $10^{-3}$ TF value.
+%\end{enumerate}
+
+\subsection{Training Models for Events}
+\label{sec:collect-audio}
+We query every terms in the vocabulary in a sound search
+engine.\footnote{We primarily use FreeSound.org as it provides
+better tags and the quality of its clips are generally better.}
+Because the engine does fuzzy matching,
+not all clips returned are about the event searched.
+Therefore we only keep those clips whose title contain the original
+query term or all of its contituent words, after lemmatization.
+Note that We do not perform synonym matching here because the terms
+in the vocabulary maybe synonyms but each of them will be associated with
+a set of audio samples.
+
+In the current set-up, models are trained for every audible event term,
+even though they are similar to each other, like ``guard dog'' and ``police
+dog''. The training process can be lengthy despite that no annotation is
+required. It appears that a balanced taxonomy of sound effects could
+partially ameliorate the problem, and create more balanced trained models.
+Similar attempts have been made to create such taxonomies around
+WordNet for both sounds \cite{Cano2004:tax} and images \cite{deng2009imagenet}.
+Nevertheless, one must be reminded that the audio model training  only needs
+to be done once for each audible event, and the models can be reused
+for classifying into different set of scenes.
+
+%According to audible concept set we bulid in \ref{subsec:buildingvocabulary}, we query each concept from SoundJax, FindSounds and Freesound, label each clips with its query word and download the file as training data. However, dut to ranking strategy and the flexibility of search engines's matching method, we do not download all the return audio clips. Instead, we design a set of rules to select audio clips.
+%
+%Firstly, we check whether the clip plays the same event as its query word. Concept in our set can be generally divided into two classes, single-word concepts and multi-word concepts. For each single-word concept, we bulid a synset for it including itself, its synonyms and all its inflected forms in WordNet and then we check the file name and labels whether they are in the synset. If yes, this clips becomes a candidate clips to download. As for multi-word concepts, a similar check was conducted on each word component.
+%
+%For clips that matched the same theme as we queried, we check their length, based on assumption that a clip that is too long is very likely to contain more than a single event. Since we label clips automatically with the query word, this impurity will definitely cumber with the recognition preformance.
+%
+
+\subsection{HMM vs. GMM}
+Besides GMM, left-to-right Hidden Markov Model has also been widely
+used in speech recognition, where each hidden state of the HMM is a GMM.
+HMM is not a good choice for event detection for these reasons:
+\begin{itemize}
+\item The quality of training samples for environmental sound
+is generally not as good as training samples for speech recognition.
+\item For a given event, for example, {\em dog barking},
+the training sample may repeated several dog barks.
+It is not easy to break it up into a sequence of single dog barks.
+Although we can model the event as a cyclic HMM,
+it does not perform well in practice.
+\item For some of audio events, interestingly, if we reverse the audio
+sample and play backwards, it can still be recognized by human beings.
+Thus, markov process is not effective in describing such audio events.
+\item HMM is a complex model, and can lead to overfitting when we do not
+have enough training data for some events.
+\end{itemize}
+

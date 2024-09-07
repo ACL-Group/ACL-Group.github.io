@@ -1,0 +1,76 @@
+\section{Methodology}
+
+The architecture of our model is depicted in Figure \ref{fig:model}. In this section, firstly we give out the hand-crafted templates. Then we introduce our prompt selection method and dynamic demonstration strategy. 
+
+\subsection{Hand-crafted Templates}
+
+\begin{table}[!h]
+	\centering
+	\small
+	\begin{tabular}{l|l}
+		\toprule
+		\textbf{Condition} & \textbf{Template}\\
+		\midrule
+		Entailment  & [$p$] Then [$h$]  \\
+		Neutral   & [$p$] Maybe [$h$]  \\
+		Contradiction   & [$p$] But [$h$]  \\
+		\bottomrule
+	\end{tabular}
+	\caption{Hand-crafted templates used in our experiments}
+	\label{table:manua}
+\end{table}
+Manually defining the templates for each condition requires domain expertise knowledge. Table \ref{table:manua} shows our manually defined templates, which is different from the templates defined for NLI classification task~\citep{DBLP:conf/eacl/SchickS21}. We design them based on our knowledge, intuition, and some simple tests on the $\mathcal{L}$ we used.
+
+\subsection{Max-margin Template Selection}
+
+First we adapt the method in section \ref{sec:agt} so that it works on conditional generation problem in our task. For an input sample $s_i = (p^i, c^i, h^i) \in \mathcal{D}_{train}$, we build the filled prompt as:
+\begin{align*}
+	\mathcal{T}_g (s_i)\ =\ [p^i]\ \mbox{[MASK]}\ [h^i]
+\end{align*}\label{eq:t5}
+Since we need to define a different template for each condition $m \in \mathcal{C}$, equation \ref{eq:decodet_old} is modified as:
+\begin{align}
+	\sum_{s_i\in\mathcal{D}_{train}, c^i=m}log P_{T5}(\mathcal{T}_m | \mathcal{T}_g (s_i))
+	\label{eq:decodet}
+\end{align}
+where $\mathcal{T}_m$ is the template used for samples whose condition is $m$. To pick the best template $\mathcal{T}_m^{'}$, we use:
+\begin{align}
+	\mathcal{T}_m^{'}=\mathop{\arg\max}\limits_{\mathcal{T}_m}\ S_{\mathcal{L}}(\mathcal{D}_{train}^m, \mathcal{D}_{dev}^m, \mathcal{T}_m)
+	\label{eq:best}
+\end{align}
+where $\mathcal{D}^m=\{s_i|s_i\in\mathcal{D}, c^i=m\}$. We call this method as $top$ template selection.
+ 
+Experiments in~\citet{DBLP:conf/acl/GaoFC20} show the size of $\mathcal{D}_{dev}$ used in equation \ref{eq:best_old} will significantly influence the quality of chosen templates, while we only use $1/|\mathcal{C}|$ samples in $\mathcal{D}_{dev}$ to measure each template in equation \ref{eq:best}.
+
+To address this issue, we propose our max-margin template selection method. Considering the conditions in NLI generation task conflicting with each other, we can give such assumption: A good template should not get high scores in other conditions. For example, the template $[p]\ But\ [h]$ designed for ``contradiction'' are supposed to achieve a bad performance in ``entailment'' and ``neutral''. Based on this, we refine function \ref{eq:best} as:
+\begin{align}
+	\mathcal{T}_m^{'}=&\mathop{\arg\max}\limits_{\mathcal{T}_m}\ \sum_{k\in\mathcal{C}} d_{m,k}\cdot S_{\mathcal{L}}(\mathcal{D}_{train}^k, \mathcal{D}_{dev}^k, \mathcal{T}_m) \notag\\
+	&\mbox{where,}\ d_{m,k} =
+	\begin{cases} 
+		1,  & \mbox{if }m=k \\
+		-1, & otherwise
+	\end{cases}
+	\label{eq:mm}
+\end{align}
+
+\subsection{Dynamic Demonstration}
+
+For classification problem, \citet{DBLP:conf/acl/GaoFC20} sample one example for each class. In this task, we only sample one example with the same condition as the demonstration, because templates for each condition are totally different from each other, and mixing templates as an input will mislead $\mathcal{L}$. 
+
+We call the demonstration method in section \ref{sec:staticd} as static demonstration since the retriever is not changed in the whole experiments and the embedding for each sample is fixed. As we have mentioned in section \ref{sec:staticd}, a model fine-tuned on task-related datasets performs better, we wonder can we train the retriever based on $\mathcal{D}_{train}$ which has no similarity labels?
+
+One solution is to annotate the similarity score for each pair. But it's unrealistic as:
+(1) It's hard for a human to design the similarity boundary;
+(2) the number of desired annotations is quite large even in a few-shot setting since it's square to $\left| \mathcal{D}_{train}\right|$.
+
+Inspired by the document retrieve method from RAG~\citep{DBLP:conf/nips/LewisPPPKGKLYR020} and prompt ensemble method from~\citet{DBLP:journals/tacl/JiangXAN20}, we propose $dynamic$ demonstration method by modifying the model objective $P(h^i | p^i, c^i)$ as:
+\begin{align}
+	&\prod_{j}^{N} \sum_{k}P_{\theta_{r}}(s_k | s_i) P_{\theta_{lm}}(h_j^i | x_{prompt}^i, s_k, h_{1:j-1}^i)\label{eq:finalobj} \notag\\
+	&\mbox{where,}\ P_{\theta_{r}}(s_k | s_i) = \frac{exp(Sim(s_i, s_k)}{\sum_{t} exp(Sim(s_i, s_t))}
+\end{align}
+Here $s_k, s_t\in \mathcal{D}_{train}^{c^i}$. Thus the retriever's parameters $\theta_r$ are optimized to maximize the similarity score of the input sample $s_i$ and the sample which leads to the largest generator probability of the ground truth.
+
+During training, calculating $P_{\theta_{r}}(s_k | s_i)$ over the whole $\mathcal{D}_{train}^{c^i}$ is costly, so we do a top-k approximation. For each sample $s_i$:
+(1) First we calculate $P_{\theta_{r}}(s_k | s_i)$ over $\mathcal{D}_{train}^{c^i}$ and choose the samples with top-k probability; 
+(2) these chosen samples make up $\mathcal{D}_{i}$, then we calculate equation \ref{eq:finalobj}, where $s_k, s_t\in \mathcal{D}_{i}$.
+
+During the test, we only use the retriever to sample the top-1 example as the demonstration, which is different from the decoding strategy used in RAG. Because RAG retrieves context from a corpus of 21M documents, where a lot of documents with relevant information can be found, while in a few-shot setting, the size of $\mathcal{D}_{train}$ is quite small.

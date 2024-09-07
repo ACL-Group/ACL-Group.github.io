@@ -1,0 +1,165 @@
+\section{Model building}
+
+\subsection{Parse Tree}
+The first problem that we have to solve is how to represent source code. As we all know, the basic format of source code is string, and we won't catch any structural information if we just use it as string. When source code compiler compiling a source code file, it convert the source code into a sequence of tokens and then establish a parse tree to represent the code. So the parse tree can tell us much information about the structure of source code.
+\subsubsection{Original Parse Tree}
+We use the java library called JavaParser to establish the parse tree of Java code. And because we use JavaParser, the programming language mentioned in this paper is Java language. With the help of JavaParser we can create the parse tree as Fig.2 shows. And Fig.1 is the source code example of Fig.2.
+\begin{figure}[!htp]
+ \centering
+ If (bufferSize $>$ 10) read();
+ \caption{source code example}
+\end{figure}
+
+\begin{figure*}[!htp]
+ \centering
+ \includegraphics[width=\linewidth]{img/parseTree1.pdf}
+ \caption{original parse tree}
+\end{figure*}
+
+\subsubsection{Our Parse Tree}
+Comparing to Fig.1 and Fig.2, there are many new internal nodes appears in the parse tree. These internal nodes are specific to programming language and the expression or statement that the source code is. So internal nodes hold much structural information. And the leaf nodes of parse tree are all appeared in the string of source code, they are all separated from the sequence of tokens.
+
+But this kind of parse tree isn't fit for source code repositories very much. In source code repositories, most functions will call other functions to achieve their goals. If we want to know the subject of one function we must know the subject of functions that are called by this function. For example, we have a source code function is shown in Fig.4. When we want to know the subject of function getBufferSize, we have to know the subject of function read firstly. Because of this relation among functions, we add the functions's call graph into our parse tree. This means we replace the function's name in parse tree to the subject of function. Like word embedding, we represent the subject of function as a vector. And this subject vector is calculated from the parse tree of the called function(like read() function).
+
+At the same time, we also found that in Fig.2, the node 10 is bufferSize, but bufferSize isn't a correct English word it is combined by buffer and size. If we use bufferSize directly, we may can't catch the subject of function exactly. So we split bufferSize into buffer and size, and add a new internal node called CombineName. This new internal node means there is identifier and this identifier is combined by the children of CombineName node.
+
+After adding the call graph of functions and the new internal node(CombineName), the new parse tree of Fig.1 can be seen in Fig.3.
+\begin{figure*}[!htp]
+ \centering
+ \includegraphics[width=\linewidth]{img/parseTree2.pdf}
+ \caption{new parse tree}
+\end{figure*}
+
+\begin{figure}[!htp]
+
+ $~~~~~~~~~~~~~$   int getBufferSize(int bufferSize)\{\\
+ $~~~~~~~~~~~~~$  $~~~~$   if (bufferSize $>$ 0)\\
+ $~~~~~~~~~~~~~$  $~~~~~~~~$     return read();\\
+ $~~~~~~~~~~~~~$  $~~~~$    else\\
+ $~~~~~~~~~~~~~$  $~~~~~~~~$      return 0;\\
+ $~~~~~~~~~~~~~~$   \}
+    \caption{function example}
+\end{figure}
+
+\subsection{Bimodal Modelling of Source Code and Natural Language}
+We joint source code functions and tags with the model mentioned in [1]. Miltiadis's model can be used to match source code snippets and natural language query. But the code snippets in [1] must has less than 300 words, while there are many functions that have more than 300 words in our model. And natural language query is also different from the tag. In our model, tags are many individual words and don't have any relationship with each other while training. But the words in the same query sentence must be trained together.
+
+So we change some aspects of [1] to make our model more suit to code repository and the new parse tree is one of changes.
+\subsubsection{Notation}
+We let $I$ be the set of internal nodes and $K$ be the set of leaf nodes. And a parse tree can be represented as $C\ =\ (Nd,ch,val)$ where $Nd=\{1,2,\cdots,N\}$ is set of all nodes($Nd=I\cup K$) and $ch$ is a function that map the node to its children nodes. The last one $val$ is a function that match the index of node and the value of this node. For example, i is the index of node "read", then val(i) equals to "read". By the way, we index the nodes of parse tree by left-to-right depth first traversal of tree. Fig.2 and Fig.3 have shown some indexing examples.
+\subsubsection{Model Overview}
+We use a generative model to train our data. $P(C\ |\ T)$ is the probability of generating parse tree C based on the the tag T. And our goal is to maximum this probability.
+\begin{align}
+    P(C\ |\ T) & = \prod_{n\in Nd:ch(n)\neq\phi}^N P(val(ch(n))\ |\ T,C_{\leq n})
+\end{align}
+Equation(1) tells us how to calculate $P(C\ |\ T)$, and it means if we want to generate a parse tree C based on tag T, we have to sequentially generate a child tuple for node n conditional upon the tag T and the partial tree $C_{\leq n}$.
+
+We also define $supp(i)$ and $S_{\theta}(v,T,C_{\leq n})$ like [?] to construct our model. $supp(i) = \{v\ :\ v=val(ch(n)) \bigwedge val(n)=i\ for\ some\ n\ in\ dataset\}$ is the set of all children tuples that appear as the children of a node whose type is $i$. And we can convert scoring function $S_{\theta}(v,T,C_{\leq n})$ to probability by exponentiating and normalizing.
+\begin{align}
+    P(v\ |\ T,C_{\leq n}) & = \frac{\exp s_{\theta}(v,T,C_{\leq n})}{\sum_{v^{'}\in supp(val(n))}\exp s_{\theta}(v^{'},T,C_{\leq n})}
+\end{align}
+where $\theta$ is the parameter of our model.
+\subsubsection{Scoring Function}
+The scoring function in our model is $s(v,T,C_{\leq n}) = (t \bigodot c)^{\top} r + b$ and $\bigodot$ is elementwise multiplication. $t$ is the representation vector of tag and c is the feature nodes' vector in the function's parse tree. $r$ is the vector that is unique to each parent-children pair $(i,v)$. $b$ is also unique to each parent-children pair, but $b$ is a scalar number.
+\subsubsection{Training}
+Our aim is to maximum $P(C\ |\ T)$, and because normalizing cost much time, we use noise-contrastive estimation method to train our model which is the same as [1]. The objective function can be written as follows:
+\begin{align}
+  \nonumber  E_{(T,C_{\leq n},v)\sim D}[\log\Delta(\triangle s(v,T,C_{\leq n}))]\ +\ \\ kE_{(T,C_{\leq n},v^{'})\sim noise}[\log(1-\Delta(\triangle s(v^{'},T,C_{\leq n})))]
+\end{align}
+where $d$ is the distribution of data and $nosie$ is the distribution of the noise data. The noise data's distribution is the posterior PCFG of the training data. And $k$ means that every pair $(T,C_{\leq n})$ has $k$ noise data. And we choose the same initialization strategy as [1] says.
+
+\begin{table*}[th]
+    \centering
+    \caption{ Example of the result to calculate MRR  }
+    \begin{tabular} {|p{10cm}|p{3cm}|p{3cm}|}
+    \hline
+    Function & our model result & Miltiadis's model\\
+    \hline
+    & & \\
+    & set & set center\\
+    & \textbf{set relative anchor point} & get motor torque \\
+    Public void setRelativeAnchorPoint(Boolean newValue) \{ &get radius & table cell at index\\
+    \  \ \  \  isRelativeAnchorPoint = newValue; & get body count & get next\\
+    \  \ \  \  isTransformDirty\_ = isInverseDirty+ = true;  & get device orientation & \textbf{set relative anchor point} \\
+	\  \ \  \ if (ccConfig.CC\_NODE\_TRANSFORM\_USING\_AFFINE\_MATRIX) \{ & get next & conver to ui\\
+	\  \ \  \ \  \ \  \ \	isTransformGLDirty\_ = true;  & get world center & set angle \\
+	\  \ \  \  \}   &  get translation & set texture \\
+    \} & get texture rect rotated & get texture \\
+    & set cqpoint & set limits \\
+    & & \\
+    \hline
+
+    & & \\
+& & \\
+& & \\
+& & \\
+& & \\
+    public ccColor3B getColor()\{ & & \\
+    \  \ \  \ return ccColor3B.ccc3(color\_\.r, color\_\.g, color\_\.b); & &\\
+    \} & & \\
+& & \\
+& & \\
+& & \\
+
+    & & \\
+    \hline
+
+    & & \\
+
+    private long createProperJoint(JointDef def) \{ & & \\
+  \  \ \  \  if (def.type == JointType.DistanceJoint) \{ & & \\
+  \  \ \  \ \  \ \  \  DistanceJointDef d = (DistanceJointDef) def; & & \\
+  \  \ \  \ \  \ \  \ \  return jniCreateDistanceJoint(addr,d.bodyA.addr,d.bodyB.addr,d.collideConnected, & & \\
+  \  \ \  \ \  \ \  \  \  \ \  \ d.localAnchorA.x,d.localAnchorA.y,d.localAnchorB.x,d.localAnchorB.y & & \\
+  \  \ \  \ \  \ \  \ \  \ \  \   ,d.length,d.frequencyHz,d.dampingRatio);  & & \\
+    & & \\
+  \  \ \  \  \} & & \\
+
+  \  \ \  \ \  \ \  \   \textbf{...} & & \\
+  \  \ \  \ \  \ \  \   \textbf{...} & & \\
+  \  \ \  \ \  \ \  \    & & \\
+
+  \  \ \  \   if (def.type == JointType.WheelJoint) \{ & & \\
+  \  \ \  \ \  \ \  \   WheelJointDef d = (WheelJointDef) def; & & \\
+  \  \ \  \ \  \ \  \   return jniCreateDistanceJoint(addr,d.bodyA.addr,d.bodyB.addr,d.collideConnected, & & \\
+  \  \ \  \ \  \ \  \   \  \ \  \ d.localAnchorA.x,d.localAnchorA.y,d.localAnchorB.x,d.localAnchorB.y & & \\
+  \  \ \  \ \  \ \  \  \  \ \  \ ,d.localAxisA.x,d.enableMotor,d.maxMotroTorque, d.motorSpeed,    & & \\
+  \  \ \  \ \  \ \ \  \ \  \ \ d.frequencyHz,d.dampingRatio);  & & \\
+  \  \ \  \   \} & & \\
+
+  \  \ \  \   return 0; & & \\
+    \} & & \\
+    & & \\
+    \hline
+
+    & & \\
+    & & \\
+& & \\
+& & \\
+& & \\
+    public double getMaxDensity() \{ & & \\
+  \  \ \  \   return maxDensity; & & \\
+    \} & & \\
+& & \\
+& & \\
+& & \\
+
+    & & \\
+    \hline
+
+    & & \\
+    & & \\
+& & \\
+& & \\
+    private void postStep(float dt, int iterations) \{  & & \\
+  \  \ \  \   for (Steppable s:postStepList) \{ & & \\
+  \  \ \  \ \  \ \  \   s.step(dt,iterations); & & \\
+  \  \ \  \   \} & & \\
+    \} & & \\
+& & \\
+& & \\
+
+    & & \\
+    \hline
+    \end{tabular}
+\end{table*}

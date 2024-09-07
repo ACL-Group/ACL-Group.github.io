@@ -1,0 +1,61 @@
+\section{Data preparation}
+
+We assume online textual news consists of title and body, where
+the title discusses the outline of the subject, the body discusses
+the details. Based on this assumption, the abstraction nouns are
+likely to be found in news title and the action instances should
+follow accordingly in the news body. To build our corpus
+we used an open source python library Scrapy to crawl the Internet for textual news articles.
+The result contains around 5 million news in various domains and styles.
+
+In order to extract action instances from news body, we first need to
+parse the news body into Penn trees and Postag each word in both
+the titles and bodies. Then we design a set of rules to decide
+which syntactical components are kept. Note that sometimes there might be ambiguity when it comes to
+deciding which layers of modifiers should be kept.
+ For example, in sentence ``He eats delicious hot dogs'', we want to keep
+``hot'' as in ``hot dogs'' to be the object( otherwise there would be significant semantic error ),
+but ``delicious'' and ``hot'' are effectively regarded as the same Part-of-speech by most NLP tools, hence we
+will need external knowledge such as WordNet and Probase to help us make syntactical decision on semantic level.
+Specifically, we use a sliding window to gradually increase the size of the argument, and check knowledge
+base if the augmented argument is a valid entity, if so we would keep going on, otherwise stop at the last valid
+object.
+
+After we obtained the action instances, we would need an action argument concept database to map those action instances
+into what we call action classes. In this paper we used the result of \cite{gong2015representing} as this database, which
+includes 1,770 unique verbs and their argument concepts. The data is organized in action classes, such as ``company buy
+company'', ``event destroy place'' etc.
+
+During action class matching, we compare the subject instance and object instance with the corresponding argument concepts.
+Sometimes it is possible that one action instance might match multiple action classes, in such cases we match the instance
+to action class with the most specific argument concept, as measured in the hyponym number provided by Probase. For example,
+``Mosquito bites him'' could be matched to both ``animal bite human'' and ``insect bite human''. Since animal subsumes insect,
+we match the instance to the later one as it is semantically more accurate.
+
+Next, we need to obtain a noun concept dictionary from which we could choose action concepts. The ideal dictionary should contain
+nouns that are generally used to describe a particular kind of actions, or closely related to some actions. Since such requirement
+is pretty fuzzy, we tried several different methods to generate such dictionary. The main sources we use are: 1). Noun discovered
+in news titles. 2). WordNet lexical info. 3). Probase's isA relations. 4). Wiktionary top 10000 frequent English words.
+
+We then build our noun dictionary $D$. Here the main sources we use are Wordnet,Probase and Wikitionary.
+
+WordNet provides a special field called lexical info for most words, which is a human labeled coarse-grained category of words.
+For example, for word ``theft'' the lexical info is \emph{noun.act}, for ``ceremony'' it is \emph{noun.event}.
+We can use these information to generate an initial noun pool. In this stage Probase could be used in two ways, firstly it
+also can be used as a pool generator. We can build the noun pool by manually designing
+a small set of terms that has desired nouns as hyponyms, such terms include "activity",
+"process", "event" etc. Secondly probase can be used as a filter. We check how
+many instances a noun could have and use it as a measurement to decide whether it
+is abstract noun or concrete instances. Probase also provides the typicality of
+the hypernym-hyponym relations which we could use too. Wikitionary is an online
+dictionary, we found a list of top 10000 popular English word there, hoping to
+solve the problem that some words in Wordnet or Probase are too obsolete.
+Overall we have 4 different methods to generate the dictionary:
+\begin{enumerate}
+\item Use top 10000 English word as initial pool and filter by Probase
+\item Use Wordnet noun iterator, combined with lexical info to build the initial pool and filter by Probase
+\item Use Probase to generate the initial pool and filter by Probase
+\item Use noun discovered in news titles and filter by Probase
+\end{enumerate}
+
+After experiments, we observed the last method provides the best dictionary for action-noun map.

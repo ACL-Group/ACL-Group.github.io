@@ -1,0 +1,345 @@
+%# -*- coding: utf-8-unix -*-
+% !TEX program = xelatex
+% !TEX root = ../thesis.tex
+% !TEX encoding = UTF-8 Unicode
+
+\subsection{向量表示及跨语言模块}
+\label{sec:tabel-translation}
+
+%字面描述=surface form
+给定一个单元格的字面描述短语$x$，
+令$\bi{x}^{(m)}$代表其自身的语义向量，也称为\textbf{指示向量}。
+通常单元格字面描述较短（至多三个词语），
+因此模型计算字面描述包含的词向量的平均，作为$\bi{x}^{(m)}$的值。
+用$\bi{e}$表示候选实体$e$对应的实体向量，
+词向量和实体向量分别通过中文和英文的维基百科文本进行预训练。
+
+考虑到语言的天生差异，且两者分别训练，
+因此词向量和实体向量所在维度空间并不兼容，
+这使得我们无法简单地对来自不同空间的向量进行比较和计算。
+为了应对这个问题，模型中引入了双语翻译层，将向量从一个语言的维度空间投影至另一个空间。
+$\bi{x}^{(m)}$为中文语义空间上对$x$的语义表示，
+该层通过线性变换将其映射为$\bi{v}^{(m)}$，即英文维度空间上的语义向量：
+$\bi{v}^{(m)}=W_t \bi{x}^{(m)} + \bi{b}_t$。
+其中$W_t$为变换矩阵，$\bi{b}_t$为偏置向量，两者均为模型参数，随着训练迭代而更新。
+%为什么这么做，总要引用几篇论文吧
+
+另外，我们通过少量的双语词对$(w^{(ch)}, w^{(en)})$，
+对双语翻译层的参数$W_t, \bi{b}_t$进行预训练。
+预训练过程的损失函数定义如下：
+\begin{equation}
+\label{eqn:translation}
+L(W_{t}, \bi{b}_{t}) = \sum_i \Arrowvert W_{t} \bi{w}_i^{(ch)} + \bi{b}_{t} - \bi{w}_i^{(en)} \Arrowvert_2,
+\end{equation}
+即最小化真实的英文词向量与线性变换后的词向量之间的欧氏距离。
+关于初始化，以及翻译预训练的更多细节，将在\secref{sec:tabel-impl}中进行叙述。
+
+
+%As mentioned in model overview, the input of joint model are two tables, mention table and entity table, where each of them is represented as a table of vector embeddings. Since a mention or entity name typically contains up to three words, we simply represent them as the average of embeddings of words they contain. The word embeddings are trained on large scale text corpus. Since mention table and entity table are written in two different languages, we train word embeddings on two corpus of different languages separately. Thus, the embeddings of a mention and its referent entity are naturally incompatible and we can't directly compare or calculate them. To solve this problem, We employ a bilingual translation layer to map embeddings in one language space to another language space. Through this translation layer, a non-English mention embedding $v_m$ can be translated into an English mention embedding $\widetilde{v_{m}}$ roughly through $\widetilde{v_m} = W_{t} v_m + b_{t}$, where $W_{t}$ is the translation matrix and $b_{t}$ is the bias. Notice that $W_{t}$ and $b_{t}$ are model parameters and will be updated during training so that the translation step will be more and more accurate. \KZ{Do we need to entity link the english corpus to train the embedding?
+%Since the entity table contains the entities and not names?}
+%
+%In order to find a good starting point to train the model and jump out of local optima, we train $W_{t}$ and $b_{t}$ in advance. We use a small number of bilingual word embedding pairs $\langle v_{wc}, v_{we} \rangle$ to train the parameters. The loss function is as follows.
+%\begin{equation}
+%\label{eqn:translation}
+%L(W_{t}, b_{t}) = \Arrowvert W_{t} v_{wc} + b_{t} - v_{we} \Arrowvert_2
+%\end{equation}
+%The list of bilingual word embedding pairs are called translation seeds. We learn a initial translation matrix by minimize the loss and then feed the weights into the model before training.
+%\KZ{So this is just to obtain the initial values for $W_t$ and $b_t$ 
+%to be trained in the main training process?  How do you obtain the seed pairs?}
+
+
+
+
+\subsection{指示特征与上下文特征}
+\label{sec:cell}
+
+如\figref{fig:tabel-overview}所示，最左边的部分对应指示特征模块，
+中间的部分对应上下文特征模块。
+两者的共同点在于，它们都关注互联网表格$X$与候选链接表格$E$之间的相似性或相关性，
+并且每个单元格各自计算的特征会聚合为一体。
+因此这两部分具有很相似的网络结构。
+
+首先介绍指示特征，它捕捉一个单元格自身描述与目标实体的对应。
+给定字面描述$x_{ij}$，
+我们将英文的指示向量$\bi{v}_{ij}^{(m)}$与实体向量$\bi{e}_{ij}$进行拼接，并送入全连接层，
+生成单元格在自身指示级别的隐含特征。%~\parencite{socher2013reasoning,socher2013recursive}。
+%we concatenate the translated embedding $\bi{v}_{ij}^{(m)}$ with the entity embedding $\bi{e}_{ij}$~\parencite{socher2013reasoning,socher2013recursive},
+%then feed into a fully connected layer,
+%obtaining the hidden feature between $x_{ij}$ and $e_{ij}$ at mention level.
+收集所有需要被链接的单元格的指示特征，并对其求平均，
+即可得到整张表格上的总体指示特征$\bi{h}^{(m)}$。
+具体公式如下：
+\begin{equation}
+  \label{eqn:tabel-mention}
+  \begin{aligned}
+    & \bi{f}_{ij}^{(m)} & = & \bi{g}(W^{(m)} [\bi{v}_{ij}^{(m)}; \bi{e}_{ij}] + \bi{b}^{(m)}) \\
+    & \bi{h}^{(m)}      & = & \frac{1}{|P|} \sum_{(i,j) \in P} \bi{f}_{ij}^{(m)},
+  \end{aligned}
+\end{equation}
+\noindent
+其中$W^{(m)}$以及$\bi{b}^{(m)}$为模型参数，
+$\bi{g}$为非线性激活函数，实验中使用ReLU函数。
+
+%As shown in \figref{fig:overview}, the output of our model is a score, which represents the linking confidence between a mention table and a candidate entity table. This score comes from two categories. One is to measure how similar or compatible two tables are. We employ two features called cell feature and context feature to capture the compatibility between mention table and candidate entity table.
+%
+%After translation layer, each mention embedding $v_{\textbf{m}_{ij}}$ is converted into the same vector space as entity embedding. We concatenate translated mention embedding $\widetilde{v_{\textbf{m}_{ij}}}$ with entity embedding $v_{\textbf{e}_{ij}}$ and then go through a fully connected layer to get a hidden feature for a pair of cells $\langle \textbf{m}_{ij}, \textbf{e}_{ij}\rangle$. After averaging among all cells which need to be linked, we get the cell feature, which now represents a pair of tables $\langle T_M, T_E \rangle$.
+%
+%\begin{equation}
+%f_{cell}(T_M, T_E) = \frac{1}{|P|}\sum_{\langle i,j\rangle \in P}FC([\widetilde{v_{\textbf{m}_{ij}}}, v_{\textbf{e}_{ij}}])
+%\end{equation}
+%
+%Where $FC$ represents fully connected layer, and $[v_1, v_2]$ means vector concatenation.
+
+上下文特征的获取与指示特征类似。
+区别于指示特征的信息仅来自目标单元格，
+上下文特征还将考虑此单元格周围的有用信息。
+而在表格之中，位于同一行或同一列的其余单元格则具有直接的关联，
+因此成为上下文特征的信息来源。
+我们定义一个单元格的上下文向量$\bi{x}_{ij}^{(c)}$
+为这些相关单元格指示向量的平均：
+\begin{equation}
+%  \begin{gathered}
+    \bi{x}_{ij}^{(c)} = \frac{1}{|R+C-1|}(
+      \sum_{(i,k), k \neq j} \bi{x}_{ik}^{(m)} +
+      \sum_{(k,j), k \neq i} \bi{x}_{kj}^{(m)}
+    ).
+%    \bi{v}_{ij}^{(c)} = W_t \bi{x}_{ij}^{(c)} + \bi{b}_t.
+%  \end{gathered}
+\end{equation}
+\noindent
+同样经过双语翻译层的转换，英文空间中每个单元格的上下文向量$\bi{v}_{ij}^{(c)}$
+将用于生成整个表格的总体上下文特征，记做$\bi{h}^{(c)}$。
+具体计算过程类似\eqnref{eqn:tabel-mention}，
+只需要把所有指示向量改为上下文向量作为输入即可。
+通过观察表格中的每个\textless 字面描述，候选实体 \textgreater 对，
+并进行指示特征和上下文特征的学习，
+模型可以从两张表中捕捉大体上的语义相关程度。
+
+%\begin{equation}
+% \begin{aligned}
+%   & \bi{v}_{ij}^{(c)} & = & \frac{1}{|R+C-1|}(
+%     \sum_{(i,k), k \neq j} \bi{v}_{ik}^{(m)} +
+%     \sum_{(k,j), k \neq i} \bi{v}_{kj}^{(m)}
+%   ) \\
+%   & \bi{f}_{ij}^{(c)} & = & relu(W^{(c)} [\bi{v}_{ij}^{(c)}; \bi{e}_{ij}] + \bi{b}^{(c)}) \\
+%   & \bi{h}^{(c)}      & = & \frac{1}{|P|} \sum_{(i,j) \in P} \bi{f}_{ij}^{(c)},
+% \end{aligned}
+%\end{equation}
+%
+%\begin{equation}
+%	f_{cxt}(T_M, T_E) = \frac{1}{|P|}\sum_{\langle i,j\rangle \in P}FC([\widetilde{vcxt_{\textbf{m}_{ij}}}, v_{\textbf{e}_{ij}}])
+%\end{equation}
+%
+%\begin{equation}
+%vcxt_{\textbf{m}_{ij}} = \frac{1}{|\pi_{ij}|}(\sum_{\langle i,k\rangle \in P, k \neq j} v_{\textbf{m}_{ik}} + \sum_{\langle k,j\rangle \in P, k \neq i} v_{\textbf{m}_{kj}})
+%\end{equation}
+%\noindent
+%where $\bi{h}^{(c)}$ denotes the hidden context feature of the mention-entity table pair.
+%Despite that table offers rare ``strict'' context information for entity disambiguation,
+%mentions in the same row or column contain strong relatedness and can be regarded as surrounding context. 
+%By learning cell feature and context feature from mention table and candidate entity table,
+%we can capture a general sense of semantic relatedness of all mention-entity pairs from two tables.
+
+
+
+\subsection{一致性特征}
+\label{sec:tabel-coherence}
+
+
+前面叙述的两类特征都是对互联网表格与链接表格之间的契合度进行编码，
+另一方面，链接表格内部，不同实体之间的关系同样具有价值。
+之所以有这样的理解，是因为表格中同一列（有时同一行）的实体大多都属于同一种类型，
+也就是说，往往拥有更加相似的向量表达。
+例如概述部分的\figref{fig:tabel-intro}，表格中从左到右三列，
+对应的链接实体分别属于电影流派、国家、电影。
+我们提出的第三种特征，正是用来描述同一列候选实体之间的契合度。
+
+%\KZ{How do you distinguish between columns and rows?  Some tables have same-type columns, while others have same-type rows.}
+%\XS{Cite papers doing table type classification, where one of those table types (6 in total) is called Vertical Relational (VR), which is exactly the format of tables in our experiments. We could say we just choose to focous this type of tables, and one can use those classifiers to unify table formats into VR and then use our model to do entity linking. }
+
+关于同一类型的实体在表格中是按哪种方向进行排列，
+这涉及到另一个研究课题名为 ``{表格类型分类}''
+\cite{eberius2015building,nishida2017understanding}，
+主要用于区分表格的多种表现形式。
+本章中默认表格的形式为 ``{垂直关系型}'' \cite{nishida2017understanding}，
+即和\figref{fig:tabel-intro}一样，相同类型实体按列方向排布。
+考虑到确定表格类型之后，大多数互联网表格都可以实现简单的格式转换，
+因此这个课题不在我们的讨论范围。
+
+一致性特征的网络结构见\figref{fig:tabel-overview}的最右侧部分，
+为了衡量一列实体向量是否接近，
+我们对这些向量进行逐位的方差计算，方差越小，
+表明这些实体在对应位置的隐含语义上差别越小，反之亦然。
+同样对每一列的方差向量进行求平均的操作，
+我们便得到整个候选实体表格上的一致性特征$\bi{h}^{(coh)}$：
+\begin{equation}
+  \label{eqn:coherence}
+    \bi{h}^{(coh)} = \frac{1}{C} \sum_{j} \bi{var}(\{\bi{e}_{ij} | (i,j) \in P \}),
+\end{equation}
+\noindent
+其中$\bi{var}(\cdot)$函数以向量集合作为输入，返回同样维度的逐位方差向量。
+一致性特征用于描述候选实体互相之间是否有良好的自我组织性，
+由于和字面描述表格$X$无关联，
+该特征可以看做对指示特征与上下文特征的补充。
+
+
+\subsection{训练及测试}
+\label{sec:tabel-strategy}
+
+%表格链接任务被定义为计算输入互联网表格与链接表格间的
+我们首先定义输入表格$X$与候选链接表格$E$之间的整体相关性分数。
+前面提及的指示、上下文、一致性特征将被拼接，并送至一个两层的全连接网络得到总体特征$\bi{h}_{out}$，
+第二层的输出维度为1，即表示最终的表格相关度：
+\begin{equation}
+  \label{eqn:score}
+  \begin{gathered}
+    \bi{h}_{out}  = \bi{g}(W_{out}[\bi{h}^{(m)}; \bi{h}^{(c)}; \bi{h}^{(coh)}] + \bi{b}_{out}) \\
+    S(X, E)         = \bi{u} \cdot \bi{h}_{out},
+%score(T_M, T_E) = W_{out} \cdot FC([f_{cell}, f_{cxt}, f_{coh}]) + b_{out}
+  \end{gathered}
+\end{equation}
+\noindent
+其中$W_{out}$，$\bi{b}_{out}$以及$\bi{u}$均为模型参数。
+%$\bi{g}$为非线性激活函数，实验中使用ReLU函数。
+
+训练集中的每一个互联网表格，都对应唯一一张正确的链接表格作为正样本。
+为了进行训练，我们需要准备若干张链接表格作为负样本。
+通过对正样本表格中的实体进行不同程度的篡改，我们可以自动生成一系列负样本表格，
+具体步骤如下：
+先随机指定要被篡改的单元格数量，
+再随机确定这些单元格在表格中的位置，
+最后将这些单元格的链接实体替换为对应候选集中的一个随机错误实体。
+这样可以使得篡改后的错误实体不至于太容易被发现。
+
+训练过程中可能使用的更新方式有两种：基于最大间隔损失（Max Margin Loss，即Hinge Loss），
+或者基于成对排序损失（Pairwise Ranking Loss）。
+对于前者，模型将最大化正样本表格与负样本表格间的分数差异。
+对于后者，单个正样本和多个负样本表格两两之间都会进行比较，
+具有更多正确链接实体的表格，要尽可能比另一张表格获得更高的相关度分值。
+本章提出的模型采用了RankNet算法~\cite{burges2010ranknet}
+计算成对排序的损失函数，
+%这里可以具体阐述
+并使用Adam算法\cite{kingma2014adam}进行梯度下降。
+
+测试过程涉及到更多的细节。理想状态下，对于互联网表格$X$，
+我们需要枚举每一张链接表格$E \in GEN(X)$，才能得到全局最优解。
+然而，候选表格集的数量与单元格的数量呈指数相关，
+同时每一个单元格又能对应大量候选实体，
+因此暴力枚举显然是不现实的。
+%
+%In order to obtain a good approximation as the final linking result,
+%we follow a simple but important assumption during the prediction and 
+%parameter learning step:
+%if a candidate entity table is closer to the gold result,
+%i.e. more entitie are correctly linked, then it would receive a higher relevance score.
+%
+%In this way, we propose a local-search descent approach as the approximate algorithm for prediction.
+%In order to make the assumption to be effective,
+%we adopt a learning to rank algorithm in the training step.
+\begin{algorithm}
+	\caption{基于局部搜索下降的预测过程}
+	\label{alg:tabel-prediction}
+	\textbf{Input}: Mention table $X$, linking position $P$, initial entity table $E_0$,\\
+	                candidate generator $Cand(\cdot)$, scoring function $S(\cdot,\cdot)$ \\
+    \textbf{Output}: Entity table $E$
+	\begin{algorithmic}[1]
+		\Procedure{Predict}{$X, P, E_0, Cand, S$}
+		\State $E \gets E_0$
+		\State $s_{max} \gets S(X, E_0)$
+		\Repeat
+            \State \textbf{Shuffle} $P$
+    		\For {$(i, j)$ in $P$} \label{line:visit}
+	    	    \State $E' \gets E$
+        		\For {$ent$ in $Cand(x_{ij})$}
+                    \State $e'_{ij} \gets ent$
+		            \State $s' \gets S(X, E')$
+        		    \If {$s' > s_{max}$}
+                        \State $e_{ij} \gets ent$ \label{line:update}
+                        \State $s_{max} \gets s'$
+		            \EndIf
+       		    \EndFor
+		    \EndFor
+		\Until{$s_{max}$ converges} 
+		\State \Return {$E$}
+		\EndProcedure
+	\end{algorithmic}
+\end{algorithm}
+
+为此，我们使用局部搜索下降（Local-Search Descent）算法来逼近最优的链接表格。
+如\algoref{alg:tabel-prediction}所示，
+$E_0$为链接表格的迭代更新起点，每个单元格填充由生成器$Cand(\cdot)$产生的候选集中最可能的实体，
+%由cand决定分数
+%根据候选实体生成过程$Cand(\cdot)$对每一个候选
+$S$为已学习的评分函数。
+%$Cand$ is a collection of candidates for mention table $T_M$. $Cand_{ij}$ represents a list of candidate entities for cell $\textbf{m}_{ij}$. $replace(T, \langle i,j\rangle, e)$ is a procedure which replace the entity of table $T$ at position $\langle i,j\rangle$ with a new entity $e$.
+预测步骤将以迭代形式进行。
+迭代的每一轮中，所有需要链接的单元格按照乱序进行一一访问(\lineref{line:visit})，
+对每一个被访问的单元格，预测算法固定其余单元格的链接结果不变，
+从该单元格的候选实体中，选择达到局部最优相关性分值的实体，
+并更新输出表格的对应位置(\lineref{line:update})。
+迭代过程将持续进行，直到某一轮结束之后，输出表格$E$的相关性分数无法进一步提高。
+%类似stochastic，顺序随机
+该算法可以类比为离散环境下的随机梯度下降，
+每个单元格的候选实体视为变量，
+输出表格的分值沿它们的离散梯度不断上升，
+打乱单元格的访问顺序则提供了随机扰动，防止预测过程陷入局部最优点。
+
+
+
+%Recap that the predicting algorithm works only if the previous monotonical assumption holds,
+%that is, the model produces a higher score when we replace a wrongly-linked entity
+%with the correct one.
+%For effectively training, we adopt RankNet~\parencite{burges2010ranknet} as the pairwise ranking method to learn
+%all the parameters in our model.
+%In terms of the paired training data, we create a list of negative entity tables
+%for each mention table in a random corrupting strategy.
+%We will discuss it in \secref{sec:exp-setup}.
+
+%we use the idea of learning to rank model~\parencite{burges2005learning} and
+%devise a pairwise ranking loss function. 
+%The basic idea is that the score of a candidate entity table should be larger (ranks higher) than any other candidate entity table with fewer correctly linked cells. 
+
+
+
+%
+%Given the mention table $X$ and its gold entity table $E^+$,
+%we generate a list of negative entity tables $E^-$ by
+%randomly corrupt a random number of entities in $E^+$.
+%Let $T_E$ equals to $T_P$ and all $T_N$s.
+%We define a label list $y_i = r({T_E}_i)$, where $r({T_E}_i)$ represents the correct cell ratio of each entity table ${T_E}_i$. $s_i = f_{model}(T_M, {T_E}_i)$ is the score list for each .
+%Then the likelihood and cost function can be written as:
+%
+%\begin{equation}
+%\label{eqn:ranknet1}
+%Likelihood = \prod_{i,j}U_{ij}^{\widetilde{U_{ij}}}\cdot (1-U_{ij})^{(1-\widetilde{U_{ij}})}
+%\end{equation}
+%
+%\begin{equation}
+%\label{eqn:ranknet4}
+%J = -\sum_{i,j}(\widetilde{U_{ij}} \log U_{ij} + (1-\widetilde{U_{ij}}) \log (1-U_{ij}))
+%\end{equation}
+%
+%Where
+%
+%\begin{equation}
+%\widetilde{U_{ij}} = \left\{
+%\begin{aligned}
+%& 1 & ~ & y_i < y_j \\
+%& 0.5 & ~ & y_i = y_j \\
+%& 0 & ~ & y_i > y_j \\
+%\end{aligned}
+%\right.
+%\end{equation}
+%
+%\begin{equation}
+%U_{ij} = sigmoid(s_i-s_j)
+%\end{equation}
+%
+%
+%
+%
+
+
+
+
+

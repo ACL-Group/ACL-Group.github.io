@@ -1,0 +1,151 @@
+\section{Proposed Framework}
+\subsection{Overview}
+We reformulate product categorization into a text semantic matching task and propose a \textit{Taxonomy-agnostic Label Retrieval (TaLR)} framework to tackle the challenges in \textit{DMPC} problem.
+% Besides, Multiple taxonomies with different categorization objectives could be jointly trained in this framework in that they are uniformly treated as text semantic similarity tasks.
+\textit{TaLR} is composed of two stages: \textit{Retrieval} and \textit{Reranking}, as illustrated in \figref{fig:pipeline}. The \textit{Retrieval} stage is two-fold: (i) the basic model is vector-based
+and it retrieves label candidates using a similarity search engine among encoded product titles and cached label text vectors, 
+(ii) the concept-empowered unit filters the label candidates according to the statistical co-occurrence distributions between labels and concepts.
+% We then use some heuristic fusion strategies to merge candidates from these two units. In the training phase, the two units are tied to generate candidate labels for training the similarity scoring model.
+At the next \textit{Reranking} stage, 
+% candidate labels are respectively concatenated with product titles as inputs of the final cross-encoder as scoring engine. During this, 
+we take advantage of the contrastive information from both inter-concept and intra-concept of product titles to exploit the mutual interactions between the product title and label text pairs. We will zoom into each component of this framework.
+
+\subsection{Basic Vector-based Retrieval}
+In this part, we introduce the vector-based retrieval unit using one-vs-all vector similarity measurement. Once the similarity scoring model is well trained, we can subsequently retrieve candidate labels $\{y_i\}$ from a certain taxonomy $G_i$. Before this, we prepare to construct the training samples $\mathcal{S}$ from multiple taxonomies. For brevity, we ignore the subscript $i$ when discussing the samples for a particular $G_i$.
+\subsubsection{Negative sampling}
+\label{sec:prepare}
+For each $(X, y)$ pair, we can obtain $N$ triplets in the form of $(X, \hat{y}, Y_{\mathbbm{1}})$, with $(N-1)$ negative samples. Usually, negative samples are randomly chosen, however, it will be too ``easy'' for the model to discriminate them from the positive ones, leaving little space for optimization. On the contrary, a ``hard'' negative sample is more informative for improving the ability of the model. We, therefore, propose a $k$-fold generator to sample the strong negative labels.
+
+Firstly, for each training dataset $S_i$ of taxonomy $G_i$, 
+we split it in the $k$-fold manner and then take turns training $k$ classifiers on every $\frac{k-1}{k}$ data as a brand new training set, with the remain $\frac{1}{k}$ data as the development set. The $m$-class classifiers utilize BERT~\cite{devlin-etal-2019-bert} to encode product titles $X$ 
+% from class $a$ $(a\in[1,m])$ 
+and treat the [$\mathtt{CLS}$] token as the representative vector of $X$, optimized with the typical cross-entropy loss. 
+% Next, a fully-connected layer is followed to classify the vector to class $y$, where the output vector through softmax layer is $\hat{\mathbf{y}}\in \mathbb{R}^{m}$. The loss function of this $m$-class classifier is:
+% \begin{equation}
+%     \mathcal{L}^{CE}=-\sum_{S} \mathbf{y}^{\mathbbm{1}} \log \hat{\mathbf{y}},
+% \end{equation}
+% where $\mathbf{y}^{\mathbbm{1}}\in \mathbb{R}^{1\times m}$ is the one-hot vector of label $y$.
+
+% The trained classifier on one fold can thus inference the possible category labels of product titles in the development set, we can select labels with top $N$ probabilities paired with product titles as candidate samples. 
+Inference the other $(N-1)$ most possible category labels repeatedly in the development set and the overall $k$ classifiers are able to construct the full-sized 
+% candidates set.
+pointwise training set for the following semantic matching model.
+\subsubsection{Model training}
+We are ready to train the similarity scoring engine on constructed training set $\mathcal{S}$, which adopts a similar siamese network architecture with SBERT~\cite{reimers2019sentence}. We take BERT as the encoder to respectively extract the fixed-sized embeddings of product titles $X$ and candidate names $\hat{y}$ which are denoted as $\mathbf{u}_x$ and $\mathbf{v}_y$, and this siamese encoder shares weights from both sides of $X$ and $\hat{y}$. 
+% More specifically, $u_x$ and $u_y$ are derived through an average pooling operation over all output vectors of BERT. The two embedding vectors $(u_x, u_y)$ can be fed into different MLP operations to obtain the similarity score $\delta$. 
+
+% We experimented three different approaches for $(u_x, u_y)$ similarity measurement and compared their performance in \tabref{fig:vector-retri}. One straightforward method is to compute the cosine similarity between vector $u_x$ and $u_y$ and optimize the model using vanilla binary cross entropy loss.
+% \begin{equation}
+%     \delta=\textit{cos}(u_x,u_y)=\frac{<u_x, u_y>}{||u_x||\,||u_y||},
+% \end{equation}
+% \begin{equation}
+% \label{eq:bce}
+%     \mathcal{L}^{bce}=-\sum_{S} Y_{\mathbbm{1}} \log(\delta) + (1-Y_{\mathbbm{1}})\log(1-\delta).
+% \end{equation}
+
+% For the sake of the alignment between embedding $u_x$ and $u_y$, we also refer to the classification objective function in SBERT.
+% \begin{equation}
+%     o=softmax(W_o(u_x, u_y, |u_x-u_y|)),
+% \end{equation}
+% where $W_o\in \mathbb{R}^{3l\times 2}$ is the weighting parameter to project the concatenation of $u_x$, $u_y$ and the element-wise difference $|u_x-u_y|$ to binary classes. $l$ is the dimension of embeddings. The second element in vector $o$ can be regarded as the probability whether $u_x$ and $u_y$ are matched or not, hence we can adopt the same binary cross entropy loss function in \eqnref{eq:bce} to optimize the model.
+
+To better align the embedding of $\mathbf{u}_x$ and $\mathbf{v}_y$, the Circle Loss theory~\cite{sun2020circle} provides us with an enhanced loss function, which allows each similarity score to optimize at its own pace. We simplify it as:
+% \footnote{This name is after\href{https://kexue.fm/archives/8847}{https://kexue.fm/archives/8847}}
+\begin{equation}
+    \mathcal{L}^{circle}=\log \left(1+\sum_{S} e^{\lambda (cos(\mathbf{u}_x^+,\mathbf{v}_y^+)-cos(\mathbf{u}_x^-,\mathbf{v}_y^-))}\right),
+\end{equation}
+where $\lambda$ is the hyper-parameter, and $+,-$ denotes the positive samples and negative samples in $\mathcal{S}$ respectively.
+\subsubsection{Candidates generation}
+% The trained similarity scoring engine is hence capable of encoding both product titles and category labels into embedding vectors during inference period. Moreover, the pre-defined category names 
+% that are emerging relatively less rapidly than the product itself
+% can be cached in memory in advance, and it is especially favorable when the label space is extremely large so as to limit the run-time overhead.
+We can quickly derive relevant category label embeddings given an incoming product title embedding, with one-vs-all similarity measurement like cosine-similarity
+% or Manhattan / Euclidean distance. 
+implemented by Approximate Nearest Neighbor (ANN) techniques targeting time efficiency.
+% and they are powerful with multiple computing units. 
+Based on this, we can readily 
+collect top-$k$ candidates set $C_{vec}$. 
+% retrieved from the whole label set.
+\subsection{Concept-empowered Retrieval}
+We observe that the recall of the sentence matching method is often limited by solely calculating the semantic relatedness of literal expressions, neglecting the hidden rules that lie within the training set. 
+Therefore, we introduce a concept-empowered component in \textit{Retrieval} stage to complement the vector-retrieved candidates.
+
+\subsubsection{Mapping \& Tagging algorithm}
+External concept set $\mathcal{M}$ is constructed by some hybrid NER-related techniques. The details are given in \secref{sec: dataset}.
+% the next Dataset Section.
+We can regard ``concept'' as a kind of keyword knowledge, because they usually contain very concrete and accurate information.
+The following steps are conducted on the training data of each taxonomy respectively.
+Given title $X$ and its possible category label $\hat{y}$, our heuristic strategy establishes $X \rightarrow \hat{y}$ mapping probability $P(\hat{y} | X)$ in two steps: 
+
+(1) Gathering the title $X$ with tagged one or more concepts $\Lambda=\{\lambda_1, \lambda_2, ... \lambda_k\}$ from $\mathcal{M}$. 
+% The tagging step $X \rightarrow \{\lambda_1, \lambda_2, ... \lambda_k\}$ is accomplished by an industrial Label Tagging System that exploits hybrid approaches including text sequence labeling, classification, literal matching and some expert-defined rules.
+
+(2) Mapping the tagged concepts $\Lambda$ to corresponding taxonomy node $\hat{y}$. First, we model the probability of each category $\hat{y}$ as:
+\begin{equation}
+    \begin{aligned}
+    P(\hat{y} | X) &= P(\hat{y} \space | \space \lambda_1, \lambda_2, ... \lambda_k) \\ &= \max_{1 \leq i \leq k} P(\hat{y} \space | \space \lambda_i).
+    \end{aligned}
+\end{equation}
+Here we aggregate $P(\hat{y} \space | \space \lambda_1, \lambda_2, ... \lambda_k)$ with the maximum value among multiple $\lambda_i$ referring to the same $\hat{y}$. And $P(\hat{y} \space | \space \lambda_i)$ is collected from training set distributions:
+\begin{equation}
+P(\hat{y} \space | \space \lambda_i) = \frac{P(\hat{y} \space , \space \lambda_i)}{P({\lambda_i})} = \frac{\nu(\hat{y} \space , \space \lambda_i)}{\nu({\lambda_i})},
+\end{equation}
+where $\nu$ denotes the frequency in the training set. Then, we retrieve candidates set ${C_{ccp}}$ and empirically set a threshold of $P(\hat{y} | X) > 0.5$ to ensure retrieval quantity and quality. 
+% We maintains a dictionary of the mapping probability $P(\hat{y} \space | \space \lambda_i)$  for each taxonomy classification task, 
+% \subsection{Candidates Fusion Strategy}
+% When retrieved candidates from the vector-based and rule-based components are prepared, we propose three fusion strategies to combine two lists of candidates. 
+% Assume that we only requires approximate 10 candidate categories for each product title to reduce time consumption in \textit{Reranking} stage. For a given product title $X$ and its corresponding candidate lists ${C_{vec}}$ from the vector-based unit and ${C_{rule}}$ from the rule-based unit sorted in probability descending order:
+
+% \noindent\textbf{De-Dupli} picks at most 6 top candidates from both ${C_{vec}}$ and ${C_{rule}}$, then removes 
+% duplicate candidates
+% % candidates from these 12 candidates 
+% to form $C_{union}$.
+
+% \noindent\textbf{Norm\&Rank} normalizes the probability of candidates in each list respectively and merge them into one list keeping in probability descending order, then picks the top-$10$ candidates as $C_{union}$.
+
+\subsubsection{Candidates fusion} 
+When retrieved candidates from the vector-based and concept-based components are prepared, we need to combine the two lists of candidates. Our concept-first strategy prioritizes candidates from ${C_{ccp}}$. It puts at most 10 top candidates (usually less than 10) from $C_{ccp}$ into $C_{union}$, then keeps filling it with top candidates from $C_{vec}$ 
+% as long as the size of $C_{union}$ does not reach to 10. 
+until its size reaches 10.
+
+% Comparison of these strategies is listed in \tabref{tb:fusion}. \KZ{It's a bit weird to refer to a table that comes so late in the paper.}
+
+\subsection{Contrastive Pretraining}
+% As leaf node categories are fine-grained domain-specific concepts, it poses challenge for traditional models optimized by binary cross entropy to distinguish their subtle differences especially when data sparsity problems are encountered. 
+For \textbf{multi-domain taxonomies}, the category class varies from one taxonomy to another. 
+% Considering this, 
+However, we discover that though taxonomy classes differ, the fine-grained concepts of products seldom shift. 
+On the other hand, the previous retrieval stage pursues the recall of candidates and focuses less on class discrimination, the cross-encoder in \textit{Reranking} stage possibly suffers from indistinguishable categories.
+% Therefore we consider to utilize such a domain independent property.
+Inspired by the 
+% contrastive learning within groups
+supervised derivative of contrastive learning~\cite{wang2021self}, where they generally regard all samples from the same class $y$ as positive samples while samples from other classes are treated as negative, we make a stronger assumption for positive pairs in our problem.
+
+More specifically, 
+we restrict the formation of positive pairs ensuring they not only share the same class with $X$ but also have at least one concept in common with $X$, otherwise they would be considered negative. 
+This setting is tailored for the DMPC problem pursuing cross-domain alignment and uniformity, 
+% taxonomies from different domains to make products sharing the same class and concept strongly tied together in their encoded semantic embeddings. 
+where inter-concept semantics are tied closer and intra-concept ones are further distinguished.
+
+Given a product title $X$ with label $y$ and tagged concept set $\Lambda$, we encode $X$ as vector $\mathbf{u}$ and group encoded product titles as positive vector samples 
+$\{\mathbf{v}_1^{y,\Lambda_1}, \mathbf{v}_2^{y,\Lambda_2}, ..., \mathbf{v}_D^{y,\Lambda_D}\}$, which are labeled with the same $y$ and share an overlapped concept set $\Lambda_d$ with $\Lambda$. 
+We use BERT as the backbone and tune its parameters with group contrast loss: 
+\begin{equation}
+    \begin{aligned}
+    \mathcal{L}^{GC}&=-\frac{1}{D}\sum_{d=1}^{D}{\log\frac{\exp(\mathbf{u}\cdot\mathbf{v}_d^{y,\Lambda_d}/\tau)}{Pos+Neg}}. \\
+    Pos&=\sum_{d=1}^{D}{\exp(\mathbf{u}\cdot\mathbf{v}_d^{y,\Lambda_d}/\tau)}, \\
+    Neg&=\sum_{y^{\prime},\Lambda^{\prime}}^D
+    {\exp(\mathbf{u}\cdot\mathbf{v}^{y^{\prime},\Lambda^{\prime}}/\tau)},\\
+    \end{aligned}
+\end{equation}
+where $y^{\prime},\Lambda^{\prime}$ denotes samples with either different label $y^{\prime}$ with $y$ or non-overlapping meta label set $\Lambda^{\prime}$ with $\Lambda$. 
+The BERT with contrastive pretraining is used as the cross-encoder in the next \textit{Reranking} stage.
+
+\subsection{Reranking}
+% \subsubsection{Training procedure}
+Through the \textit{Retrieval} stage and BERT contrastive pretraining, the semantic similarity between product titles and label candidates is further measured with mutual interactions in \textit{Reranking} stage. 
+In training process, given a product title $X$ and its retrieved candidates $C_{union}=\{c_1, c_2, ... c_k\}$, we concatenate tokenized sequences of $X$ and each of these $c_i \in C_{union}$ with a [$\mathtt{SEP}$] token as the input to BERT cross-encoder. 
+% The encoded [$\mathtt{CLS}$] token is followed by a fully-connected layer to output a similarity score $\delta$ and to decide whether these two sentences match or not. 
+Ground truth label $Y_{\mathbbm{1}}$ is 1 if $c_i$ is the correct candidate otherwise 0. Optimization is followed by binary cross-entropy loss.
+% \subsubsection{Inference procedure}
+During inference, candidates $c_i \in C_{union}$ and the product title $X$ are processed in the same manner as training. The model gives $k$ similarity score w.r.t each $c_i$, and the candidate with the highest similarity score would be our predicted category.

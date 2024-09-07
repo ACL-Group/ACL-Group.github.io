@@ -1,0 +1,198 @@
+%!TEX root = paper.tex
+
+\chapter{Introduction}
+\label{chap:intro}
+
+Statistical inference is an important technique to express hypothesis and
+reason about data in data analytic tasks.  Today, many big data applications
+are based on statistical inference. Examples include topic modeling
+\sjtucite{blei2003latent,Titov2008a}, sentiment analysis \sjtucite{Titov2008b,
+Jo2011,tsm}, spam filtering \sjtucite{spam}, to name a few.
+
+One of most critical steps of statistical inference is to construct a
+\emph{statistical model} to formally represent the underlying statistical
+inference task \sjtucite{cox}. The development of a statistical model is never
+trivial because a domain user may have to devise and implement many  different
+models before finding a promising one for a specific task. Currently, most
+scalable machine learning libraries (e.g.~MLlib \sjtucite{mllib}) only support
+standard models such as support vector machine, linear regression, latent
+Dirichlet allocation (LDA) \sjtucite{blei2003latent}, and etc. To carry out
+statistical inference on customized models with big data, the users have to
+implement their own models and inference code in a distributed framework like
+Apache Spark \sjtucite{Zaharia:2010:SCC:1863103.1863113} and Apache Hadoop
+\sjtucite{hadoop}.
+
+Developing inference code requires extensive knowledge in both statistical
+inference and programming techniques in distributed frameworks. Moreover,
+model definitions, inference algorithms, and data processing tasks are all
+mixed up in the resulting code, making it hard to reason about and debug.  For
+even a slight alteration to the model in quest of the most promising one, the
+model designer will have to re-derive the formulas and re-implement the
+inference code, which is tedious and error-prone. 
+
+\section{The InferSpark Framework}
+\label{sec:intro_inferspark}
+
+In this thesis, we present InferSpark, a \emph{declarative Bayesian inference
+framework} on top of Spark. It allows end users to succinctly {\em declare} a
+ custom Bayesian network model using random variables, 
+their prior distributions as well as
+their inter-dependencies. InferSpark compiler then takes the model and generates
+appropriate parameterized inference code, which is instantiated at runtime
+by the input data and runs efficiently on Spark.
+Bayesian networks form a dominant branch of probabilistic graphical models
+and include such popular models as naive Bayes, LDA and TSM \sjtucite{tsm}.
+
+Declarative specification of statistical models belongs to an emerging paradigm
+called {\em probabilistic programming} that seeks to unify programming with
+probabilistic modeling \sjtucite{pp}.
+So far, the emphasis of probabilistic programming has been put on the
+expressiveness of the languages and the development of efficient inference
+algorithms (e.g., variational message passing \sjtucite{vmp}, Gibbs sampling \sjtucite{gibbs},
+Metropolis-Hastings sampling \sjtucite{mh}) to handle a wider range of statistical
+models. The issue of scaling out these frameworks, however, has not been
+addressed. For example, Infer.NET \sjtucite{InferNET14}, one of the most
+mature probabilistic programming systems, only works on a single machine.  
+When we tried to use Infer.NET to train an LDA model of 96 topics and 9040-word
+vocabulary on only 3\% of Wikipedia articles, the actual memory
+requirement has already exceeded 512GB, the maximum size of memory on most commodity
+servers today.
+
+The InferSpark project consists of two parts:
+\begin{packed_enum}
+	\item {\bf Extending Scala to support declarative modeling of
+	Bayesian networks}
+
+	Spark is implemented in Scala due to its functional nature.
+The fact that both preprocessing and post-processing can be 
+included in one Scala program substantially eases the development process.
+	In InferSpark, we extend Scala with declarative constructs 
+	while leveraging its functional features.  
+	Carrying out statistical inference with InferSpark
+	is simple and intuitive, and implicitly enjoys the distributed computing
+	capability brought by Spark.  As an example, the LDA statistical model 
+	was implemented using 503 lines of Scala code in MLlib 
+	(excluding comments,
+	javadocs, blank lines, and utilities of MLlib).  
+	With InferSpark, we could implement that using only 7 lines 
+	of declarative code (see \figref{fig:intro_lda_def}). 
+	
+
+	\item {\bf Building an InferSpark compiler and a runtime system}
+		
+	InferSpark compiles InferSpark models into Scala classes
+	and objects that implement the corresponding inference algorithms 
+	with a set of API. 
+	The user can call the API from their Scala programs to 
+	specify the input (observed) data and query about the model 
+	(e.g. compute the expectation of
+	some random variables or retrieve the parameters of the posterior
+	distributions). Meanwhile, the system provides interface for
+	algorithm developers to plug in new inference algorithms to support
+	new models.
+		
+\end{packed_enum}
+
+
+\begin{figure}
+\begin{lstlisting}
+@Model
+class LDA(K: Long, V: Long, alpha: Double, beta: Double){
+	val phi = (0L until K).map{_ => Dirichlet(beta, K)}
+	val theta = ?.map{_ => Dirichlet(alpha, K)}
+	val z = theta.map{theta => ?.map{_ => Categorical(theta)}}
+	val x = z.map{_.map{z => Categorical(phi(z))}}
+}
+\end{lstlisting}
+\caption{Definition of latent dirichlet allocation model}
+\label{fig:intro_lda_def}
+\end{figure}
+
+\section{A New Graph Processing Framework Optimized for InferSpark}
+
+This thesis describes the workflow, architecture, and a preliminary
+implementation of InferSpark. It is based on GraphX, the built-in graph
+processing framework of Apache Spark. The code generation module, or CodeGen
+for short, generates graph-based inference algorithm implementations on GraphX
+at run time for user-defined models. The system then automatically loads and
+runs the inference code. Our empirical evaluation of the preliminary
+implementation shows that InferSpark scales far better than the state-of-the-art
+probabilistic programming framework Infer .NET.
+
+Although scaling better than other frameworks, the preliminary implementation
+still suffers from poor performance. Profiling the runtime
+metrics of the implementation shows that the poor performance stems from the
+excessive data shuffle between workers during graph updates. In the particular
+case of InferSpark, our graph can be partitioned in such a way that most of the
+data shuffle is not necessary. Unfortunately, it cannot be eliminated due to
+the limitation of the physical design of GraphX. In order to mitigate the
+excessive data shuffle, we propose a new graph processing framework called
+InferSpark-Graph that eliminates the unnecessary data shuffle. Empirical
+evaluations show that the new design greatly improve the performance of
+InferSpark while the performance of existing applications of GraphX (e.g.
+PageRank) is at least the same. The source compatibility between
+InferSpark-Graph and GraphX is maintained via the same set of API so it is
+possible to leverage the optimization in InferSpark-Graph with few
+modifications to existing source code.
+
+\section{Contributions}
+
+To the best of our knowledge, InferSpark is the first endeavor to bring
+probabilistic programming into the (big) data engineering domain.  InferSpark
+is different from systems for implementing inference algorithms such as MATLAB,
+R, SystemML \sjtucite{systemml}, which targets inference code developers
+instead of domain users.  It is also different from machine learning libraries
+such as Mahout \sjtucite{mahout}, MLLib \sjtucite{mllib}, MADLib
+\sjtucite{madlib}, which only supports a limited number of models. When it
+comes to customized models, the users cannot use the libraries but write their
+own code. InferSpark is similar to MLBase \sjtucite{mlbase} in the sense that
+they both provide domain users a declarative interface but the latter mainly
+handles the models of frequentist approach like SVM, logistic regressions.
+
+The new graph processing framework, InferSpark-Graph, greatly improves the
+performance of InferSpark. Although InferSpark-Graph in the
+CodeGen module was designed for InferSpark, other GraphX applications can be
+easily ported to it. For certain applications like InferSpark, the
+performance will be greatly improved while the performance is not worse if not
+being improved for others.  GraphX \sjtucite{graphx} is the built-in graph
+processing framework in Apache Spark. InferSpark-Graph adopts a different
+physical design but maintains the same API.  GraphFrames
+\sjtucite{graphframes} is a recent effort of designing a better graph
+processing framework on Spark. It differs from our approach in that it
+represents the graph as relational tables on SparkSQL and utilizes the
+traditional relational database optimization. It, however, performs even
+worse due to lack of key optimization.
+
+This thesis presents the following technical contributions so far.
+\begin{packed_enum}
+\item We present the extension of Scala's syntax that can express various
+	sophisticated Bayesian network models with ease.
+\item We present the details of compiling and executing an InferSpark program
+	on Spark.  That includes the mechanism of automatically generating efficient
+	inference code that include checkpointing (to avoid long lineage), proper
+	timing of caching and uncaching (to improve efficiency under memory
+	constraint), and data partitioning (to avoid unnecessary replication and
+	shuffle).
+\item We present an empirical study that shows InferSpark enables inference
+	on both customized and standard models at scale.
+\item We present a new graph processing framework, InferSpark-Graph, that
+	solves the performance issue that is unsolvable using GraphX. It is also
+	applicable to all existing applications with few modifications to the code
+	base.
+\item We present an empirical evaluation that shows the improvement of
+	performance of InferSpark using InferSpark-Graph.
+\end{packed_enum}
+
+The remainder of this thesis is organized as follows: 
+Chapter \ref{chap:background} presents the essential background for this thesis.
+Chapter \ref{chap:framework} then gives an overview of InferSpark.
+Chapter \ref{chap:impl_and_eval} gives the details of the preliminary
+implementation of InferSpark and an evaluation study of the implementation of
+InferSpark.
+Chapter \ref{chap:graphengine} describes the new graph processing framework,
+InferSpark-Graph, designed for the CodeGen module of InferSpark and presents
+an empirical evaluation of implementation of InferSpark-Graph.
+Chapter \ref{chap:related} discusses related work
+and chapter \ref{chap:conclusion} contains our concluding remarks.
+
+

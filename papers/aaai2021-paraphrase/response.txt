@@ -1,0 +1,74 @@
+Dear Reviewers:
+Thank you for your professional and valuable reviews! In response to your suggestions and questions, we will elaborate on the following 6(4+2) points:
+
+
+Review 2:
+1. About the hyperparameter lambda
+We agree with you that using a dynamic lambda will make the model more general and easy to use, and we also tried to train a joint model with a dynamic lambda in it. However, the set2seq is a lightweight model while the translation models are relatively heavy, and they require different training data, training parameters, etc. We didn't get good results when we mixed the two models together (We encoded the wordset and the Chinese translation to get two hidden states and decode them together with a learnable parameter lambda). Maybe we can try to use a pre-trained translation model and fix its parameters to train a joint model in future work.
+For lambda, we chose it from [0.1, 0.2, 0.3 .... 1.0, 2.0, 3.0, ..., 10.0]. We use a dev set containing 3,000 samples to get the best lambda on Quora and reuse it on all datasets. From the result of the dev set, when lambda increases from 0 to 0.4, iBLEU rises slowly, from 13.5 to 14.5. When lambda is between 0.4-0.7, the result is relatively stable, iBLEU remains above 14.5, and when lambda is between 0.7-10.0, iBLEU decreases slowly, from 14.5 to 12.5. Since we don't need to re-train the model to tune lambda, the selection of lambda value is relatively convenient and quick. 
+
+
+2. About statistical significance scores
+We also agree with you that statistical analysis can make the results more convincing, and we actually did that. However, for the following two considerations, we did not put it in the paper:
+    a. The size of our test set is very large, containing 20,000 test samples. The improvement obtained on such a large test set is already significant.
+    b. Due to space constraints, we put other more important content in the paper.
+Nevertheless, we present you with the significant test results absent from the paper. For each competitive baselines, we calculated the p-value between our results and their results on Quora with a t-test. Here are the results:
+    Method          /   p-value
+    VAE             /   5.14E-223
+    CGMH            /   7.17E-121
+    UPSA            /   2.43E-25
+    DNPG(adapted)   /   1.16E-99
+    Back-tran       /   1.17E-86
+As shown above, all p-values are far less than 0.05, demonstrating the significance of our improvement. With your permission, we will include these results in the final version given the 2 additional pages.
+
+
+3. METEOR score and BERTScore
+This is a very good suggestion, since METEOR and BERTScore can better represent semantic similarity. However, most previous approaches such as UPSA and DNPG used iBLEU, BLEU and ROUGE as their evaluation metrics, and we followed their set-ups. But based on your suggestion, we calculated the METEOR score and BERTScore for all competitive baselines on Quora, here are the results:
+    Method          /   Bert-P  /   Bert-R  /   Bert-F1 /   METEOR
+    VAE             /   88.54   /   88.71   /   88.62   /   27.15
+    CGMH            /   91.28   /   91.09   /   91.18   /   27.93
+    UPSA            /   92.02   /   92.13   /   92.05   /   29.01
+    DNPG(adapted)   /   92.41   /   91.98   /   92.19   /   28.66
+    Back-tran       /   93.17   /   92.56   /   92.86   /   27.31
+    Set2seq         /   93.75   /   93.27   /   93.5    /   29.57
+    Set2seq+BT      /   94.6    /   93.86   /   94.22   /   31.07
+We used the tools from http://www.cs.cmu.edu/~alavie/METEOR/ and https://github.com/Tiiiger/bert_score. As you can see, our methods (Set2seq & Set2seq+BT) still have great advantages over the baselines when using these evaluation metrics. Again, with your permission, we can present these results in the final version.
+
+
+4. training details
+We apologize for the inconvenience caused by the supplementary file which was zipped in Linux. If you unzip the file, you will see a README file which includes the training details. We are going to open-source this code and our translation/set2seq models on GitHub later (Including the README file). You can re-produce our framework with the following steps:
+    a. train two translation models (en-zh zh-en) with a standard transformer
+    b. train a set2seq model
+    |---b1. get some non-parallel sentences from your dataset (like Quora)
+    |---b2. tokenize the sentences, truncate the sentences to up to 20 tokens.
+    |---b3. remove the stopwords in the sentences, randomly replace them with their synonyms provided by wordnet (you can use the nltk package)
+    |---b4. train the set2seq model. For each sample, the input is the wordset, and the target is the original sentence. Set2seq is a lightweight model, only have 2 encoder layers and 2 decoder layers, we describe the model in Section 3.3
+    c. paraphrasing
+    |---c1. get some test sentences
+    |---c2. tokenize & truncate & build the wordset
+    |---c3. translate the sentence into Chinese
+    |---c4. generate paraphrases with the wordset and the Chinese sentence as input. This step is described in figure 1.
+
+
+
+Review 3:
+1. About the machine translation experiments and the usefulness of paraphrase generation
+It's a good suggestion to show the results of experimental results with the back-translation-based paraphrasing to reveal the application-oriented advantages of the proposed method. Since our main topic is paraphrase generation, we have not carried out many experiments on data augmentation of machine translation. In addition to NMT, there are many other application scenarios for paraphrase generation. According to ``Improved Lexically Constrained Decoding for Translation and Monolingual Rewriting'' (Edward Hu et al., 2019, NAACL), back-translation-based paraphrasing plays an important role in the fields of NLI and QA. However, they didn't see any improvement in NMT. As far as we know, we are the first to use paraphrasing in NMT data augmentation and have achieved some improvement.
+
+Due to the limited time, we conducted three additional experiments during the rebuttal period. We augment the training data of NMT with back-translation, also with 10 copies and 10 paraphrases (with random sampling). However, we didn't get any improvement. Here are the results:
+    data        /   Orig. pairs /   augmented with back-translation
+    de-en 150k  /   12.89       /   11.13
+    zh-en 150k  /   10.21       /   10.05
+    ru-en 150k  /   16.88       /   16.25
+We observed the paraphrases generated by back-translation and came up with two reasons for the poor results:
+    a. After back-translation, many sentences have changed their semantics, and even have grammatical errors. This makes some of the augmented data incorrect.
+    b. The 10 paraphrases generated by back-translation are very close to each other, with only lexical changes at most (although they are slightly different from the source sentence). Thus the augmented data can only carry limited additional useful information.
+
+Our framework performs much better for the following two reasons:
+    a. We use two different models, and the complementary information between them makes the generated paraphrase more accurate, which can be seen from both automatic evaluation and human evaluation.
+    b. Our framework is more diverse. The random replacement of synonyms ensures the diversity of lexicon, and the removal of sequence information can bring about different word sequences. The 10 paraphrases generated by our framework are different from each other to a certain degree.
+
+We will put these results in the final version as you advised.
+
+
+2. BERT score: Please refer to point 3 for Review 2.

@@ -1,0 +1,67 @@
+\section{Preliminaries}
+\label{sec:preliminary}
+In this section, we introduce the general active learning process and 
+some traditional AL sampling strategies. 
+
+%\KZ{Make sure all brief descriptions of these baseline methods are self-explanatory.}
+
+\subsection{Active Learning Framework}
+Given a dataset $ \mathcal{Z} =  \{(x_1,y_1),...,(x_N,y_N)\}$, where $x_i$ is 
+a $D$-dimensional feature vector and $y_i \in \{0,1,...,K\}$ is the corresponding label, 
+$\mathcal{Z}$ will be divided into unlabeled $\mathcal{U}_t$ and 
+labeled $\mathcal{L}_t$ at time step $t$. 
+fastText works as a probabilistic classifier $f$ which can generate hidden layer feature 
+$h(x)$ and map features to probability vector. AL sampling strategy defines a utility function $\mathcal{V}(x)$ and selects and queries 
+the point with the highest $\mathcal{V}(x)$ at $t$, i.e., $x^*=\argmax_{x_i\in\mathcal{U}_t}\mathcal{V}(x_i)$.
+We then remove it from $\mathcal{U}_t$ and 
+add it to $\mathcal{L}_t$, train the classifier again and add $t$ by one. In order to save time and computing resource, we choose batch AL, i.e., selecting batch-size $\mathcal{B}$ points 
+instead of one point every iteration.
+
+
+\subsection{Sampling Strategy}
+\subsubsection{Random Sampling (R)}
+The simplest sampling strategy is to randomly select from unlabeled dataset 
+$\mathcal{U}_t$. Since the true data class distribution remains unknown, 
+we assume it being the uniform distribution with replacement and generate random samples.
+
+\subsubsection{Uncertainty Sampling (US)}
+\label{sec:uncertainty}
+The main intuition of US is to select points that current classifier $f$ 
+is most uncertain about. A lot of uncertainty definition can be chosen and 
+in our experiment, we select entropy, the most prevalent one.
+    $$\mathcal{V}(x_i) =  \mathcal{H}(x_i)$$
+    where $\mathcal{H}$ can be calculated as $ \mathcal{H}(x_i) = -\sum_{j=1}^K p(\hat{y}_i=j|x_i) log  p(\hat{y}_i=j|x_i)$ and $p(\hat{y}_i=j|x_i)$ is the output of classifier indicating the probability of label $j$ given $x_i$ at time step $t$.
+    
+\subsubsection{Least Confidence (LC)}
+    Least confidence selects the instance having the least confidence in its probability vector. 
+    $$ \mathcal{V}(x_i) = - \argmax_{k \in \{0,1,..,K\}}(p(\hat{y}_i=k|x_i))$$
+
+\subsubsection{K-center Greedy (KG)}
+    K-center greedy sampling~\cite{sener2017geometric} selects the instance dependent on the classifier prediction in order to find center point instead of outlier points.
+    $$\mathcal{V}(x_i) = \min_{x_j \in \mathcal{L}_t}\delta(x_i,x_j)$$
+    where $\delta(x_i,x_j)$ denotes the distance between point $x_i$ and $x_j$. In our case, we use Euclidean distance.
+    
+\subsubsection{Weighted Uncertainty (WU)}
+    Weighted uncertainty~\cite{zhao2017deep} is an adaptive approach specially designed for RNN based on traditional uncertainty sampling, which combines representative with uncertainty. In other words, this method to some extent ease the effect of outlier. The sampling formula is shown as follows:
+    $$ \mathcal{V}(x_i) = \mathcal{H}(x_i) \mathcal{S}(p(\hat{y}_i|x_i))$$
+    where $\mathcal{H}(x_i)$ is calculated as in \secref{sec:uncertainty}, while $\mathcal{S}$ is calculated according to the following procedure. 
+    In hidden feature space, we calculate the centroid of each label by averaging the feature vector of all samples from $\mathcal{U}_t$ belonging to the label according to classifier prediction. Then, for a certain data point, we calculate the cosine similarity between the centroid of its predicted label. This similarity score is treated as representative $\mathcal{S}$.  For convenience of notation, we assume $\hat{y_i} = k$ and denote the set of points whose predicted label is $k$ as $\mathcal{U}_k$
+    $$C_k = \frac{1}{|\mathcal{U}_k|} \sum_{x_j \in \mathcal{U}_k} h(x_j)$$
+    $$\mathcal{S}(\hat{y_i} = k|x_i) = \frac{h(x_i) \cdot C_k}{||h(x_i)|| \cdot ||C_k||} $$
+where $h(x_j)$ is hidden feature of $x_j$.
+ The general algorithm is shown as follows:
+ \begin{algorithm}
+\caption{Weighted Uncertainty}
+\label{alg:WU}
+\begin{algorithmic}
+\STATE {Randomly select a small dataset $L_t \subset Z$ and label it. The remaininng  data $U_t = Z \setminus L_t$ is the unlabeled pool with $t = 0$.} 
+\REPEAT 
+\STATE Calculate the entropy score $\mathcal{H}(x)$.
+\STATE{Calculate the center of each predicted class $C_k$.}
+\STATE Calculate the similarity score $\mathcal{S}(\hat{y_i} = k|x_i)$.
+\STATE Sort $V(X_i) = \mathcal{H}(x_i) \mathcal{S}(p(\hat{y}_i|x_i)) $ and select the top $B$ data points.
+\STATE{Label the batch data selected and train $f_{t+1}$ using $L_{t+1} = L_t \cup B$.}
+\UNTIL{Model meet the accuracy qualification}
+\end{algorithmic}
+\end{algorithm}
+

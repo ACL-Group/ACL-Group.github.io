@@ -1,0 +1,151 @@
+\subsection{Training and Prediction}
+\label{sec:strategy}
+
+As mentioned before, we handle the table linking task by defining a 
+scoring function of the mention-entity table pair.
+To fulfill this,
+the previous mention, context and coherence features are fed
+into a two-layer fully connected network,
+and the final output indicates the final relevance score:
+\begin{equation}
+  \label{eqn:score}
+  \begin{gathered}
+    \bi{h}_{out}  = \mbox{ReLU}(W_{out}[\bi{h}^{(m)}; \bi{h}^{(c)}; \bi{h}^{(coh)}] + \bi{b}_{out}) \\
+    S(X, E)         = \bi{u} \cdot \bi{h}_{out},
+%score(T_M, T_E) = W_{out} \cdot FC([f_{cell}, f_{cxt}, f_{coh}]) + b_{out}
+  \end{gathered}
+\end{equation}
+\noindent
+where $W_{out}$, $\bi{b}_{out}$ and $\bi{u}$ are model parameters.
+
+For each mention table in the training set,
+there will be one positive gold entity table,
+and several negative (corrupted) entity tables.
+The negative table is generated automatically from the gold table as follows:
+we first randomly select some cells to be corrupted, 
+and then replace the entities in those cells by a random entity from
+the corresponding cell of a candidate table.
+
+There are two possible optimization strategies during training: hinge loss
+and a pairwise ranking model. For hinge loss, we try to maximize the difference
+between positive and negative entity tables. For pairwise ranking model,
+every pair of candidate tables are compared: the table with more
+correctly linked entities is ranked higher than the other one in the pair.
+Here we adopt RankNet~\cite{burges2010ranknet} with Adam stochastic 
+optimizier~\cite{kingma2014adam} as our implementation.
+
+At the time of prediction, ideally we must enumerate all the candidate entity 
+tables to get the global optimal.
+However, the number of candidate entity tables grow exponentially
+with respect to the number of cells to be linked,
+%Considering that one mention table could have more than 20 cells to be linked,
+%even though each mention only maps to 5 candidate entities,
+%such brute-force approach is still intractable.
+rendering such approach intractable.
+%
+%In order to obtain a good approximation as the final linking result,
+%we follow a simple but important assumption during the prediction and 
+%parameter learning step:
+%if a candidate entity table is closer to the gold result,
+%i.e. more entitie are correctly linked, then it would receive a higher relevance score.
+%
+%In this way, we propose a local-search descent approach as the approximate algorithm for prediction.
+%In order to make the assumption to be effective,
+%we adopt a learning to rank algorithm in the training step.
+\begin{algorithm}
+	\small
+	\caption{Local-Search Descent Prediction}
+	\label{alg:prediction}
+	\textbf{Input}: Mention table $X$, linking position $P$, initial entity table $E_0$,\\
+	candidate generator $Cand(\cdot)$, scoring function $S(\cdot,\cdot)$
+
+	\textbf{Output}: Entity table $E$
+	\begin{algorithmic}[1]
+		\Procedure{Predict}{$X, E_0, Cand, S$}
+		\State $E \gets E_0$
+		\State $s_{max} \gets S(X, E_0)$
+		\Repeat
+            \State \textbf{Shuffle} $P$
+    		\For {$(i, j)$ in $P$} \label{line:visit}
+	    	    \State $E' \gets E$
+        		\For {$ent$ in $Cand(x_{ij})$}
+                    \State $e'_{ij} \gets ent$
+		            \State $s' \gets S(X, E')$
+        		    \If {$s' > s_{max}$}
+                        \State $e_{ij} \gets ent$ \label{line:update}
+                        \State $s_{max} \gets s'$
+		            \EndIf
+       		    \EndFor
+		    \EndFor
+		\Until{$s_{max}$ converges} 
+		\State \Return {$T_E$}
+		\EndProcedure
+	\end{algorithmic}
+\end{algorithm}
+To this end, we use a local-search descent algorithm to approximate the optimal
+solution.
+As shown in \algoref{alg:prediction},
+$E_0$ is the initial candidate entity table, where each cell is filled with
+the most possible candidate entity produced by the generator $Cand(\cdot)$,
+and $S$ is the learned scoring function.
+%$Cand$ is a collection of candidates for mention table $T_M$. $Cand_{ij}$ represents a list of candidate entities for cell $\textbf{m}_{ij}$. $replace(T, \langle i,j\rangle, e)$ is a procedure which replace the entity of table $T$ at position $\langle i,j\rangle$ with a new entity $e$.
+The predicting step works iteratively.
+For each round, all cells are visited one-by-one in random order 
+(line \ref{line:visit}),
+and for each cell, the algorithm try to replace the current entity by 
+the one at the local optima,
+and updates the output table (line \ref{line:update}).
+The iteration continues until no replacement can improve the relevance score.
+
+%Recap that the predicting algorithm works only if the previous monotonical assumption holds,
+%that is, the model produces a higher score when we replace a wrongly-linked entity
+%with the correct one.
+%For effectively training, we adopt RankNet~\cite{burges2010ranknet} as the pairwise ranking method to learn
+%all the parameters in our model.
+%In terms of the paired training data, we create a list of negative entity tables
+%for each mention table in a random corrupting strategy.
+%We will discuss it in \secref{sec:exp-setup}.
+
+%we use the idea of learning to rank model~\cite{burges2005learning} and
+%devise a pairwise ranking loss function. 
+%The basic idea is that the score of a candidate entity table should be larger (ranks higher) than any other candidate entity table with fewer correctly linked cells. 
+
+
+
+%
+%Given the mention table $X$ and its gold entity table $E^+$,
+%we generate a list of negative entity tables $E^-$ by
+%randomly corrupt a random number of entities in $E^+$.
+%Let $T_E$ equals to $T_P$ and all $T_N$s.
+%We define a label list $y_i = r({T_E}_i)$, where $r({T_E}_i)$ represents the correct cell ratio of each entity table ${T_E}_i$. $s_i = f_{model}(T_M, {T_E}_i)$ is the score list for each .
+%Then the likelihood and cost function can be written as:
+%
+%\begin{equation}
+%\label{eqn:ranknet1}
+%Likelihood = \prod_{i,j}U_{ij}^{\widetilde{U_{ij}}}\cdot (1-U_{ij})^{(1-\widetilde{U_{ij}})}
+%\end{equation}
+%
+%\begin{equation}
+%\label{eqn:ranknet4}
+%J = -\sum_{i,j}(\widetilde{U_{ij}} \log U_{ij} + (1-\widetilde{U_{ij}}) \log (1-U_{ij}))
+%\end{equation}
+%
+%Where
+%
+%\begin{equation}
+%\widetilde{U_{ij}} = \left\{
+%\begin{aligned}
+%& 1 & ~ & y_i < y_j \\
+%& 0.5 & ~ & y_i = y_j \\
+%& 0 & ~ & y_i > y_j \\
+%\end{aligned}
+%\right.
+%\end{equation}
+%
+%\begin{equation}
+%U_{ij} = sigmoid(s_i-s_j)
+%\end{equation}
+%
+%
+%
+%

@@ -1,0 +1,162 @@
+\section{Syntax \& Semantics}
+\label{sec:syntax_semantics}
+
+\begin{figure}[!h]
+\small
+	\begin{tabular}{lrl}
+		ModelDef & ::= & `model' id `\{' ModelStmts `\}' \\
+		ModelStmts & ::= & ModelStmt [[semi] ModelStmts] \\
+		ModelStmt & ::= & `val' PatDef \\
+				  & $|$ & `def' FuncDef \\
+		\multicolumn{3}{c}{...} \\
+		SimpleExpr & ::= & Dist ArgumentExprs \\
+				   & $|$ & ScalaSimpleExpr
+	\end{tabular}
+\caption{SparkPP Syntax}
+\label{fig:sparkpp_syntax}
+\end{figure}
+
+SparkPP's syntax of model definition is an extension of the functional subset
+of the syntax of scala. ... 
+
+\begin{figure}[!h]
+\small
+\begin{tabular}{lrlr}
+	$m$ & ::= & $c$ & (constants) \\
+	  & $|$ & $X$ & (variables) \\
+	  & $|$ & $dist$($\vec{m}$) & (primitive distributions) \\
+	  & $|$ & $m_1$($\vec{m_2}$) & (function application) \\
+	  & $|$ & let $X$ = $m_1$ [in $m_2$] & (bindings) \\
+	  & $|$ & $\lambda$ $x$. ScalaExpr & (function def.) \\
+	$\vec{m}$ & ::= & $\varepsilon$ & (empty argument list) \\
+			& $|$ & $m_1$, $\vec{m_2}$ & \\
+
+\end{tabular}
+\caption{Core Syntax}
+\label{fig:core_syntax}
+\end{figure}
+
+The semantics of the model definition is the probability distribution
+represented by the generative process in the model definition. The
+distribution can be uniquely determined by its probability mass function (pmf)
+since all types in scala have a finite domain (including integer and floating
+point numbers).
+
+To simplify the definition of the formal semantics of SparkPP models, we
+define a simplified core syntax \figref{fig:core_syntax}. A SparkPP model can be
+easily transformed into the core syntax and share the same semantics.
+
+
+\begin{figure}[!h]
+\tiny
+
+\inference[1)]{{\begin{array}{l}
+	\texttt{let } Y' \texttt{ be a fresh variable} \\ 
+	\var(P') = \var(P) \cup \{Y'\} \\
+	\forall v \in \dom(\var(P)), y' \in \dom(Y'), \\
+	\qquad P'(\var(P) = v, Y' = y') = \left\{{
+				\begin{array}{lr}
+					P(\var(P) = v) & (y' = c) \\
+					0 & (y' \neq c)
+				\end{array}}\right.%}
+\end{array}}}
+{(P, E, Y, c) => (P', E, Y')}
+
+\inference[2)]{{\begin{array}{l}
+	Y' = \left\{{\begin{array}{lr}
+		X & (X \in \var(P)) \\
+		E[X] & (X \in E)
+	\end{array}}\right.%}
+\end{array}}}
+{(P, E, Y, X) => (P, E, Y')}
+
+\inference[3)]{{\begin{array}{l}
+	(P, E, Y, \vec{m}) => (P', \_, \_) \\
+	\texttt{let } Y' \texttt{ be a fresh variable} \\ 
+	\var(P'') = \var(P') \cup \{Y'\} \\
+	\forall v \in \dom(\var(P')), y' \in \dom(Y'), P''(\var(P') = v, Y' = y') = \\
+	\qquad P_{dist}(Y' = y'; Eval(\vec{m} | Var(P')))P'(\var(P') = v)
+\end{array}}}
+{(P, E, Y, dist(\vec{m})) => (p'', E, Y')}
+
+\inference[4)]{{\begin{array}{l}
+	(P, E, Y, \vec{m}) => (P', \_, \_) \\
+	\texttt{let } Y' \texttt{ be a fresh variable} \\ 
+	\var(P'') = \var(P') \cup \{Y'\} \\
+	\forall v \in \dom(\var(P')), y' \in \dom(Y'), \\
+	\qquad f = func(Eval(\vec{m} | \var(P') = v)) \\
+	\qquad P''(\var(P') = v, Y' = y') = \left\{{
+		\begin{array}{lr}
+			P'(\var(P') = v) & (y' = f) \\
+			0 & (y' \neq f)
+		\end{array}}\right.%}
+\end{array}}}
+{(P, E, Y, m_1(\vec{m_2})) => (P'', E, Y')}
+	
+\inference[5)]{{\begin{array}{l}
+	(P, E, Y, m_1) => (P', \_, Y') \\
+	\texttt{if } Y' \texttt{ is an R.V.} \\
+	{\begin{array}{l}
+		\quad \texttt{create a fresh variable named } X \\
+		\quad \texttt{let } V = \var(P'') - \{Y'\}
+		\quad \var(P'') = \var(P') \cup \{X\} \\
+		\quad \forall v \in \dom(V), y' \in dom(Y'), x \in \dom(X), \\
+		\qquad P''(V = v, Y' = y', X = x) = \left\{{
+			\begin{array}{lr}
+				P'(V = v, Y = y) & (x = y) \\
+				0 & (x \neq y)
+			\end{array}}\right. \\
+		\quad E' = E
+	\end{array}} \\
+	\texttt{elif } Y' \texttt{ is a function} \\
+	{\begin{array}{l}
+		\quad P'' = P'
+		\quad E' = E \cup {X : Y'}
+	\end{array}}
+\end{array}}}
+{(P, E, Y, \texttt{let } X = m_1) => (P'', E', U)}
+
+\inference[6)]{{\begin{array}{l}
+	(P, E, Y, \texttt{let } x = m_1 => (P', E', U) \\
+	(P', E', U, m_2) => (P'', E'', Y')
+\end{array}}}
+{(P, E, Y, \texttt{let } X = m_1 \texttt{ in } m_2) => (P'', E'', Y')}
+
+\inference[7)]{}
+{(P, E, Y, \lambda\texttt{ }x.\texttt{ScalaExpr}) => (P, E, \lambda\texttt{ }x.\texttt{ScalaExpr})}
+
+\inference[8)]{}{(P, E, Y, \varepsilon) => (P, E, U)}
+
+\inference[9)]{{\begin{array}{l}
+	(P, E, Y, m_1) => (P', \_, \_) \\
+	(P', E, U, \vec{m_2}) => (P'', \_, \_)
+\end{array}}}
+{(P, E, Y, m_1, \vec{m_2}) => (P'', E, U)}
+
+\caption[SparkPP Semantics]{SparkPP Semantics. \\
+\texttt{$P$ $\in$ $\Omega$ $\rightarrow$ $[0, 1]$, the space of all possible p.m.f over a
+finite set of random variables. $E[x]$ is the function binded to variable $x$.
+$Eval(\vec{m} | \var(\vec{m}))$ is the evaluation result of the argument list
+$\vec{m}$ given the assignment of $\var(\vec{m})$ under the normal scala
+semantics.}}
+\label{fig:semantics}
+\end{figure}
+
+The semantics of a model definition is the probability mass function of the
+distribution represented by the generative process. The process is represented
+by a triple $(P, E, Y)$ of the probability mass function so far and the
+function bindings and the value that the model evaluates to (r.v. or function).
+$(P, E, Y, prog)$ $\Rightarrow$ $(P', E', Y')$ means that $prog$ transforms
+$(P, E, Y)$ into $(P', E', Y')$. Then we can define the semantics of a model
+$m$ to be P where $(P_0, \Phi, U, m) \Rightarrow (P, E, Y)$ for some $E$ and
+$Y$. $\var(P_0) = \{U\}$ where $U$ is different from all possible variables and
+has a domain size of 1.
+
+
+\begin{itemize}
+\item Typing rules. 
+
+\item Query semantics: given a joint distribution
+and observed data,  return expectation, sample and MAP.
+
+\end{itemize}

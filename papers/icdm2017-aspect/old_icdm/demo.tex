@@ -1,0 +1,664 @@
+%
+% File emnlp14-rumor\paper.tex
+%
+\documentclass[10pt,final,conference,letterpaper]{IEEEtran}
+\usepackage{times}
+\usepackage{url}
+\usepackage{latexsym}
+\usepackage{amsmath,algorithm,algpseudocode,caption,subcaption}
+\usepackage{epsfig}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{color}
+\DeclareCaptionType{copyrightbox}
+%\setlength\titlebox{6.5cm}    % Expanding the titlebox
+\newcommand{\triple}[3]{$\langle$#1, #2, #3$\rangle$}
+\newcommand{\pair}[2]{$\langle$#1, #2$\rangle$}
+\newcommand{\figref}[1]{Figure \ref{#1}}
+\newcommand{\tabref}[1]{Table \ref{#1}}
+\newcommand{\secref}[1]{Section \ref{#1}}
+%\newcommand{\eqref}[1]{Eq. (\ref{#1})}
+\newcommand{\KZ}[1]{\textcolor{blue}{[Kenny: #1]}}
+\newcommand{\WK}[1]{\textcolor{red}{[Ke: #1]}}
+\newcommand{\ZY}[1]{\textcolor{red}{[Zhiyi: #1]}}
+
+\begin{document}
+\title{ExtRA: Automatic Extraction of Review Aspects 
+%\Thanks{}
+}
+
+\author{
+Shi Feng, Kenny Q. Zhu, Zhiyi Luo\\
+%Shi Feng$~^{1}$, Kenny Q. Zhu$~^{2}$, Zhiyi Luo$~^{3}$\\
+%\vspace{1.6mm}
+\fontsize{10}{10}\selectfont\itshape
+%Department of Computer Science \& Engineering\\
+Shanghai Jiao Tong University, Shanghai, China\\
+\vspace{-1cm}
+%\fontsize{9}{9}\selectfont\ttfamily\upshape
+%$~^{1}$sjtufs@gmail.com, $~^{2}$kzhu@cs.sjtu.edu.cn, 
+%$~^{3}$jessieluo1991@gmail.com
+}
+
+%\date{\today}
+\maketitle
+\begin{abstract}
+Summarizing users opinions about a product or
+service by rating against several distinct and representative aspects
+is intuitive and effective. Manual determination of aspects of a product type 
+doesn't scale to large and comprehensive e-commerce or consumer review sites
+and doesn't adapt to changes in interests.
+This paper demonstrates a unsupervised multistage
+approach for automatically discovering the best aspect words from massive
+amount of textual user reviews of any type of product or service. 
+Our experiments showed that the approach is efficient and achieves 
+the state-of-the-art accuracies.
+\end{abstract}
+
+\section{Introduction}
+\label{sec:intro}
+
+Product reviewing is a key character that distinguishes e-commerce 
+from conventional retail.
+Many websites provides either qualitative or quantitative
+summaries of user reviews, organized by important aspects 
+of the target product or service.
+One example of such \emph{aspect-based review 
+summarization}~\cite{hu2004mining} for a hotel on TripAdvisor
+as of June 2016 is shown in \figref{fig:tripadvisor}. 
+Here, besides the short review passage written by the user, 
+the user are asked to give discrete ratings (on the scale of 1-5) 
+on various aspects of the hotel room, 
+e.g., location and cleanness. The ratings of 
+a product from individual reviews can then be aggregated into an overall
+ratings of the same product by many users.
+
+\begin{figure}[th]
+\centering
+\includegraphics[width=0.7\columnwidth]{figures/tripadvisor-short}
+\caption{Part of a user review from TripAdvisor.}
+\label{fig:tripadvisor}
+\end{figure}
+
+
+Aspect-based review summaries strike a nice middle ground between
+detailed text reviews and an all-in-one overall score, yielding
+a somewhat balanced view of a product. Such summaries
+provide an effective and efficient way of comparing products in
+the same category.
+%have several advantages compared to the more traditional 
+%style of online reviews that consists of a short passage and 
+%an overall rating. 
+%In aspect-based reviews, more details are provided quantitatively and 
+%more directly, and the users can learn about various aspects of a product 
+%without having to read the entire review passage. Another advantage of 
+%aspect-based reviews is that different products within the same category 
+%can be compared directly with respect to multiple aspects, 
+%instead of just an overall rating. When researching on products, 
+%users spend most of their time comparing different brands and models. 
+%Aspect-based review summarization provides an effective and efficient way for 
+%doing such comparison, saving the users both time and effort.
+
+
+%At present, websites that offer aspect-based review summaries typically 
+%only feature a single or a small number of product categories, e.g.,
+%TripAdvisor.com only features travel related products while Cars.com reviews
+%automobiles. 
+Because it takes in-depth knowledge to 
+characterize a product type using a few keywords that balance between
+relevance and diversity, at present, these aspects are primarily hand picked
+by the review site operators.
+Manual selection of aspects cannot scale to large number of
+product types as featured by general e-commerce platforms such as Amazon.com
+and Yelp. Moreover, such aspects may change from time to time due to 
+evolving user interests.
+%These platforms instead turn to automatic review 
+%summarization, mined from the user review texts. 
+
+%\begin{figure}[th]
+%\centering
+%\includegraphics[width=0.8\columnwidth]{figures/phrases}
+%\caption{Automatic review summarization for two mobile phones 
+%on an e-commerce website}
+%\label{fig:phrases}
+%\end{figure}
+%
+%An example of automatic review summarization commonly seen 
+%on e-commerce websites is shown in \figref{fig:phrases}. 
+%There is a summary of opinion phrases for each phone model, 
+%along with the frequency of each phrase mentioned in the 
+%reviews. There are two major drawbacks in this form of summarization. 
+%First, it is restricted to using the reviews about a specific product. 
+%Therefore, summaries are incompatible across different products within 
+%the same category - different models may not share the same set of 
+%opinion phrases. This makes it less useful for users to compare
+%different models.  Second, users' sentiment toward 
+%each aspect cannot be quantified and computationally compared - 
+%the difference of emotional strength between 
+%``extremely good" and ``above average" is hard to capture.
+% user cannot choose to express them differently.
+
+%The aspects of a product are supposed to capture the most important features 
+%and cover all the facets of the product. The products of the same category 
+%share the same set of aspects, however the aspects can be very different 
+%across categories. It takes both common knowledge and personal experience 
+%with the product to decide which are the appropriate aspects. 
+%The websites that can provide aspect-based rating system basically 
+%all share a common feature, that is they each focuses on only one or 
+%a small range of products. For example TripAdvisor focuses on hotels and 
+%Cars.com focuese on cars. The set of aspects is what the consumers base 
+%on to compare different products, thus they must be carefully chosen 
+%to cover all the facest of the product. Moreoever, at the end of the day 
+%the aspects is designed to serve the consumers, especially potential consumers, 
+%so they need to reflect what the consumers care about the product. 
+%Ideally, the aspects should be decided with user reviews taken into 
+%consideration. For a small range of products, the website owner or 
+%the retailer may manual designate the set of aspects, 
+%however this is intractable for websites like Amazon and TaoBao, 
+%which host basically all kinds of products available on the market, 
+%and websites like Yelp on which users review thousands of different services. 
+%
+%Motivated by this observation, we are in need for methods that automatically 
+%generate review summarizations. 
+
+Our goal in this paper is to develop an unsupervised system 
+for aspect word extraction from a set of user reviews about products within 
+the same category.  This problem is similar to topic modeling where aspects 
+can be seen as topics, but with a few differences: 
+\begin{itemize}
+    \item in aspect extraction, we seek to produce 
+	aspect words with small mutual semantic overlap; 
+    \item aspects may be expressed implicitly through personal experience; and
+    \item reviews are a short piece of text, 
+	  hence the topics may shift very quickly from 
+          sentence to sentence.
+\end{itemize}
+Previous unsupervised methods for aspect extraction are 
+variations of topic models, and cannot capture word semantics and thus
+the implicit reference of product aspects. 
+In our method we leverage the distributed 
+representations of words and sentences. With distributed representations, 
+the semantic similarity between two sentences can be more accurately 
+calculated without relying too much on the lexical information.
+Our proposed method consists 3 clustering steps and
+2 ranking phases. The framework achieved state-of-the-art performance 
+in end-to-end aspect extraction across multiple domains.
+
+%In \secref{sec:method} we introduce our method step-by-step.
+%In \secref{sec:experiments} 
+%we evaluate our method on user reviews from multiple domains and demonstrate 
+%the effectiveness of our model against other approaches 
+%and show how the aspects extracted can be used
+%to construct a complete review summarization. 
+%In \secref{sec:related}, we discussed
+%and compare our work with previous research on aspect-based review 
+%summarization.
+
+\section{The System}
+\label{sec:method}
+
+The review aspect extraction problem aims to infer $K$ noun 
+words from user reviews about the same product type.
+Each word represents a distinct aspect or feature of the product type. 
+%Here $K$ is an constant parameter for the problem. 
+%In unsupervised models for aspect extraction, 
+%the set of reviews and the number of aspects are the only inputs.
+%Note that in this definition we don't use cross-domain information, 
+%that is, for one product type we only use the reviews of that domain.
+%This allows us to apply the model to any domain with ease.
+%\begin{figure}[th]
+%\centering
+%\includegraphics[width=0.9\columnwidth]{figures/framework}
+%\caption{Our framework.}
+%\label{fig:framework}
+%\end{figure}
+%
+Our system framework consists of 5 steps.
+%
+%\begin{itemize}
+%    \item \textbf{Sentence Clustering}
+%
+%        We convert each sentence in the reviews into a vector representation 
+%        and cluster them in to $N$ clusters of semantically similar sentences.
+%
+%    \item \textbf{Noise Isolation}
+%
+%        %As aspects appear as topics in the reviews, 
+%        %we use a topic model to infer the potential aspects.
+%        To isolate the noises that exist in the sentence cluster,
+%	for each sentence cluster we further generate $M$ 
+%	topics, resulting in $N\times M$ different word distributions in total.
+%
+%    \item \textbf{Aspect Inference}
+%        
+%        We treat each word distribution as a vector and cluster the topics 
+%	into $C$ clusters which are the potential aspects. 
+%	Here $C$ is purposely set to be larger than $K$. The extra
+%	$C-K$ clusters models the redundant aspects.
+%        Each cluster contains $N\times M / C$ word distributions, or vectors.
+%        We take the mean of these vectors to form $C$ aspect clusters,
+%        each being a set of words and their corresponding weights.
+%
+%    \item \textbf{Cluster Ranking}
+%
+%        We define a score for the quality of each aspect cluster,
+%        and the clusters are ranked by this score.
+%
+%    \item \textbf{Word Ranking}
+%
+%        We use WordNet to calculate the semantic distances between the words 
+%	in each cluster and adjust the ranking based on the 
+%	both the distances and the weights of the words. The top words in each
+%	cluster are candidates of the aspect words.
+%\end{itemize}
+%
+%In the following we will explain the motivation and the details of each of
+%the five steps. 
+%
+\subsection{Sentence Clustering}
+
+%One important feature of user reviews is that many topics are 
+%compressed into a short paragraph, where each topic corresponds to 
+%a potential aspect of the product. 
+%A typical hotel review extracted from \figref{fig:tripadvisor} 
+%is shown as follows:
+%
+%\begin{quote}
+%Pool is small and only 4 ft but refreshing. Hot tub also there. Staff were super friendly each day. Room was nothing special but clean and comfy. Lots of restaurants and bars nearby. Breakfast was great and despite being a busy weekend there was always a big selection available.
+%\end{quote}
+%
+%In user reviews, topics can shift very quickly.
+%Sentences that are close to each other may refer to 
+%completely different aspects about the product. Also,
+%sentences about the same aspect may not appear in the review consecutively. 
+%The existence of such fine-grained semantic shifts in user reviews 
+%makes it difficult to apply the the bag-of-word abstraction 
+%of normal topic model on reviews.
+%Therefore we propose to work on the sentence level instead 
+%of the document level, and it would be helpful if we can divide the 
+%reviews into topic-oriented segments.
+%
+%Driven by this observation, in our method the first step is 
+%sentence clustering.  For this purpose, 
+We represent each sentence in a high-dimensional vector space,
+%Instead of using simplistic methods like bag-of-word vector, 
+%we leverage a recent development of neural network in natural 
+%language processing, the distributed representation.
+%In a distributed representation, words and sentences are 
+%converted into real-valued vectors.
+%The distance of the vectors in the vector space will capture the 
+%semantic similarity of the words or sentences.
+%In this work we attempt two models, 
+using either LSTM (a variant of RNN) or paragraph vector (PV) \cite{le2014distributed}.
+%
+%\paragraph{Recurrent Neural Network}
+%To use RNN for obtaining sentence vectors, 
+%we train a neural language model on the review sentences. 
+%After the perplexity converges, we use the trained network to 
+%process each sentence of the dataset and take the last hidden vector as 
+%the vector representation of the sentence. In our method we use a 
+%variation of RNN, long-short term memory (LSTM)~\cite{hochreiter1997long} 
+%which is reported to have better performance at 
+%modeling long sentences \cite{jozefowicz2015empirical}.
+%
+%\paragraph{Paragraph Vector}
+%PV is a simple but powerful extension to Word2vec \cite{mikolov2013distributed} with two components, 
+%distributed memory (PV-DM) and distributed bag-of-word (PV-DBOW). 
+%The first one is similar to skip-gram in Word2vec and 
+%the second is similar to CBOW \cite{mikolov2013distributed}.
+%An important advantage of paragraph vector models is that they require 
+%no labeled data. Also, it doesn't require human experts to assign weights 
+%for words in a paragraph based on linguistic knowledge. 
+%The learned vector representations inherit an important property of Word2vec, 
+%that is the semantics similarity. Also the final paragraph vector captures the 
+%word order information with the part learned from PV-DBOW with the n-gram model.
+An advantage of paragraph vector over RNNs is that it can 
+leverage trained word vectors, thus requires a smaller training data set. 
+%The word vectors can be trained on 
+%a much larger corpus so they capture the semantics relationships more 
+%accurately.  Consequently, the paragraph vectors can be trained on 
+%a relatively small dataset. 
+%The performance of paragraph vectors can also be boosted by using pre-trained 
+%word vectors that are trained on a larger dataset \cite{mikolov2013linguistic}. 
+%%However, previous research show that it is more suitable 
+%%to train the word vectors simultaneously for RNNs, 
+%%so RNNs cannot leverage the word vectors learned from a larger dataset. 
+%Also, the paragraph vector models are simple and 
+%don't require the storage of a lot of information. In contrast, for RNN we 
+%need to store every state during the forward pass for back-propagation, 
+%which is very memory consuming.
+%\paragraph{Clustering Sentence Vectors}
+We run k-means clustering on the sentence vectors and generate 
+$N$ sentence clusters. We then collect the sentences from the same review 
+that are clustered together to form smaller fragments of reviews. 
+Each original review is divided into several smaller review fragments, 
+each belonging to one of the $N$ clusters. As a result, we obtain $N$ 
+clusters of review fragments. 
+
+\subsection{Noise Isolation}
+There exists noises and overlaps in the clusters formed above.
+%The first step, sentence clustering, we might include noise and the sentences 
+%within a cluster might not all be about the same aspect. 
+%The reason is due to the common occurrences of sentences such as the following
+%in the reviews (taken from TripAdvisor):
+%
+%\begin{quote}
+%The room was clean, the staff were friendly, and I would say the price is very reasonable given the proximity to business and leisure destinations around downtown.
+%\end{quote}
+%
+%\begin{quote}
+%There is a restaurant just 5 min walk away with nice italian food, pizza was great.
+%\end{quote}
+%
+%In the first sentence multiple aspects are mentioned; in the second sentence, the only aspect is location however lexically it seems to be talking about food.
+%With these complicated structures within, 
+%it is difficult for RNN or PV to correctly determine the aspects 
+%in these sentences. The result is overlaps between clusters about 
+%different aspects and noises within each cluster.
+%To isolate the noises and resolve such overlap, 
+We fix that by applying LDA topic modeling within each sentence cluster, 
+treating each review fragment as a document, and generating $M$ smaller topics. 
+This will give us in total $N\times M$ topics, or, word distributions. 
+%\tabref{table:overlap} shows an example of topics inferred from three
+%sentence clusters from hotel reviews and illustrates the overlap problem.
+%In this example, five topics were extracted from each sentence cluster, 
+%and each row is one topic. It can be seen that the aspects for the 
+%three clusters should be {\em room}, {\em location} and {\em price} 
+%respectively.
+%However, topics shown in boldface font obviously belong to 
+%other clusters.  Especially, the last topic of the third cluster 
+%appears to be an overlap of more than two clusters.
+%The noise isolation step effectively separates the noise topics from other
+%topics semantically corehent within a sentence cluster.
+%
+%\begin{table}[th]
+%\centering
+%\caption{Topics extracted from three sentence clusters of hotel review.}
+%\label{table:overlap}
+%\begin{tabular}{|c|l|}
+%\hline
+%& room bed bedroom size floor \\
+%Sentence
+%& bedroom room wall size decor \\
+%cluster 1
+%& room bathroom shower water towel \\
+%& room suite size view floor \\
+%& room shower area kitchen bed \\\hline
+%
+%& station minute tube location bus \\
+%Sentence
+%& location price night place rate\\
+%cluster 2
+%& location square station street subway\\
+%& distance bus subway downtown shopping\\
+%& \textbf{restaurant} \textbf{city} \textbf{food} \textbf{buffet} \textbf{place} \\\hline
+%
+%& price rate service money star\\
+%Sentence
+%& \textbf{location} \textbf{city} \textbf{star} \textbf{time} \textbf{rate} \\
+%cluster 3
+%& price service night money city\\
+%& price location place night city\\
+%& \textbf{location} \textbf{service} \textbf{food} \textbf{price} \textbf{restaurant} \\\hline
+%\end{tabular}
+%\end{table}
+
+
+\subsection{Aspect Inference}
+\label{sec:topic_clustering}
+Each topic is a word distribution, represented by a vector. 
+We obtain  more compact representations of those topics by using PCA to 
+reduce the topic vectors to 100-dimension.
+%We use PCA to reduce the topics vectors to 100-dimension by  
+%selecting the 100 words that best distinguish different topics.
+Then we perform k-means clustering on the $N\times M$ topics vectors to 
+generate $C$ clusters, each containing $(N\times M)/C$ topics.
+These are called {\em aspect clusters}.
+We set $C$ to be slightly larger than the desired number of product 
+aspects $K$, so that the noisy topics can be clustered together and 
+later discarded. 
+%In an experiment we will evaluate the influence of this redundant clusters on 
+%the quality of the final aspects.
+%
+%\begin{table}[th]
+%\caption{Aspect clusters extracted from hotel reviews.
+%Each row shows the candidate words of an aspect, sorted by the weight of each word.}
+%\label{table:step3}
+%\centering
+%\begin{tabular}{|l|} \hline
+%breakfast, meal, food, tasty, dinner, morning, coffee, tea \\\hline
+%room, night, time, bed, day, bathroom, staff, area, place \\\hline
+%staff, desk, service, friendly, reception, concierge, helpful \\\hline
+%close, city, location, place, central, station, bus, street\\\hline
+%bed, shower, spacious, room, size, bathroom, bedroom, floor \\\hline
+%price, room, check, night, money, city, location, star, service \\\hline
+%location, price, room, night, place, rate, money, time, city  \\\hline
+%\end{tabular}
+%\end{table}
+%
+%Finally, for each cluster we take the mean of the $(N\times M)/C$ 
+%topics and normalize it
+%for the word distribution of that cluster.
+%Some example aspect clusters extracted from hotel reviews are 
+%shown in \tabref{table:step3}.
+
+\subsection{Cluster Ranking}
+
+We rank the clusters by how ``distinct'' each cluster is from other clusters. 
+If a cluster is similar to other clusters, it is considered redundant and of
+low quality. We discard $C-K$ least distinct clusters.
+
+
+%For the $i$th cluster $C_i$ ($i\in [1, C]$), 
+%the distinctiveness score $S(i)$ is defined by:
+%
+%\begin{align}
+%S(i) &= \sum_{w\in C_i} S_i(w) \nonumber\\ 
+%     &= \sum_{w\in C_i} \log\left(\frac{f_i(w)}{\sum_{j\neq i} f_j(w)}\right)\nonumber \\
+%     &= \sum_{w\in C_i}\left[\log f_i(w) - \log\sum_{j\neq c} f_j(a)\right]
+%\end{align}
+%
+%\begin{table}[t]
+%\caption{Aspect clusters ranked by distinctiveness score.
+%Potential aspect words are boldfaced.}
+%\label{table:clustersranked}
+%\centering
+%\begin{tabular}{|l|} \hline
+%\textbf{staff}, desk, \textbf{service}, friendly, reception, concierge, helpful \\\hline
+%breakfast, meal, \textbf{food}, tasty, dinner, morning, coffee, tea \\\hline
+%\textbf{price}, room, check, night, money, city, location, star, service \\\hline
+%bed, shower, spacious, \textbf{room}, size, bathroom, bedroom, floor \\\hline
+%close, city, \textbf{location}, place, central, station, bus, street \\\hline
+%\textcolor{red}{room, night, time, bed, day, bathroom, staff, area, place} \\\hline
+%\textcolor{red}{location, price, room, night, place, rate, money, time, city} \\\hline
+%\end{tabular}
+%\end{table}
+%
+\subsection{Word Ranking}
+\label{sec:word_ranking}
+
+We rank the words in each cluster 
+by considering two factors (similar to TF-IDF): 
+the representativeness of the word to the host
+cluster; the number of times the word appears in other clusters. 
+The most representative word in each cluster
+is assumed to be the closest to the centroid of the word cluster.
+The distance between two words is the inverse of 
+cosine similarity between the word2vec
+vectors of the two words.
+Then we process the clusters in the order of 
+the cluster ranking given in the last step.
+When we calculate the score for word $x$ cluster $C_i$,
+we also consider the scores of word $x$ in clusters $C_1$ to $C_{i-1}$, 
+where the scores have already been calculated. 
+We prevent the duplicate aspect words by subtracting the scores 
+of $C_1$ to $C_{i-1}$, from the score of $C_i$.
+%The score of word $x$ in the $i$th cluster $C_i$ is thus defined by:
+%
+%\begin{equation}
+%s_i(x) = u_i(x) \sum_{y\in C_i}\hat{x}\cdot \hat{y} - \sum_{j=1}^{i-1}s_j(x),
+%\label{eq:wordscore}
+%\end{equation}
+%where $\hat{x}$ is the vector representation of x; $u_i(x)$ is the weight of $x$ in cluster $C_i$.
+The words in each cluster is thus ranked by this final score.
+
+\section{Evaluation}
+\label{sec:experiments}
+
+We evaluated our framework
+against a number of baselines including the state-of-the-art approaches.
+%in the end-to-end aspect extraction task.
+Our dataset is reviews for 15 categories of product or service crawled from
+e-commerce sites such as Amazon.com and Yelp. 
+%The review content is plain English text and we do not use any labels 
+%for training our model. We use human labels for evaluation. 
+%The product categories, their sources and the sizes of the review datasets
+%are summarized in \tabref{table:dataset}
+%
+%\begin{table}[th]
+%\centering
+%\caption{Dataset summary.} 
+%\label{table:dataset}
+%\begin{tabular}{|c|c|r|r|}
+%\hline
+%Product type & Source & No. of Reviews & No. of Words \\ \hline \hline
+%hotel        & TripAdvisor & 27145   & 210 \\\hline
+%mobile phone & Amazon & 3716    & 136 \\\hline
+%mp3 player   & Amazon & 2745    & 128 \\\hline
+%laptop       & Amazon & 5471    & 97  \\\hline
+%tv           & Amazon & 1237    & 102 \\\hline
+%shoes        & Amazon &1748    & 82  \\\hline
+%headphone    & Amazon & 1647    & 122 \\\hline
+%gps          & Amazon & 1726    & 72  \\\hline
+%transportation & Yelp & 3077  & 131 \\\hline
+%restaurant   & Yelp & 4016    & 176 \\\hline
+%gym          & Yelp & 2481    & 230 \\\hline
+%shopping     & Yelp & 2718    & 123 \\\hline
+%car dealer   & Yelp & 2839    & 190 \\\hline 
+%movie        & Pang et al. \cite{pang2002thumbs} & 3000    & 194 \\\hline
+%car          & Cars.com & 1074    & 147 \\\hline
+%\end{tabular}
+%\end{table}
+%
+%
+%For evaluation, we ask 5 college students proficient with English 
+%to annotate ground truth
+%aspect words for each product category. For each category, 
+%we ask them to provide 5 different words that cover the most important 
+%aspects of the corresponding product or service. The labels provided by the
+%5 annotators are aggregated together without removing duplicated words, 
+%so we have 25 words in total. 
+%When evaluating the models, 
+%we compare the 5 aspect words generated by the models with those provided 
+%by the annotators. 
+%We calculate the portion of words among the 25 labels that 
+%are correctly generated by the model as the accuracy of the model.
+%The ground-truth labels for two product categories are shown 
+%in \tabref{table:labels}.
+%
+%
+%\begin{table}[th]
+%\centering
+%\caption{Labels for hotel and shopping. Each row is provided by one annotator.}
+%\label{table:labels}
+%\begin{tabular}{|c|l|}
+%\hline
+%\multirow{5}{*}{hotel}
+%& room price location service utility \\
+%& room service price food location  \\
+%& sleep service room price location  \\
+%& location price bedroom bath staff  \\
+%& room price bath staff location  \\\hline
+%
+%\multirow{5}{*}{shopping}
+%& location product service price environment \\
+%& product price service location ambience \\
+%& price food location size facility \\
+%& sales location food service environment \\
+%& price location service facility food \\\hline
+%\end{tabular}
+%\end{table}
+%
+%\subsubsection{Parameter Tuning}
+We conduct a few experiments to determine the following
+parameter settings: $N=10$, $M=10$, $C=K+2$, i.e. at most two extra clusters.
+
+We compare 5 models in our experiments, 
+LDA as a simple baseline, 
+D-PLDA \cite{moghaddam2012design} as a representative for joint 
+aspect-sentiment models, MG-LDA \cite{titov2008modeling} as 
+a representative for aspect extraction topic model,
+and two variations of our model LSTM and PV. 
+We run the 5 models on the review data of each product type separately. 
+For the main experiment, the number of aspects is fixed to 5.
+
+%\begin{figure*}[th]
+%\centering
+%\includegraphics[width=1.9\columnwidth]{figures/results}
+%\caption{Accuracies from different models.}
+%\label{fig:results}
+%\end{figure*}
+%In the end-to-end evaluation, we compare the performance of our models on aspect extraction with three other models as mentioned above. The results are shown in \figref{fig:results}. 
+By the accuracy, our two models out-performed all other models in 13 out of 15 
+categories. The PV model performs better LSTM, 
+which is consistent to our earlier analysis. \tabref{table:hotel_aspect_words}
+shows the 5 aspect words by each model for hotel reviews.
+
+\begin{table}[th]
+\centering
+\small
+\caption{Top aspect words for hotels by different models}
+\label{table:hotel_aspect_words}
+\begin{tabular}{|l|l|} \hline
+Ours(PV) & staff, food, price, room, location \\ \hline
+Ours(LSTM) & service, location, time, food, bed\\ \hline
+MG-LDA & shower, time, food, room, price\\ \hline
+DP-LDA & service, station, check, coffee, bed \\ \hline
+LDA & stay, location, room, staff, room \\ \hline
+\end{tabular}
+\end{table}
+ 
+\section{Demo Scenarios}
+We present a web demo which depicts the following scenario.
+The user logs on and selects
+a product type, e.g. ``cell phones'', from a predefined set of categories,  
+and sets the number of aspects $K$. 
+Then the user clicks the ``generate" button to extract $K$ aspect words for the selected product type.
+Upon this, the system computes the review summaries of all cell phones. 
+%Upon this, the system shows the $K$ precomputed aspect words for that
+%product type, computed from the many user reviews about ``cell phones''. 
+%Then the user clicks a button to ``generate review summaries'', which presents
+%the review summaries of all cell phones in
+%the system. 
+Each summary contains the aspects and their scores, computed from the sum of
+sentiment scores (1, 0 or -1) against each aspect using LSTM trained on
+Stanford Sentiment Treebank~\cite{socher2013recursive}. 
+The user may filter out some of the 
+results by using the search box (see \figref{fig:summary1}). 
+If the user wishes to understand why a product receives a score for a 
+certain aspect, they can click on the ``xxx customer reviews'' link
+and be directed to the original review snippets with the aspect words and 
+sentiment words highlighted. The review snippets by can further grouped by
+aspects by clicking on the tabs (see \figref{fig:summary2}). 
+
+\begin{figure}[th]
+\includegraphics[width=\columnwidth]{figures/demo1.png}
+\caption{Automatically generated 6 aspects for cell phones}
+\label{fig:summary1}
+\end{figure}
+
+\begin{figure}[th]
+\includegraphics[width=\columnwidth]{figures/demo21.png}
+\caption{Review snippets displayed by the aspects}
+\label{fig:summary2}
+\end{figure}
+
+
+%The second and a minor scenario enables the user to examine the dynamic change
+%in aspect words over time for each product type. The system shows a time line,
+%annotated with different sets of aspect words, by configurable time periods,
+%e.g., every month, 6 months or a year.  
+ 
+\bibliographystyle{IEEEtran}
+\bibliography{master}
+\end{document}

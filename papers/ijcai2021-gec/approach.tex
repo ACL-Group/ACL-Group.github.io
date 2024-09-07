@@ -1,0 +1,99 @@
+\section{Approach}
+In this section, we go through deeper into our approach. 
+
+
+\subsection{Overview} \label{sec:overview}
+
+The fondamental idea of our architecture is modulization. We frame the grammatical error correction problem as labeling the input sequence $X = (x_1, \cdots, x_n)$ with sequence of pairs $Z = ((e_1, t_1), \cdots, (e_n, t_n)), e_i \in {\mathcal{E}}, t_n \in V_{e_i} $ where $e_i$ are the edits for the token $x_i$ and $t_i$ are the token to be used for the correspondent edits. Concretely, when $e_i$ is to keep $x_i$ or to drop directly $x_i$, $V_{e_i} = \phi$, namely, no other token is needed in order to complete the edit; And when $e_i$ is to insert a token before $x_i$ or to replace $x_i$ by another token, $V_{e_i}$ is the candidate vocabulary set that can be used for the edit. Therefore, a grammatical error correction model should be defined as:
+
+
+\begin{align}
+\begin{split}
+{M(X)} & = M(x_1, \cdots x_n) = f(Z) \\
+& = f(z_1, \cdots, z_n) \\
+& = f((e_1,t_1), \cdots, (e_n, t_n)), e_i \in {\mathcal{E}}, t_n \in V_{e_i} \\
+& = Y = (y_1, \cdots, y_m) 
+\end{split}
+\label{eq: GEC}
+\end{align}
+
+
+where $f$ is function that applies edits $e_i$ on tokens $x_i$ using tokens $t_i$.
+
+The problem can thus be devided into two parts: edits suggestion and token correcting, where one module can be applied for each part. 
+
+\paragraph{Edits suggestion. } Given the input sequence $X = (x_1, \cdots, x_n)$, the model needs to predict $E = (e_1, \cdots, e_n)$. 
+\paragraph{Token correcting. } Given the input sequence $X = (x_1, \cdots, x_n)$ and the suggested edits $E = (e_1, \cdots, e_n)$, the model needs to give the tokens $T = (t_1, \cdots, t_n)$ to complete the edits on the source tokens.
+% \MG {architecture figure to be added}
+shows the architecture of our framework. 
+
+
+
+\subsection{GET module} \label{sec:get_module}
+
+
+We define the output space 
+\subsection{MF module} \label{sec:mf_module}
+
+The MF module takes sevral steps
+
+\paragraph{g-transformation. } Similar to what is used in GECToR, when the token is labeled as one of the g-transformations which includes merging or spliting two words, converting a nouns from its singular form to its plural form and changing the tense of a verb, we applied the tranformation according to suffix of the tag.
+
+\paragraph{Spell checker. } Since spelling errors are also labeled as "REPLACE", we apply a spell checker on the token. We limit the edit distance modified by the spelle checker so that it won't replace the original token by a non-related token.
+
+\paragraph{Masked language model. } When no spelling error of the token labeled by "REPLACE" is detected, we apply a Masked Language Model(MLM) by masking the source token or and construct a candidate token list using the MLM by selecting the top-k tokens with the highest propability. When GET module gives an "INSERT" tag for the token, which means one token should be added in front of the original token, we add a mask token in front of the source token and apply directly the MLM and the candidate set includes only the token with the highest probability.
+
+\paragraph{Inference threshold. } The inference threshold is designed to keep the accuracy of the corrections made by MF.  
+
+\begin{algorithm}[t]
+\caption{MF algorithm}
+\label{alg:mf}
+\begin{algorithmic}[1]
+\REQUIRE{ Errorful sentence $x = (x_1, ... , x_n)$ }
+\REQUIRE{Suggested edits $e = (e_1, ... , e_n)$}
+\ENSURE{ Correct sentece $y = (y_1, ... , y_m)$ }
+\FOR{i = 1,2,...,n } 
+	\IF{$e_i$  match transformation $G \in \mathcal{G}$}
+		\STATE $y_i$  $\longleftarrow T(x_i)$\;
+	\ELSIF{$e_i$  = \$REPLACE}
+	    \IF {$x_i$ has spelling error}
+	        \STATE $y_i\longleftarrow Spellcorrector(x_i)$\;
+	               
+	    \ELSE
+	        \STATE $V_i$  $\longleftarrow$ top-k (MLM($x_i$))\;
+	        \STATE $w_c \longleftarrow argmin_{w\in V_c}E(w,x_j)$ \;
+	        \IF{$E(w_c,x_j) < \delta$ and $P(w_c) > \mu$}
+	        	\STATE $y_i \longleftarrow w_c$ \;
+	        \ENDIF        
+	        \STATE $w_c \longleftarrow argmax_{w\in V_c}P(w)$ \;
+	        \IF{$P(w_c) > \theta$}
+	        	\STATE $y_i \longleftarrow w_c$ \;
+	        \ELSE
+	            \STATE $y_i \longleftarrow x_i$
+	        \ENDIF
+	    \ENDIF
+	\ELSIF{$e_i$  = \$INSERT}
+	    \STATE $w_c \longleftarrow$ Highest(MLM($x_{i-1/2}$))\;
+	    \IF{$P(w_c) > \theta$}
+	    	\STATE $y_{i-1/2}$ $ \longleftarrow w_c$ \;
+	    \ELSE 
+	    	\STATE $y_i \longleftarrow x_i$\;
+	    \ENDIF
+	\ENDIF
+\ENDFOR
+\end{algorithmic}
+\end{algorithm}
+
+
+\subsection{Default use of BERT} \label{sec:bert}
+
+
+
+
+
+
+\subsection{Iterative approach}\label{sec:iterative}
+We applied the iterative approach by sending the output of the model as the input to the model again.
+
+
+

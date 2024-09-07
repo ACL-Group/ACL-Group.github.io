@@ -1,0 +1,342 @@
+\subsection{Context Extraction}
+\label{sec:context}
+%\textbf{OUTLINE
+%\begin{enumerate}
+%\item brief introduce of meta context(URL and anchor text) \& text context
+%\item how to extract meta context (URL.tex)
+%\item how to extract text context (Image context + Query context)
+%\end{enumerate}
+%}
+The context of an image often carries information about the image. We
+are concerned with two kinds of image context in this paper, meta data context
+and text context. Meta data context extraction is an offline component while
+text context need to be extracted online.
+
+\textbf{Meta data context} (or meta context in short)
+are all intrinsic attributes of the image, such as the anchor text of
+the image in the web page, the URL of the image, and even meta data stored
+in the image file itself. We omit the meta data in the image files in this work
+because we find it to be seldom available and not reliable.
+
+The anchor text is the ``ALT'' attribute in the <IMG> tags which is usually
+the title of the image. URL of images contain file path information which
+can help understand the meaning of the images.
+We split the URL into words by directories,
+special characters and letter case conversion (from lower case to upper case)
+to get context from URL.
+Here, each ``word'' is a string which only contains letters and digits.
+However, in some cases, the URL may contain randomly generated
+words, many of them are hexadecimal strings, e.g. ``66ccff'' or ``7E145B45''.
+To effectively remove the random words,
+we labeled a dataset with about 3000 sample strings,
+and learn a model to differentiate the random strings from meaningful ones.
+For example, consider the following URL:
+
+\smallskip
+
+http://domain.com/\textbf{53C316}-\textbf{C2oJ5}/\textbf{AppleInc}\_\textbf{2012}.jpg
+
+\smallskip
+
+The URL contains these words: ``53C316'', ``C2oJ5'', ``Apple'',
+``Inc'' and ``2012''.
+Notice that the domain and the file extension are ignored becase they are less
+relevant to the image itself.
+For each word, we parse out every 3-gram in it, such as
+``C2o'', ``2oJ'' and ``oJ5'' in ``C2oJ5'',
+and ``App'', ``ppl'' and ``ple'' in ``Apple''.
+Each 3-gram corresponds to a dimension in the vector of this word.
+In the example above, ``53C316'' and ``C2oJ5'' are meaningless words,
+while ``Apple'', ``Inc'' and ``2012'' are meaningful.
+
+Then we learn an L2-SVM model to classify these words, and filter out meaningless
+ones.  With the vectors $x_i$ ($i = 1, ..., n$, while $n$ is the number of words),
+L2-SVM tried to solve the following unconstrained optimization problem
+\begin{equation}
+\min_{\mathbf{w}}\left(\frac{1}{2}\mathbf{w}^T\mathbf{w}+
+\alpha\sum_{i=1}^{n}\max(1-\mathbf{w}^T\mathbf{x}_i, 0)^2\right)
+\end{equation}
+where $\mathbf{w}$ is the weight matrix to be trained and penalty parameter $\alpha > 0$.
+Here we use a tool called LIBLINEAR \cite{liblinear} for training,
+setting the penalty parameter $\alpha = 1$.
+
+After the model is learned, we also ran a cross validation. In our experiment,
+the 5-fold cross validation accuracy is 95.69\%.
+
+\begin{figure}[th]
+	\centerline{\psfig{figure=context_bean.eps,width=\columnwidth}}
+	\caption{Image Context and Query Context}
+	\label{fig:context-bean}
+\end{figure}
+
+
+\textbf{Text context} is the surrounding plain text of the image and any occurrences
+of the query term in the web page. The text around the image usually contains important
+semantic signals of the image.
+Context around the query term provides extra related semantic information which
+is away from the image but close to the searching query. The reason we employ
+query context in addition is that the context surrounding the image is likely
+to be an accurate description of that image but is not always enough to
+distinguish different entities.
+As \figref{fig:context-bean} shows, image context contains a limited amount of
+information. Nevertheless, a lot of helpful signals for identifying ``bean'' such as
+``pea (a kind of bean)'',
+``legume (the family that bean belongs to)'',
+``fibre (major ingredient of bean)'' and
+``protein (major ingredient of bean)''
+can be found in the query context part.
+
+
+Getting the correct context for images and search terms is important. We could use
+the whole page as the context but it usually contains a lot of noise such as
+commercial ads, and it is also computationally expensive if the pages are very
+large. Cai\cite{Cai2004b} tried to exploit the web page layout to discover
+the context in visual blocks. This method is costly because the whole web page
+needs to be rendered includng all the images, and it doesn't have clear advantage
+than simpler sibling method in practice according to Alcic et al. \cite{Alcic2010}.
+In this paper, we extract the context in a way similar to the sibling method.
+Before conceptualization offline, we traverse the DOM tree to extract plain
+texts from the web pages in a depth-first order,
+and mark the position of the target image in the plain text.
+During online processing, the concepts around the target image as well as
+the search term are captured with a windows.
+In the end, we remove the search term itself and the duplicated text
+which is in the overlap area of the windows.
+Details are in Algorithm \ref{algo:context}.
+
+%% this part is written by Qingyu
+%We extract the image context using a way similar to the sibling method.
+%At the beginning, we traverse the DOM tree by preorder, and extract
+%texts in the nodes during the traversal. It will generate plain texts
+%without a tree structure but retain the relative order of the tree nodes.
+%Then we do conceptualization on these plain texts and recognize the
+%position of the image in the generated concepts offline. At last,
+%we online extract the surrounding concepts around the image position
+%by a sliding window.
+
+\renewcommand\algorithmicrequire{\textbf{Input:}}
+\renewcommand\algorithmicensure {\textbf{Output:}}
+\begin{algorithm}[th]
+\caption{Context Extraction}
+\label{algo:context}
+\begin{algorithmic}[1]
+\Require {Root of DOM tree $R$, Position of query/image $Pos$}
+\Ensure {Surrounding context of the query/image $Context$}
+\Function{Extract}{$R$, $Pos$}
+\State {$Context \leftarrow \varnothing$}
+\State {$T\leftarrow \textbf{GetText}(R)$}
+%\State {$P\leftarrow position\;of\;image$}
+\State {$W\leftarrow window\;size$}
+\For {$i\leftarrow Pos - W\;to\;Pos + W$}
+\State {$Context \leftarrow Context + T[i]$}
+\EndFor
+\State {\textbf{return} $Context$}
+\EndFunction
+\Statex
+\Function{GetText}{$N$}
+\State {$T\leftarrow N.text$}
+\For {$Ch\leftarrow N.children$}
+\State {$T\leftarrow T + \textbf{GetText}(Ch)$}
+\EndFor
+\State {\textbf{return} $T$}
+\EndFunction
+\end{algorithmic}
+\end{algorithm}
+
+%\KZ{Add an algo listing for context extraction (sibling) and a short description.
+%This part is important because without correct context, everything we do is wrong.}
+
+%Surrounding text also can be totally
+%irrelevant to that image in a bad case.
+%In \figref{fig:context_kiwi} the% red
+%rectangle mark out the image context extracted by sibling algorithm which has
+%poor informative signals.
+%%{\color{red}TODO(Enxun): add an example of the surrounding text has no valuable information.}
+%\begin{figure}[h]
+%	\centering
+%%\epsfig{figure=context_kiwi.eps,width=\columnwidth}}
+%\caption{Context of a web page with query ``kiwi''}
+%\label{fig:context_kiwi}
+%\end{figure}
+
+%With this approach, a important signal ``Fruits \& Berries'' will be collected
+%successfully in \figref{fig:context_kiwi}.
+%There are mainly three ways on image context extraction,
+%heuristics based, DOM based and visual based approaches. Heuristics based ones
+%use empirically determined heuristic rules, such as a window, to extract the context.
+%The visual-based method\cite{Cai2004b} try to exploit the web page layout for
+%finding the context. It brings novel ideas and should be of great value intuitively.
+%But it defeated totally by a naive sibling method in practical experiment\cite{Alcic2010}.
+%The sibling method can be simply described as follow. First select the
+%parent of the image node in the HTML document. If this node has any text as
+%its child then return its text as the context. Otherwise select the parent of this node
+%recursively until it has text or reach the root of the document.
+%
+%
+%Our approach is a slight strengthening of it since we notice that this sort of bottom-up
+%traversal may spread the context to a upper node which has large amount of text
+%sometimes nevertheless only a short snippet of it is related to the image.
+%So we use a window limiting the length of the context to avoid the involvement
+%of noise text.
+
+%\cite{VIPS}
+%The context of an image is the textual information behind the image
+%in its original web page. it most often shares some semantics with the image.
+%Besides the image, we also use the query string as a factor to search
+%the context. The context extraction process can be described as a function
+%taking a web page, an image that we focused on and a query we requested
+%as input, which outputs a set of fragments of context.
+%This can be formalized as follow:
+%$$f(D, I_D, Q_D) = \{ (s_i, e_i) \ | \ 0 \leq s_i \leq e_i \leq \left\vert D \right\vert \}$$
+%which $D$ is the web page document and $\left\vert D \right\vert$
+%indicates its length of charactors. $I_D$ and $Q_D$ are
+%the image and the query appeared in $D$. $(s_i, e_i)$ are pairs of markers
+%that enclosing seperated fragments of context in document. We furthur convert
+%the output of this procedure from a set of markers to a context string representation
+%straightly since we will use the context as a text string for conceptualization.
+%Next, we will introduce
+%our approach in three parts. First two parts are image context extraction and
+%query context extraction which focus on how extract the context via the image
+%and the query. Besides these we also apply a list struction detection technique,
+%which will be introduced at last, to improve the accuracy of extraction result.
+%\textbf{Image context extraction} is an important procedure because the most
+%significant information which can helping us to classify a image often represented
+%close to the image. There are mainly three ways on image context extraction,
+%heuristics based, DOM based and visual based approches. heuristics based ones
+%use empirically determined heuristic rules, such as a window, to extract the context.
+%The visual-based method\cite{Cai2004b} try to exploit the web page layout for
+%finding the context. It brings novel ideas and should be of great value intuitively.
+%But it defeated totally by a naive sibling method in practical experiment\cite{Alcic2010}.
+%The sibling method can be simply described as follow. First select the
+%parent of the image node in the HTML document. If this node has any text as
+%its child then return its text as the context. Otherwise select the parent of this node
+%recursively until it has text or reach the root of the document.
+%Our approach is a slight strengthening of it since we notice that this sort of bottom-up
+%traversal may spread the context to a upper node which has large amount of text
+%sometimes nevertheless only a short snippet of it is related to the image.
+%So we use a window limiting the length of the context to avoid the involvement
+%of noise text. This simple but reasonable approach is verified effective in our
+%experiments.
+
+%\textbf{Query context extraction} provides extra related semantic information which
+%is away from the image but close to the searching query. The reason we employ
+%query context in addition is that the context surrounding the image is likely
+%to be a accurate description of that image but not always enough to distinguish
+%this entity from the ones have same name. Surrounding text also can be totally
+%irrelevant to that image in a worse case. In \figref{fig:context_kiwi} the% red
+%rectangle mark out the image context extracted by sibling algorithm which has
+%poor informative signals.
+%
+%%{\color{red}TODO(Enxun): add an example of the surrounding text has no valuable information.}
+%\begin{figure}[h]
+%	\centering
+%%\epsfig{figure=context_kiwi.eps,width=\columnwidth}}
+%\caption{Context of a web page with query ``kiwi''}
+%\label{fig:context_kiwi}
+%\end{figure}
+%
+%We must consider other methods on exploring informative context on the topic.
+%Since the searching query is a another significant signal besides the image for this
+%task, we suggest this sensible query context extraction.
+%
+%%{\color{red}TODO(Enxun): explain our approach.}
+%First we search for all the occurences of the query string in the document.
+%Then we walk upward from the leaf nodes which are corrosponding to the query string
+%until we got enough information besides these occurences.
+%the gold standard is that every fragment must contains one wikipedia concept at least.
+%We use another window for restriction to avoid bringing too many text
+%including some noise potentially.
+%With this approach, a important signal ``Fruits \& Berries'' will be collected
+%succesfully in \figref{fig:context_kiwi}.
+
+%\textbf{List Detection} is an additional strategy to avoid trapping into incorrect scopes
+%during our bottom-up walk in some web pages contain list structure. Above two kinds
+%of context extraction method both carry out a bottom-up walk model to expand the
+%region of interest. However it is risky to perform this expansion without any constraint.
+%This kind of expansion mistakes are more likly appearing at list structures of web pages
+%according our analysis on hundreds of web pages.
+%{\color{red}TODO(Enxun): add an example to show this mistake.}
+%A list is generally a collection of multiple similar items representing a relation of enumeration.
+%If a step upward on DOM tree from one of list item node to the list root node
+%crossing list item boundary, it is supposed to reach some wrong places by the
+%characteristic of list. Limited the expansion inside a item if it is at list structure
+%could be effective for extracting the context more accurately.
+%
+%To determine whether a HTML subtree is a list is not easy although HTML standard
+%defined two tags \textless il\textgreater \ and \textless ol\textgreater \ to represent
+%list structure in web pages. Using these tags is recommended but not forced for web page
+%designers representing a list. A common alternate way used widely in actual web pages
+%is using \textless div\textgreater\ or \textless table\textgreater\ tags since they are
+%more layout friendly without many CSS tweaks.
+%
+%We suggest a list detection method making use of our improved DOM tree edit distance metric.
+%Tree edit distance is a widely used metric for measureing the difference of two tree structure.
+%it computes how many operations(add, remove or modify) are needed to transform
+%a tree into another. Thus the similarity between two tree can be calculated as:
+%$$Similarity\left( T_1, T_2\right) = \dfrac {2\cdot Distance\left( T_1 , T_2\right) } {Size\left( T_1\right) +Size\left( T_2\right) }$$
+%{\color{red}TODO(Enxun): add a figure show this metric.}
+%This general metric works well but doesn't fit our case best because
+%all nodes in the subtree are treated with same value. Nevertheless,
+%the DOM tree of HTML document is a hierarchical structure such that the node in lower depth
+%usually corresponding to a larger region on the layout of that document. The differences in
+%lower depths should be weighted heavier than the ones in deeper depths.
+%%Moreover, different
+%%tags should have distinct weight. For example, inline tags such as \textless i\textgreater\ and
+%%\textless font\textgreater\ are more likely less important than large-scale tags as \textless
+%%div\textgreater\ on the effect of layout.
+%Therefore we use Algorithm \ref{treesim} to calculate the
+%similarity between two DOM subtree.
+%
+%\begin{algorithm}
+%\caption{DOM Tree Similarity}
+%\label{treesim}
+%\begin{algorithmic}[1]
+%\Function{Similarity}{$T_1, T_2$}
+%\State {$C_1\leftarrow children\ of\ root\left( T_1\right) $}
+%\State {$C_2\leftarrow children\ of\ root\left( T_2\right) $}
+%\State {$S[i, j]\ for\ all\ i, j\leftarrow 0$}
+%\For {$i\leftarrow 1\;to\;\left\vert C_1 \right\vert $}
+%\For {$j\leftarrow 1\;to\;\left\vert C_2 \right\vert $}
+%\State {$S[i, j]\leftarrow max\{
+%S[i - 1, j - 1] + \textbf{Similarity}\left(C_1[i - 1], C_2[j - 1]\right),\;
+%S[i, j - 1],\;
+%S[i - 1, j]
+%\}$}
+%\EndFor
+%\EndFor
+%\If {$root\left(T_1\right) = root\left(T_2\right) $}
+%\State {$e\leftarrow 1$}
+%\Else
+%\State {$e\leftarrow 0$}
+%\EndIf
+%\If {$\left\vert C_1\right\vert = \left\vert C_2\right\vert = 0$}
+%\State \textbf{return} {$e$}
+%\Else
+%\State \textbf{return} {$K\cdot e + \left(1 - K\right) \cdot
+%%\dfrac {S[\left\vert C_1\right\vert , \left\vert C_2\right\vert]
+%%\left( \dfrac {1} {\left\vert C_1\right\vert}+
+%%\dfrac {1} {\left\vert C_2\right\vert}\right) } {2} $}
+%\dfrac {2\cdot S[\left\vert C_1\right\vert , \left\vert C_2\right\vert]}
+%{\left\vert C_1\right\vert + \left\vert C_1\right\vert} $}
+%\EndIf
+%\EndFunction
+%\end{algorithmic}
+%\end{algorithm}
+%
+%In which, K is a factor indicating how we emphasize lower depth nodes than
+%deeper depth ones. This dynamic programming algorithm can be optimized
+%by memorization technique so the upper bound of complexity is
+%$O\left(n^{2}\right)$ where $n$ is the number of DOM nodes.
+%It should be much faster than this bound normally
+%because only pairs in same depth are needed to be calculated.
+%We can see that the result of our similarity algorithm between list items
+%is more reasonable rather than the traditional method in the same example.
+%{\color{red}TODO(Enxun): add another figure show our result.}
+%
+%We can resolve the list detection task with similarity measurement
+%between subtrees in HTML document. The items of a list should have similar
+%layouts therefore their DOM subtrees also should have similar structures.
+%For a DOM node, we just calculate all its children nodes' average pairwised similarity.
+%If the value is greater than a predefined threshold it is supposed to be a list node.
+%In the application of this detection, we won't keep on walking till we got a list
+%item root node during the bottom-up treversal.

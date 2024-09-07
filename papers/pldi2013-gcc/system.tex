@@ -1,0 +1,111 @@
+\section{System Implementation}\label{sec:impl}
+
+We have implemented a proof-of-concept system using Erlang,
+to show the viability of 
+the speculative nondeterminism in a practical setting. 
+Both the system and the agent programs are written in Erlang, 
+and communicate by using global registered names and message passing. 
+Every node in the tree of worlds is a process
+\footnote{In this section, {\em process} 
+means the ultra-lightweight processes in the Erlang VM
+while {\em native processes/threads} means OS processes/threads} 
+in the Erlang VM. 
+Different instances of the same agent are also different processes. 
+Agent instances talk to the worlds they live in directly by message passing. 
+The system also assumes a tuple space data model and uses data
+operations similar to Linda, such as $\In/\Out/\Rd$.
+Tuples in the tuple space are simply Erlang tuples, 
+while the tuple space is a list of tuples along with additional indexing structures. 
+$\In/\Rd$ conditions are represented as Erlang anonymous functions
+(i.e. {\tt fun(...) -> ... end}). 
+We also defined a set of macros in Erlang to help building conditions. 
+For example, {\tt ?Any} is defined as {\tt fun(\_) -> true end}, 
+{\tt ?LessThan(X)} is defined as {\tt fun(V) -> V < X end}, etc.
+
+Our system benefits from Erlang in two aspects:
+    (i) Processes in Erlang are not native OS processes/threads, 
+        but {\em ultra-lightweight processes}
+        with extremely fast creation and tiny memory footprint. 
+        There are large amount of world splitting and pruning operations in runtime.
+        By reducing the overhead caused by the system, agent programs can have 
+        more CPU time and thus more opportunities to capture their needs in realtime. 
+        Tiny memory footprint allows us to run millions of processes at the same time 
+        even on a single machine, which provides the possibility of running large scale applications. 
+    (ii) Erlang processes share no memory, and the communication model among them is asynchronous 
+        {\em message passing}. Erlang guarantees causality and eventually delivery,
+        provided that the recipient exists, and provides process linking and monitoring functionality
+        such as {\tt erlang:link/1} and {\tt erlang:monitor/2}. 
+        These guarantees and facilities help the system being robust and well-structured and thus
+        provide possibilities of customizability and extensibility. 
+
+Next we describe a few optimizations that make the implementation more practical.
+
+\subsection*{Lazy Forking}
+
+Lazy forking is a \emph{fork-on-need} mechanism which enables 
+\emph{asynchronous coordination} of the agents.
+For example, initially program $P$ lives in world $w$. 
+Then program $Q$ joins and creates two choices in world $w$, 
+thus conceptually splitting $w$ into two descendant worlds $w_1$ and $w_2$,
+and $Q$ itself forks into two processes.
+In a na\"ive implementation, $P$ has to fork into two processes as well,
+each corresponds to a program instance in one of the new worlds.
+By lazy forking, $P$ remains one process at this point, 
+and delays the forking until it starts interacting with the store.
+This mechanism helps control the excessive forking and the number of
+running processes in the system.
+
+\subsection*{Exponential Backoff of Splitting}
+
+In some cases, a large number of agents issue the choice construct 
+in the same world simultaneously. Na\"ively splitting this world 
+in this case doesn't do any real work but can easily get stuck in 
+the exponentiality. 
+From the perspective of an agent instance $a$, the world $w$ it lives in 
+is stored locally and should be a leaf in the tree of worlds. 
+However, because of the lazy forking mechanism described above,
+that world $w$ may be already split into two descendant worlds $w_1$ and $w_2$,. 
+When $a$ wants to issue the choice construct in this case, 
+the system uses exponential backoff to delay the choice creation,
+and later allows $a$ to split in the two descendant worlds of $w$.
+The delay gets exponential when $w_1$ (or $w_2$) is also split 
+at the time $a$ is allowed to split it. 
+There is also a limit of the delay so agents can have reasonable responsiveness. 
+This mechanism injects nondeterminism into the scheduler so that programs that are just
+about to commit can commit first and start pruning the worlds.
+
+\subsection*{Condition Triggering}
+
+Both $\In$ and $\Rd$ in the tuple space data model are blocking on the condition. 
+When there's an update to a world's tuple space, instead of waking up all the agents 
+in the world to check the condition, the system only wakes up part of them by using triggering. 
+In our prototype system, the triggering is enabled by \emph{indexing} 
+the fields in the tuples, and is available for tuple operations $\In$ and $\Rd$.
+% The system also provides variants of $\In$ and $\Rd$ 
+% to allow more flexible control of tuple spaces. 
+% Parameters for $\In$ and $\Rd$ operations are: 
+% non-blocking, time-out and block until a condition.
+
+\subsection*{Tree Partitioning}
+
+Besides the optimizations for reducing overhead, we also provide a 
+{\em tree partitioning} mechanism in order to reduce exponentiality. 
+When there are large number of agents, not all of them are interested in 
+the same kind of resources. For $n$ agents with no interleaving interests 
+and each with 2 choices, na\"ively there should be $2^n$ worlds. 
+However, since their interests are non-interleaving, we only 
+need $2n$ worlds corresponding to their $2n$ choices in total. 
+The tree partitioning mechanism works in such a way that 
+each agent starts with its own world, instead of joining the leaf worlds 
+of a common tree. As long as the agent doesn't have interest interleaving 
+with other agents at this point of time, it splits and prunes on its own tree. 
+In this way, agents with non-interleaving interests are separated 
+and partitioned into different trees. 
+When at some point of time, an agent $a_i$ starts to be interested in some 
+resources which some other agent $a_j$ is also interested in, 
+the system merges the trees of $a_i$ and $a_j$ together. 
+Suppose the trees of $a_i$ and $a_j$ have $p$ and $q$ leaf worlds respectively,
+the resulting tree after merging them together will have exactly $pq$ leaf worlds 
+to represent the combination of choices. 
+
+\input{fr-partition}

@@ -1,0 +1,326 @@
+\section{Overview}\label{sec:overview}
+
+This section informally introduces the key concepts and language constructs
+in speculative nondeterminism.
+
+\input{example}
+
+We reuse the three dining philosophers problem as an example, 
+and express the two strategies of $A$, $B$ and $C$ as follows.
+\begin{eqnarray}
+A: & (-x.-y)\oplus(-y.-x).+x.+y \label{eqn:a}\\
+B: & (-y.-z)\oplus(-z.-y).+y.+z \label{eqn:b}\\
+C: & (-z.-x)\oplus(-x.-z).+z.+x \label{eqn:c}
+\end{eqnarray}
+Dot ($.$) represents sequential execution and $\oplus$ represents exclusive choice. 
+$\oplus$ (choice) takes precedence over dot (sequence).
+Forks are treated as shared resources, and when a fork ($x$, $y$ or $z$) is 
+grabbed by someone, this kind of resource is decreased ($-x$, $-y$ or $-z$). 
+A philosopher puts down the forks ($+x$, $+y$ or $+z$) after he finishes eating.
+$-X$ operations are blocking while $+X$ operations are non-blocking.
+
+Figure \ref{fig:diningrun} shows the runtime data structure in
+the form of a tree for a particular run. 
+This tree is called a \emph{galaxy}, which is essentially 
+formed by multiple speculations.
+Each internal node is due to the execution of a choice
+statement by a philosopher, we call this a {\em choice point}.
+In this case, the choice statement in $A$ (denoted $\oplus_A$) 
+executes first, and on the left-hand side of $\oplus_A$, 
+$\oplus_B$ executes first, while on the right-hand side, 
+$\oplus_C$ executes first.
+Exactly which choice is created first in this tree is determined by
+the scheduler. But given three agents each with two choices, 
+and assuming no actions are executed before all choices are spawn,
+then there will be exactly 8 leaf nodes (i.e., $w_1$ to $w_8$). 
+Each leaf node is called a \emph{world}
+where multiple {\em sequential} programs run concurrently.
+A sequential program represents an exclusive choice from a agent. 
+One can see that a galaxy corresponds to 
+a combination of choices from different programs.
+As we will show later, the framework provides mechanisms to
+control the number of worlds.
+
+We assume that there is a separate schedule for each world,
+and in each world one operation from an agent is executed at a time.
+Now let's compare two worlds, $w_1$ and $w_2$.
+In $w_1$, the system chooses a schedule
+where $A$ executes $-x$, followed by
+$B$ executing $-y$, and $C$ executing $-z$. This leads to a deadlock.
+In $w_2$, depending on the scheduler, there are
+three possible execution sequences (interleavings): 
+
+\begin{itemize}
+\item If $\oplus_A$ starts first and $A$ takes $x$, $C$ cannot start until $A$ finishes, and $A$ and $B$ will race on $y$.
+\item If $\oplus_B$ starts first and $B$ takes $y$, $A$ has to wait for $y$ (if $A$ beats $C$ in getting $x$) until $B$ finishes, or $C$ and $B$ will race on $z$ (if $C$ gets $x$).
+\item If $\oplus_C$ starts first and $C$ takes $x$, $A$ cannot start until $C$ finishes, and $B$ and $C$ will race on $z$.
+\end{itemize}
+
+In either of the three cases, there is no cyclic dependency therefore no deadlocks.
+In other words, by allowing different combination of choices in dining philosopher problem 
+we can beat the ``nondeterministic'' scheduler and always get a solution that makes all
+philosophers happy (without starvation).
+
+%\begin{figure}[h]
+%\centering
+%\begin{tabular}{cccc}
+%$A$: & $-x$ & $-y$ & \\
+%$B$: &      & $-y$ & $-z$ \\
+%$C$: & $-x$ &      & $-z$
+%\end{tabular}
+%\caption{No Deadlocks in $w_2$}
+%\label{fig:show-no-deadlock}
+%\end{figure}
+
+
+Now suppose $C$ runs faster in $w_2$, it grabs two forks $x$ and $z$ before any of the other programs get started.
+For the exclusive choice $\oplus_{C_1}$, when $C$ already grabs two forks in $w_2$, from the perspective of $C$, 
+it is possible to \emph{prune} the left-hand side choice to save system resources (and reduce execution time).
+%However, this intension of pruning is not specified in (\ref{eqn:c}), 
+%so all the other worlds still continue running.
+Speculative nondeterminism provides a mechanism named \emph{commit} 
+which is denoted as $\cm$ (commit me) to do exactly that.
+To prune the other choice when two forks are grabbed, 
+the commit operator can be inserted into the programs of $A$, $B$ and $C$ as follows.
+\begin{eqnarray*}
+A: & (-x.-y)\oplus(-y.-x).\cm.+x.+y \label{eqn:a-cm}\\
+B: & (-y.-z)\oplus(-z.-y).\cm.+y.+z \label{eqn:b-cm}\\
+C: & (-z.-x)\oplus(-x.-z).\cm.+z.+x \label{eqn:c-cm}
+\end{eqnarray*}
+If $C$ grabs two forks $x$ and $z$ before any of the other programs gets started, $C$ will then $\cm$ in world $w_2$, and the effect of this $\cm$ is to prune world $w_1$.
+After the commit, the tree looks like \figref{fig:diningcm}.
+\begin{figure}[th]
+\centering\small
+\Tree[.$\oplus_A$
+    [.$\oplus_{B_1}$
+        {$A\compact:-x$ \\ $\quad-y$ \\ $B\compact:-y$ \\ $\quad-z$ \\ $C\compact:-x$ \\ $\quad-z$ \\ $(\mathbf{w_2})$}
+        [.$\oplus_{C_2}$
+            {$A\compact:-x$ \\ $\quad-y$ \\ $B\compact:-z$ \\ $\quad-y$ \\ $C\compact:-z$ \\ $\quad-x$ \\ $(w_3)$}
+            {$A\compact:-x$ \\ $\quad-y$ \\ $B\compact:-z$ \\ $\quad-y$ \\ $C\compact:-x$ \\ $\quad-z$ \\ $(w_4)$}
+        ]
+    ][.$\oplus_{C_3}$
+        [.$\oplus_{B_2}$
+            {$A\compact:-y$ \\ $\quad-x$ \\ $B\compact:-y$ \\ $\quad-z$ \\ $C\compact:-z$ \\ $\quad-x$ \\ $(w_5)$}
+            {$A\compact:-y$ \\ $\quad-x$ \\ $B\compact:-z$ \\ $\quad-y$ \\ $C\compact:-z$ \\ $\quad-x$ \\ $(w_6)$}
+        ][.$\oplus_{B_3}$
+            {$A\compact:-y$ \\ $\quad-x$ \\ $B\compact:-y$ \\ $\quad-z$ \\ $C\compact:-x$ \\ $\quad-z$ \\ $(w_7)$}
+            {$A\compact:-y$ \\ $\quad-x$ \\ $B\compact:-z$ \\ $\quad-y$ \\ $C\compact:-x$ \\ $\quad-z$ \\ $(w_8)$}
+        ]
+    ]
+]
+\caption{Three Dining Philosophers Problem (after $C$ $\cm$ in $w_2$)}
+\label{fig:diningcm}
+\end{figure}
+
+The situation could be even better, because after $C$ commits in world $w_2$ and finishes, $B$ can also run to the end and commit, and so does $A$. Suppose choice $\oplus_{B_1}$ and choice $\oplus_{C_1}$ go before both $\oplus_{C_2}$ and $\oplus_{C_3}$ due to the scheduler, 
+then world $w_3$ through world $w_8$ are not created at all because both $\oplus_{C_2}$ and $\oplus_{C_3}$ are pruned before they expand.
+Figure \ref{fig:diningbest} illustrates this case. 
+\begin{figure}[th]
+\centering\small
+\begin{tabular}{ccc}
+\begin{minipage}{0.2\textwidth}
+\Tree[.$\oplus_A$
+    [.$\oplus_{B_1}$
+        [.$\oplus_{C_1}$
+            {$(w_1)$}
+            {$(w_2)$}
+        ]
+        {$\oplus_{C_2}$}
+    ]
+    {$\oplus_{C_3}$}
+]
+\end{minipage}
+& $\Rightarrow$ &
+\begin{minipage}{0.2\textwidth}
+\Tree[.$\oplus_A$
+    [.$\oplus_{B_1}$
+        {$(w_2)$}
+        {$\oplus_{C_2}$}
+    ]
+    {$\oplus_{C_3}$}
+]
+\end{minipage}
+\\
+& & $\Downarrow$
+\\
+& &
+\\
+\begin{minipage}{0.2\textwidth}
+\Tree[.$(w_2)$
+]
+\end{minipage}
+& $\Leftarrow$ &
+\begin{minipage}{0.2\textwidth}
+\Tree[.$\oplus_A$
+    {$(w_2)$}
+    {$\oplus_{C_3}$}
+]
+\end{minipage}
+\end{tabular}
+\caption{Three Dining Philosophers Problem (best case)}
+\label{fig:diningbest}
+\end{figure}
+
+A variant of dining philosophers is when
+one philosopher doesn't want to wait for the forks forever, he can specify
+a timeout in another choice and bailout after a few minutes.
+For example, $A$ can change his program to be
+\[
+    ((-x.-y)\oplus(-y.-x).\cm.+x.+y)\oplus(timeout(5\,min).\cm)
+\]
+The $timeout$ here will block for 5 minutes.
+After that the right-most $\cm$ is executed and the left-hand side choice is pruned.
+This also shows the flexibility of the language.
+
+Now consider Figure \ref{fig:diningrun} again.
+Suppose $A$ runs faster than $B$ and $C$ in all the worlds.
+After $A$ grabs the two forks $x$ and $y$, $A$ commits, for example, in $w_2$.
+In our commit semantics, pruning does not occur immediately as doing so can
+lead to too aggressive and inadvertent removal of later solutions.
+So the commit does not yet prune, and in this example,
+only pruning if the parent of $w$ is $\oplus_X$ (in this case $X=A$).
+% However, no choices can be pruned just yet (but can be pruned later),
+% because the direct parent of $w_2$ is $\oplus_C$, not $\oplus_A$.
+% That is to say, when $X$ commits in $w$, 
+% this commit can prune choices immediately only if the parent of $w$ is $\oplus_X$ (in this case $X=A$).
+We call this form of commit,
+\emph{localized commit} since the commit itself 
+is local to the parent and siblings, not to ancestors.
+Localized commit and other forms of commit are discussed in more details in Section \ref{sec:commit2}.
+
+% exit semantics
+Next consider what happens to $A$ when it finishes executing its program in all
+the worlds. 
+It may be the case that there are still multiple worlds to do with
+$A$ which raises the question whether it makes sense for $A$ to leave or not.
+% In theory, $A$ cannot leave because there are still multiple worlds and 
+% which one is the final reality is unknown. 
+However, if what $A$ cares about is only whether he has eaten or not, 
+and since he has already eaten in all the worlds, there is no dependency
+to prevent $A$ from leaving the system.
+%When an agent finishes executing its programs in all the worlds it lives in, and what it cares about are the same across all the worlds, it should be able to \emph{exit} the multiple worlds and do other works in the host language. 
+In our framework the exit semantics allows an agent to exit and return to its host programs
+whenever its success condition is satisfied in all the worlds it lives in,
+see Section \ref{sec:exit}.
+
+% multiple galaxy
+Let's modify the dining philosopher example by adding 
+another table of three forks ($x',y'$ and $z'$) and 
+three philosophers ($A',B'$ and $C'$).
+The programs for $A',B'$ and $C'$ are similar to those of $A,B$ and $C$'s. 
+If we consider the choices of all six philosophers together, one possible galaxy
+is shown as in Figure \ref{fig:interleave}.
+
+\begin{figure}[th]
+\centering\small
+\Tree[.$\oplus_A$
+    [.$\oplus_{B'}$
+        [.$\oplus_B$
+            {$\cdots$}
+            {$\cdots$}
+        ][.$\oplus_{C}$
+            {$\cdots$}
+            {$\cdots$}
+        ]
+    ][.$\oplus_{A'}$
+        [.$\oplus_{C'}$
+            {$\cdots$}
+            {$\cdots$}
+        ]
+        {$\cdots$}
+    ]
+]
+\caption{3+3 Dining Philosophers Problem (in one galaxy)}
+\label{fig:interleave}
+\end{figure}
+
+However, it is obvious that philosophers around table 1 cannot grab 
+the forks on table 2, and vice versa. 
+So the choices of $A,B$ and $C$ do not have to interact and multiply with the choices of
+$A',B'$ and $C'$. 
+Therefore we put them into two separate galaxies as shown in Figure \ref{fig:diningsplit}. 
+The use of multiple galaxies reduces the number of worlds since there
+are less interacting choices.
+% The notion of multiple galaxies can reduce the number of worlds 
+% to the extent of linearly sum of the number of choices (if these
+% choices are independent from each other). 
+
+\begin{figure}[th]
+\centering\small
+\begin{tabular}{|c|c|}
+\hline
+\Tree[.$\oplus_A$
+    [.$\oplus_B$
+        {$\cdots$}
+        {$\cdots$}
+    ][.$\oplus_C$
+        {$\cdots$}
+        {$\cdots$}
+    ]
+]
+&
+\Tree[.$\oplus_{A'}$
+    [.$\oplus_{B'}$
+        {$\cdots$}
+        {$\cdots$}
+    ][.$\oplus_{C'}$
+        {$\cdots$}
+        {$\cdots$}
+    ]
+]
+\\
+Dining Table 1 & Dining Table 2 \\
+\hline
+\end{tabular}
+\caption{3+3 Dining Philosophers Problem (in 2 galaxies)}
+\label{fig:diningsplit}
+\end{figure}
+
+
+Even though speculative nondeterminism gives us more chances to succeed, 
+it does not remove the possibility of deadlock, e.g.,
+a single agent which deadlocks.
+To minimize deadlocks without regard to the scheduler, 
+we can attempt all the interleavings of the concurrent programs as follows.
+Consider two concurrent programs $X$ and $Y$ as follows: 
+\[
+X: x_1.x_2.\cdots.x_m \hspace*{1cm}
+Y: y_1.y_2.\cdots.y_n
+\]
+We can modify them into 
+\begin{eqnarray*}
+X': & -X.x_1.+Z.\cdots.-X.x_m.+Z \\
+Y': & -Y.y_1.+Z.\cdots.-Y.y_n.+Z
+\end{eqnarray*}
+and create a coordinator host program $Z$ which embeds
+choice and commit as follows.
+\begin{algorithmic}
+\State $i\gets m$
+\State $j\gets n$
+\While {$i>0\textbf{ and }j>0$}
+  \State $(i\gets i-1;+X;-Z)\oplus(j\gets j-1;+Y;-Z)$
+\EndWhile
+\While {$i>0$}
+  \State $i\gets i-1;+X;-Z$
+\EndWhile
+\While {$j>0$}
+  \State $j\gets j-1;+Y;-Z$
+\EndWhile
+\For {$k=1\textbf{ to }\min(m,n)$}
+  \State $\cm$
+\EndFor
+\end{algorithmic}
+
+In summary, speculative computation takes place in a top-level runtime environment, 
+called \emph{universe}, which is a collection of galaxies.
+A \emph{galaxy} is a tree structure formed by multiple speculations living in multiple worlds.
+The choices from speculations
+are partitioned into different galaxies by their interests 
+in run-time.
+A \emph{world} consists of concurrent agents, a data store shared among those agents, 
+and other meta-data. Worlds are conceptually isolated from one another and each world can evolve 
+into more worlds or be pruned if is so desired by an agent.
+An \emph{agent} consists of (i) a program which specifies choices, commits and data operations 
+defined by a data model (discussed in Section \ref{sec:datamodel}), 
+and (ii) an exit condition function which is evaluated and 
+tested across all the worlds to determine whether the agent can exit.

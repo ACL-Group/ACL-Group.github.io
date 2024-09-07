@@ -1,0 +1,112 @@
+\section{Motivating Examples}
+\label{sec:motivate}
+
+\subsection{Latent Dirichlet Allocation}
+
+Latent Dirichlet Allocation (LDA) is widely used for topic modelling. In LDA,
+each word in the documents has a corresponding latent topic and the word is
+viewed as a random sample from the categorical distribution associated with
+the latent topic. The topics in a document conform to a document-specific
+categorical distribution. Dirichlet priors are used on the topic-word and
+document-topic categorical distribution. 
+
+The LDA model is in the exponential family and each node has conjugate priors.
+As a result, the variational message passing algorithm can be applied
+automatically to the inference problem of LDA, which is equivalent to the
+original algorithm proposed in \cite{blei2003latent}. The alternate inference
+technique involves creating a collapsed Gibbs Sampler
+\cite{griffiths2004finding} and usually outperforms the variational
+inference approach \ZY{cite ??, and can we create the gibbs sampler
+automatically?}.
+
+\begin{figure}[!h]
+\footnotesize
+\begin{verbatim}
+model LDA(alpha, beta, K, vocabSize, N, M) {
+  val phi = 
+    (0 until K).map(Dirichlet(alpha, vocabSize))
+  val theta = 
+    (0 until N).map(Dirichet(beta, K))
+  val topics = theta.map(theta => 
+    (0 until M).map(Categorical(theta)))
+  val words = 
+    topics.map(z => z.map(Categorical(phi(_))))
+}
+object LDA extends App {
+  /* load hyperparameters and data */
+  val m = LDA(alpha, beta, K, vocabSize, N, M)
+  m.words.observe(words)
+  m.infer()
+  print(m.phis)
+}
+\end{verbatim}
+\caption{Latent Dirichlet Allocation in SparkPP}
+\label{fig:lda_sparkpp}
+\end{figure}
+
+
+As the corpus size could be as large as several hundred million or billions of
+words and the number of parameters could reach the same scale depending on the
+hyperparameter settings, it is natural to consider implementing the LDA model
+in the distributed system. However the implementation of the LDA model is a
+tedious and error-prone process. The GibbsLDA++ is an implementation of
+collapsed sampler for LDA on a single machine \cite{gibbslda++} and consists
+of 2428 lines of code. The LDA model implemented in MLLib is 826 lines in
+length. In SparkPP, the model can be defined in a concise syntax
+(\figref{fig:lda_sparkpp}) and inference is taken care of automatically by the
+SparkPP compiler. The resulting code is only a few lines long.
+
+\subsection{Gaussian Mixture Model}
+
+\begin{figure}[!h]
+\footnotesize
+\begin{verbatim}
+model GMM(alpha, K, N) {
+  val pi = Dirichlet(alpha, K)
+  val mu = (0 until K).map(Normal(0, 1))
+  val va = (0 until K).map(InvGamma(1, 1))
+  val Z = (0 until N).map(_ => Categorical(pi))
+  val X = Z.map(z => Normal(mu(z), va(z)))
+}
+\end{verbatim}
+\caption{Gaussian Mixture Model in SparkPP}
+\label{fig:gmm_sparkpp}
+\end{figure}
+
+Gaussian Mixture Model (GMM) is a common model used in various machine
+learning tasks. The data points are assumed to be generated from the mixture
+of a number of independent gaussian distributions. Though the
+Expectation-Maximization algorithm usually runs much faster than the Bayesian
+GMM, the Bayessian GMM captures the uncertainty in the model \ZY{help
+robustness?}. GMM in SparkPP (\figref{fig:gmm_sparkpp}) is much simpler than other
+implementations.
+
+\subsection{Nonstandard Models}
+
+\begin{figure}[!h]
+\footnotesize
+\begin{verbatim}
+model LDA(alpha, beta, K, vocabSize, N, M) {
+  val phi = 
+	(0 until N).map((0 until K).map(
+		Dirichlet(alpha, vocabSize)))
+  val theta = 
+    (0 until N).map(Dirichet(beta, K))
+  val topics = theta.map(theta => 
+    (0 until M).map(Categorical(theta)))
+  val words = topics.zip(phi).map{
+	case (z, phi) => 
+	  z.map(Categorical(phi(_))))}
+}
+\end{verbatim}
+\caption{DCMLDA in SparkPP}
+\label{fig:dcmlda_sparkpp}
+\end{figure}
+
+In different machine learning tasks, nonstandard models are useful to capture
+problem-specific characteristics. In \cite{Doyle2009}, the authors account for
+the burstiness in the documents by using per-document topic-word categorical
+distributions instead of a global one. The slight change made to the LDA model
+requires the inference code to be rewritten while in SparkPP, only a few
+adjustments are needed (\figref{fig:dcmlda_sparkpp}).
+

@@ -1,0 +1,524 @@
+\section{Experimental Results}
+\label{sec:eval}
+
+
+We conducted a series of experiments on
+four main datasets in \tabref{tab:datasets}. BMS-POS and BMS-WebView are
+introduced in \cite{Zheng:2001:RWP:502512.502572} and are commonly used for
+data mining. Retail is the retail market basket data \cite{brijs99:retailData}. Syn is the synthetic data in which each item is generated with
+equal probability and the max record length is 50.
+\figref{fig:datasets} shows the distribution of record lengths in these datasets.
+All the datasets exhibit a trend where the number of records decreases 
+almost exponentially with the record length.
+Following Cao~\cite{Cao:2010:rho}, we randomly designate 
+40\% of the item types in each dataset as sensitive items and 
+the rest as non-sensitive.
+
+To evaluate the performance of rule mining,
+we produce four additional datasets by truncating all records in the
+original datasets to 5 items only, and denote
+such datasets as ``cutoff = 5''.
+Allowing more items in one record requires significantly more computation in the $qid$
+generation phase and takes excessive time. On the other hand,
+having records with fewer items may reduce the number of rules we can mine.
+Since our goal is to see how well our model can preserve the rules,
+we choose to use ``cutoff = 5'' after these considerations.
+
+\begin{table*}[tb]
+%\small
+\centering
+\caption{Four Original Datasets\label{tab:datasets}}{
+\begin{tabular}{|c|l|r|r|r|r|} \hline
+Dataset	& Description & Recs & Dom. & Sensitive & Non-Sens.\\
+& & & Size & items & items  \\ \hline \hline
+BMS-POS &Point-of-sale data from &515597 & 1657&1183355 &  2183665\\
+(POS)	& a large electronics retailer   &	&	&	& \\ \hline
+BMS-WebView &Click-stream data from &77512 & 3340& 137605 & 220673  \\
+(WV) & e-commerce web site  & &  & & \\ \hline
+Retail &  Retail market basket data   & 88162&16470 &340462 & 568114  \\ \hline
+Syn & Synthetic data with max & 493193 &5000 &828435 & 1242917 \\
+ & record length = 50   & & & & \\ \hline
+\end{tabular}
+}
+\end{table*}
+
+\begin{figure}[th]
+\centering
+\subfigure[POS]{
+\begin{minipage}[c]{0.46\textwidth}
+  \includegraphics[width=1.0\columnwidth]{BMS-POS.eps}
+\end{minipage}%
+}
+\subfigure[WV]{
+\begin{minipage}[c]{0.46\textwidth}
+  \includegraphics[width=1.0\columnwidth]{BMS-WEB.eps}
+\end{minipage}%
+}
+\subfigure[Retail]{
+\begin{minipage}[c]{0.46\textwidth}
+  \includegraphics[width=1.0\columnwidth]{retail.eps}
+\end{minipage}%
+}
+\subfigure[Syn]{
+\begin{minipage}[c]{0.46\textwidth}
+  \includegraphics[width=1.0\columnwidth]{r50w.eps}
+\end{minipage}%
+}
+\caption{Distribution in Record Length of Four Original Datasets}\label{fig:datasets}
+\end{figure}
+
+We compare our algorithm with the
+global suppression algorithm (named Global) and generalization algorithm
+(named TDControl) of
+Cao {\em et al.} \cite{Cao:2010:rho}.\footnote{The source code of these
+algorithms was directly obtained from Cao.}
+%since these systems are most
+%related to our work in terms of privacy model. In the rest of the section,
+%by {\em Global} and {\em TDControl}, we mean these two algorithms.
+Our algorithm has two variants, {\em Dist} and {\em Mine}, which optimize
+for data distribution and rule mining, respectively.
+%We also compare the performance of the above algorithms with a simple
+%baseline algorithm denoted as {\em Random} which
+%randomly picks one unsafe \qid and one item type in this \qid to suppress.
+%In order to evaluate the ability to retain useful association rules and
+%to avoid spurious rules in these competing algorithms, we need the ground
+%truth, which are all the association rules inferrable from the datasets with
+%sufficient confidence and support.
+%However, original datasets are too large to infer all association rules.
+Experiments that failed to complete in 2 hours is marked
+as ``N/A'' or an empty place in the bar charts.
+We run all the experiments on Linux 2.6.34 with an 
+Intel 16-core 2.4GHz CPU and 8GB RAM.
+%Experiment programs are written in C++ and compiled using GCC version 4.5.0.
+
+
+In this section, we use the following default parameters:
+$b_{max} = 10^6$, $t_{max}=500$ and DnC=true.
+These default parameters are carefully set to optimize the results
+and to ensure that the process can terminate in a reasonable
+amount of time.
+For example, we set $b_{max} = 10^6$ for it can provide a buffer
+big enough to hold all $qid$s. If we used a smaller one,
+the execution time would be extended due to reloading of buffer
+space. Also, we set $b_{max} = 10^6$ because $log_2(10^6) \approx 20$,
+which bounds the average record length of our data sets.
+%Such practice balances $b_{max}$ and ${2^{\frac{N}{|T|}}}$
+%in \eqnref{eq:complexity}. 
+If $t_{max}$ is too large, it will result in waste of
+space. We set $t_{max} = 500$ since it is an appropriate time
+for the execution of each divide-and-conquer problem. 
+
+In what follows, we first present results in data utility, then the
+time performance of the algorithms, followed by the effects of
+changing various parameters on the results of our algorithm.
+Finally, we compare with a permutation method which utilizes
+a similar privacy model but with different optimization goals.
+Unless otherwise noted, we experiment with two default values of $\rho$,
+$0.3$ and $0.7$, for these experiments.
+
+
+\subsection{Data Utility}\label{sec:eval:datautility}
+We compare the algorithms in terms of information loss, data distribution,
+and association rule mining. A metric, {\em info loss}, is designed to evaluate 
+how much information is lost after the partial compression.
+\[\text{info loss} = \frac{{Items(T) - Items(T')}}{{Items(T)}}\]
+The method we adopt to calculate information loss is reasonable,
+because ${Items(T) - Items(T')}$ represents the loss of raw data that
+can be used for statistical analysis or association rule mining.
+Obviously, {\em info loss} equals to 0 if there is no information loss.
+The rules generated from TDControl are all in general 
+form which is totally different from the original one. 
+To enable comparison, we specialize the more general rules from 
+the result of TDControl into rules of original level of abstraction 
+in the generalization hierarchy. 
+For example, we can specialize a rule: $\text{dairy product} \rightarrow  \text{grains}$ into: $milk \rightarrow wheat$, $milk \rightarrow rice$, $yogurt \rightarrow wheat$.
+
+
+\begin{figure}[th]
+\centering
+\subfigure[$\rho=0.3$]{\label{fig:loss-a}
+\begin{minipage}[c]{0.48\textwidth}
+\centering
+  \epsfig{file=loss3.eps, width=\columnwidth}
+\end{minipage}%
+}
+\subfigure[$\rho=0.7$]{\label{fig:loss-b}
+\begin{minipage}[c]{0.48\textwidth}
+\centering
+  \epsfig{file=loss7.eps, width=\columnwidth}
+\end{minipage}%
+}
+\caption{Comparisons in Information Loss}\label{fig:loss}
+\end{figure}
+
+
+\figref{fig:loss-a} and \figref{fig:loss-b} show that in terms 
+of information loss, $Mine$ is uniformly better among the four techniques.
+It suppresses only about less than 30\% items in POS and WV and about 
+less than 40\% items in Retail, while the other three techniques 
+incur on average 10\% more losses than $Mine$ and up to 75\% 
+losses in the worst case. We notice that $Dist$ has a generally 
+worse performance than other techniques even though it tries to 
+minimize the information loss at each iteration. 
+The reason is that it also tries to retain the data distribution.
+%We will see how this heuristic works in retaining the data
+%distribution in Section \ref{sec:eval:datadistribution}.
+%Further, we argue that for applications that require data statistics,
+%the distribution, that is, the summary information, is more useful than the
+%details, hence losing some detailed information is acceptable.
+Note that Global failed to complete in Retail or Syn datasets,
+because these are two of the largest data sets and Global 
+doesn't scale very well. 
+
+%This confirms that our alogrithm causes less information losses than peers.
+%which suggests that our algorithm scales better on bigger data than the
+%existing approaches.
+%indicating that our algorithm has a
+%strong flexibility in $\rho$.
+%\subsubsection{Data Distribution}\label{sec:eval:datadistribution}
+
+\begin{figure}[th]
+\centering
+\subfigure[$\rho=0.3$]{\label{fig:entropy-a}
+\begin{minipage}[c]{0.48\textwidth}
+\centering
+  \includegraphics[width=\textwidth]{relative3.eps}
+\end{minipage}%
+}
+\subfigure[$\rho=0.7$]{\label{fig:entropy-b}
+\begin{minipage}[c]{0.48\textwidth}
+\centering
+  \includegraphics[width=\textwidth]{relative7.eps}
+\end{minipage}%
+}
+\caption{Comparisons in Symmetric K-L Divergence}
+\label{fig:entropy}
+\end{figure}
+
+\figref{fig:entropy-a} and \figref{fig:entropy-b} show that $Dist$ 
+outperforms the peers as its output has the highest 
+resemblance to the original datasets in different anonymization methods. 
+On the contrary, TDControl is the worst performer
+since generalization algorithm creates a lot of new items while
+suppressing too many item types globally. 
+Since the symmetric relative entropy of $Dist$ is very small, 
+y-axis is in logrithmic scale to improve readability. 
+Therefore, the actual difference in K-L divergence is two 
+to three orders of magnitude.
+
+\figref{fig:rulemining1} and \figref{fig:rulemining2} compare the 
+the different anonymization methods for association rule mining. 
+Because Syn is randomly generated and few sensible 
+association rules can be mined, 
+it is excluded from this experiment.
+In this experiment, we use the four dataset with the 
+max record length=5 (cutoff=5), and check the rules mined from 
+the anonymized data with minimum support rate of 0.05\% 
+\footnote{When we do rule mining, we adopt the A-priori algorithm and 
+set the minimum support rate to be $0.05\%$, which is a reasonable value 
+in practice \cite{Zheng:2001:RWP:502512.502572}.}.
+Both TDControl and Global perform badly in this category, 
+with negligible number of original rules remaining after anonymization. 
+Take WV as an example. There are 4 rules left in the result of TDControl 
+when the $\rho$ is 0.7 and the number becomes 28673 after specialization, 
+which makes the results almost invisibly short on the figures. 
+All of the partial suppression algorithms manage to retain most of 
+the rules and the Jaccard Similarity reaches 80\% in some datasets 
+which shows our heuristic works very well. 
+Specifically, $Mine$ performs the best among the algorithms.
+%\rm{yogurt} $\rightarrow$ \rm{rice}\\
+
+
+\begin{figure}[th]
+\centering
+\subfigure[ $\rho=0.3$]{\label{fig:rulemining1}
+\begin{minipage}[c]{0.48\textwidth}
+\centering
+   \includegraphics[width=\textwidth]{js3.eps}\\
+\end{minipage}%
+}
+\subfigure[ $\rho=0.7$]{\label{fig:rulemining2}
+\begin{minipage}[c]{0.48\textwidth}
+\centering
+  \includegraphics[width=\textwidth]{js7.eps}
+\end{minipage}%
+}
+\caption{Association Rules Mining with Support $0.05 \%$}
+\label{fig:rulemining}
+\end{figure}
+
+\subsection{Performance}\label{sec:eval:performance}
+In this section, we evaluate the time performance and scalability of
+our algorithms.
+
+%\subsubsection{Time Performance}\label{sec:eval:time}
+\begin{table}[th]
+\caption{Comparison in Time Performance ($\rho=0.7$, $t_{max}=300$)
+\label{tab:timeresult}}
+\centering
+\begin{tabular}{|l|r|r|r|r|r|}
+  \hline
+  % after \\: \hline or \cline{col1-col2} \cline{col3-col4} ...
+  Algorithm & POS & WV & Retail  &Syn \\  \hline \hline
+  TDControl & \bf{183} & \bf{30 }& \bf{156} &   476  \\  \hline
+  Global & 1027 & 81 & 646 &   N/A  \\  \hline
+%  \PartialR & 6582 & 305 & 1497 & 323&761 \\\hline
+ % $Random$ & 814 & 188 & \bf{151} & \bf{105} \\\hline
+  $Dist$ & 395 & 151 & 171 &\bf{130}\\ \hline
+  $Mine$ & 1554 & 478& 256 & 132\\ \hline
+  \end{tabular}
+\end{table}
+
+%Since data anonymization often takes place in offline mode,
+%time performance is often not critical.
+%Nonetheless, time matters if we want our algorithm to
+%scale to large datasets.
+%But reasonable time performance is still important for a data user.
+From Table \ref{tab:timeresult}, TDControl is the clear winner
+for three of the four datasets. $Mine$ does not perform well in BMS-POS. The reason is that $Mine$ incurs the least information loss among all the
+competiting methods. This means most of the original data remains
+unsuppressed. Given the large scale of BMS-POS, checking whether the
+dataset is safe in each iteration is therefore more time consuming than
+other methods or in other datasets. Results for Global are not available for Syn because it runs out of memory.
+
+%\subsubsection{Scalability}\label{sec:eval:scale}
+Next experiment illustrates the scalability of our algorithm
+w.r.t. data size. We choose $Retail$ as our target dataset here
+%since the number of \qids increases dramatically with
+%the increase of the records length
+because $Retail$ has the maximum average record length of 10.6.
+We run partial algorithms on 1/5, 2/5 through 5/5 of $Retail$ respectively.
+Figure \ref{fig:scale} shows that our algorithm scales fairly well
+with increasing data size with or without DnC.
+%On Retail with DnC, data is partitioned into
+%two pieces at 2/5 data, four pieces at 3/5 and 4/5 data, and then
+%eight pieces for the whole data.
+Furthermore, increased level of partitioning causes the algorithm to witness
+superlinear speedup in Figure \ref{fig:scale:a}. 
+%In particular, the %dataset is
+%automatically divided into 4, 8, 16 and 32 parts at 1/5, 2/5, 3/5 and
+%the whole of the data, respectively.
+
+\begin{figure}[th]
+\centering
+\subfigure[With DnC]{\label{fig:scale:a}
+\begin{minipage}[c]{0.48\textwidth}
+\centering
+  \includegraphics[width=\textwidth]{scaletime.eps}
+\end{minipage}%
+}
+\subfigure[Without DnC]{\label{fig:scale:b}
+\begin{minipage}[c]{0.48\textwidth}
+\centering
+  \includegraphics[width=\textwidth]{scaletimeno.eps}
+\end{minipage}%
+}
+\caption{Scale-up with Input Data on Retail ($\rho=0.7$)}\label{fig:scale}
+\end{figure}
+
+\subsection{Effects of Parameters on Performance}\label{sec:eval:effect}
+In this section, we study the effects of $\rho$, $t_{max}$, $b_{max}$ on the
+quality of solution (in terms of information loss) and time performance.
+
+\subsubsection{Variation of $\rho$}
+\label{sec:rho}
+\begin{figure}[th]
+%\centering
+\subfigure[On information loss]{\label{fig:loss-c}
+\begin{minipage}[c]{0.48\textwidth}
+\centering
+  \includegraphics[width=\textwidth]{infoloss.eps}
+\end{minipage}%
+}
+\subfigure[On data distribution]{\label{fig:entropy-c}
+\begin{minipage}[c]{0.48\textwidth}
+\centering
+  \includegraphics[width=\textwidth]{KL.eps}
+\end{minipage}%
+}
+\subfigure[On rule mining (cutoff=5 data)]{\label{fig:rulemining3}
+\begin{minipage}[c]{0.48\textwidth}
+\centering
+\includegraphics[width=\textwidth]{J.eps}
+\end{minipage}%
+}
+%\subfigure[Information Loss ($\rho$ from 0 to 1)]{
+%\label{fig:rhoVar1}
+%\begin{minipage}[c]{0.45\textwidth}
+%\centering
+%  \includegraphics[width=7cm]{rhoil.eps}
+%\end{minipage}%
+%}
+%\subfigure[Data Distribution ($\rho$ from 0 to 1)]{
+%\label{fig:rhoVar2}
+%\begin{minipage}[c]{0.45\textwidth}
+%\centering
+%  \includegraphics[width=7cm]{rhoKL.eps}
+%\end{minipage}%
+%}
+%\subfigure[Rule Mining ($\rho$ from 0 to 1)]{
+%\label{fig:rhoVar3}
+%\begin{minipage}[c]{0.45\textwidth}
+%\centering
+%  \includegraphics[width=7cm]{jaccard.eps}
+%\end{minipage}%
+%}
+\caption{Variation of $\rho$}\label{fig:rho}
+\end{figure}
+
+In this section, we give the performance of our
+algorithm with regard to the variation of $\rho$.
+%Mining rules from the original datasets with many
+%long records is prohibitive due to large memory requirements.
+With WV as our test data, Figure \ref{fig:loss-c} shows that
+the information loss decreases when $\rho$ becomes larger.
+The reason is clear: as $\rho$ grows,
+there are fewer unsafe qids in the data and
+fewer suppressions need to be executed and 
+hence less information loss. 
+
+Figure \ref{fig:entropy-c} gives the trend on data distribution. 
+Data distribution is better retained when $\rho$ is larger, 
+because fewer suppressions mean less disturbance to the original distribution.
+To determine the similarity between the item frequency distribution
+of original data and that of the anonymized data,
+we use the Kullback-Leibler divergence (also called relative entropy) as our evaluation metric.
+To prevent zero denominators, we modified  definition of KL divergence 
+in \tabref{table:notations} 
+to a symmetric form \cite{Fisher:2008:DSF} defined as
+\[\mathcal{S}(H_1||H_2)=\frac{1}{2}KL( H_1||H_1 \cup H_2)+\frac{1}{2} KL( H_2||H_1 \cup H_2)\]
+where  $H_1 \cup H_2$ represents the union of distributions $H_1$ and $H_2$.
+
+Figure \ref{fig:rulemining3} shows the relation between $\rho$ and 
+the Jaccard Similarity of $R(T)$ and $R(T')$. 
+Datasets Syn(cutoff=5) fail to complete within 2 hours for all of the $\rho$
+values, so we leave it out. 
+We can see that Jaccard Similarity generally increases as $\rho$ grows larger. 
+We observe some anomaly for WV (cutoff=5) when $\rho$ is 0.7 and 0.9. 
+This is because WV is the smallest datasets
+among the three and fewer association rules can be derived from WV.  
+%It is hard to mine association rules from dataset so the size of 
+%ruleset is small. 
+%When both rule sets are small, it is more difficult for them to be similar. 
+%It is because the size of ruleset is small when $\rho$ is relatively large, 
+%and Jaccard Similarity does not work very well to assess the similarity of 
+%two very small sets. The differences in datasets will have 
+%a significant impact on Jaccard Similarity when $\rho$ is relatively large.
+When $\rho$ is 0.9, we find no association rule in the suppressed WV
+and only 1 rule in the original WV. Therefore, Jaccard Similarity is 0. 
+Similarly at $\rho=0.9$, we discover only one rule from the original POS and the
+suppressed POS. These two rules happen to be the same, which results in
+Jaccard Similarity being 1.
+
+\subsubsection{Variation of $t_{max}$}\label{sec:eval:timebound}
+
+%timebound
+\begin{figure}[th]
+\centering
+\subfigure[Information Loss vs. $t_{max}$]{
+\label{fig:timebound-a}
+\begin{minipage}[c]{0.48\textwidth}
+\centering
+  \includegraphics[width=\columnwidth]{timebond_avg.eps}
+\end{minipage}%
+}
+\subfigure[Time Performance vs. $t_{max}$]{
+\label{fig:timebound-b}
+\begin{minipage}[c]{0.48\textwidth}
+\centering
+  \includegraphics[width=\columnwidth]{timebond.eps}
+\end{minipage}%
+}
+\caption{Variation of $t_{max}$ Retail ($\rho = 0.7$)}\label{fig:timebound}
+\end{figure}
+
+We choose $Retail$ as the target dataset again since $Retail$
+is the most time-consuming dataset that can terminate within
+acceptable time without DnC strategy.
+The value of $t_{max}$ determines the size of a partition in DnC.
+%Smaller $t_{max}$ can give rise to more partitions.
+Here, we evaluate how partitioning helps with time performance and
+its possible effects on suppression quality.
+Figure \ref{fig:timebound-a} shows the relationship between partitions
+and information loss. The lines of  $Dist$ is flat, indicating that
+increasing $t_{max}$ doesn't cost us the quality of the solution. $Mine$
+shows a slight descending tendency at first and then tends to be flat.
+We argue that a reasonable $t_{max}$ will not cause our result quality to
+deteriorate.
+On the other hand, Figure \ref{fig:timebound-b} shows that
+time cost increases dramatically  with the increase of  $t_{max}$.
+The reason is that partitioning decreases the cost of enumerating \qids which
+is the most time-consuming part in our algorithm. Moreover, parallel
+processing is also a major reason for the acceleration.
+
+\subsubsection{Variation of $b_{max}$}
+
+\begin{figure}[th]
+\centering
+\subfigure[Information Loss vs. $b_{max}$]{
+\begin{minipage}[c]{0.48\textwidth}
+\centering
+  \includegraphics[width=\columnwidth]{buffersizeavg.eps}
+\end{minipage}%
+}
+\subfigure[Time Performance vs. $b_{max}$]{
+\begin{minipage}[c]{0.48\textwidth}
+\centering
+  \includegraphics[width=\columnwidth]{buffersize.eps}
+\end{minipage}%
+}
+\caption{Variation of Buffer Size $b_{max}$ on Retail ($\rho=0.7$)}\label{fig:buffersize}
+\end{figure}
+
+Figure \ref{fig:buffersize} illustrates
+the impact of varying $b_{max}$ on performance.
+We choose $WV$ as our target dataset this time since the number of
+distinct \qids in $WV$ is relatively small compared to
+other datasets and our algorithm
+can terminate even when we set a small $b_{max}$.
+
+Note first that varying $b_{max}$ has no effect on
+the information loss which
+indicates that this parameter is purely for performance tuning.
+At lower values, increasing $b_{max}$ gives almost exponential
+savings in running time. But as $b_{max}$ reaches a certain point, the speedup
+saturates, which suggests that given the fixed size of the data,
+when $B$ is large enough to accommodate all \qids at once after some iterations,
+further increase in $b_{max}$ is not useful.
+The line for $Mine$ hasn't saturdated because $Mine$ suppresses
+fewer items and retains more \qids, hence requires a much larger
+buffer.
+
+\subsection{A Comparison to Permutation Method}
+In this section, we compare our algorithms with a permutation method
+\cite{2011:TKDE:Anonymous}
+which we call $M$.
+The privacy model of $M$
+states that the probability of associating any transaction $R \in T$ with
+any sensitive item $e \in D_S(T)$ is below $1/p$, where $p$ is known as
+a privacy degree. This model is similar to ours when $\rho = 1/p$,
+which allows us to compare three variants of our algorithm against
+$M$ where $p=4, 6, 8, 10$ on dataset $WV$ which was reported in
+\cite{2011:TKDE:Anonymous}.
+
+Figure \ref{fig:permutation1} shows the result on K-L divergence.
+All variants of our algorithm outperform $M$ in
+preserving the data distribution. Figure \ref{fig:permutation2} shows timing results. Even though $M$ is faster, our algorithms
+terminate within acceptable time.
+
+\begin{figure}[th]
+\centering
+\subfigure[K-L Divergence (1/$\rho$)]{\label{fig:permutation1}
+\begin{minipage}[c]{0.48\columnwidth}
+%\flushleft
+  \includegraphics[width=\columnwidth]{anatomy.eps}
+\end{minipage}%
+}
+\subfigure[Time Performance (1/$\rho$)]{\label{fig:permutation2}
+\begin{minipage}[c]{0.48\columnwidth}
+%\flushleft
+  \includegraphics[width=\columnwidth]{anatomytime.eps}
+\end{minipage}%
+}
+\caption{Comparison with Permutation on WV}
+\end{figure}

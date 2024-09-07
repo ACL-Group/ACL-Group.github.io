@@ -1,0 +1,73 @@
+\section{Experiment Setup}
+\label{sec:experiment}
+
+%Previous work evaluating the faithfulness of text summarization mainly considered this task in two settings with corresponding benchmarks, i.e., inconsistency detection and faithfulness rating. We present them first with the implementation details of FFLM for them at the end of this section.
+
+
+We present two evaluation settings considered by previous work for faithfulness evaluation first, with the implementation details of FFLM for them later.
+
+\subsection{Inconsistency Detection}
+
+Inconsistency detection regards the faithfulness evaluation as a binary classification problem. 
+In other words, human annotators or automatic metrics only need to recognize whether the summary is faithful to the document or not.
+
+\textit{\textbf{Datasets}:} The SUMMAC Benchmark~\cite{laban2022summac} is a benchmark consisting of six summarization evaluation datasets, including CoGenSumm~\citet{falke2019ranking}, SummEval~\cite{fabbri2021summeval}, FRANK~\cite{pagnoni2021understanding}, Polytope~\cite{huang2020have}, FactCC~\cite{kryscinski2020evaluating} and XSumfaith~\cite{maynez2020faithfulness}. It standardized these datasets by changing their original labels into a binary label and split each dataset into a validation set and a test set. Most of the original datasets are labeled by three or more annotators, except Polytope and FactCC.
+
+\textit{\textbf{Evaluation Metric}:} Balanced accuracy~\cite{brodersen2010balanced} is adopted as the primary evaluation metric, which requires binary labels for computation. For approaches with continuous scores, a threshold can be selected via the validation set.
+
+\textit{\textbf{Baselines}:} We borrowed the baselines from 
+\citet{laban2022summac}'s work, including linguistic feature-based metrics NER-Overlap~\cite{laban2021keep} and DAE~\cite{goyal2020evaluating}, NLI-based metric MNLI-doc~\cite{kryscinski2020evaluating} and SUMMAC$_{\rm ZS}$~\cite{laban2022summac}, QA-based metrics FEQA~\cite{durmus2020feqa} and QuestEval~\cite{scialom2021questeval}, prompting with ChatGPT~\cite{openai2022}~\footnote{As~\citet{chen2023evaluating} shows that faithfulness evaluation is less reasoning-intensive and chain-of-though~\cite{weichain} prompting even hurts performances, we only compared with ChatGPT using a vanilla prompt.}, and two weakly-supervised baselines FactCC-CLS~\cite{kryscinski2020evaluating} and SUMMAC$_{\rm CONV}$~\cite{laban2022summac}. Besides, we implemented the language modeling-based metric BARTScore~\cite{yuan2021bartscore} and metrics based on probability changes include CoP~\cite{she2022cop} and HaRiM~\cite{son2022harim}. These three metrics were suggested to use the CNN/DM~\cite{nallapati2016abstractive} fine-tuned BART model~\footnote{\url{https://huggingface.co/facebook/bart-large-cnn}} for calculation. We also improved the latter two metrics with our proposal by calculating with a foundation language model, LLaMa, for comparisons.
+
+
+\begin{table}[t]
+	\scriptsize
+	\centering
+	\begin{tabular}{l|cccc}
+		\toprule[1pt]
+		Setting & Dataset & Val & Test & Source \\
+		\hline
+		\multirow{6}{*}{\makecell{Inconsistency\\ Detection\\(SUMMAC \\Benchmark)}} & CoGenSum & 1281 & 400 & C \\
+		& SummEval & 850 & 850 & C \\
+		& FRANK & 671 & 1575 & C+X \\
+		& Polytope & 634 & 634 & C \\
+		& FactCC & 931 & 503 & C \\
+		& XSumFaith & 1250 & 1250 & C \\
+		\hline
+		\multirow{5}{*}{\makecell{Faithfulness \\ Rating}} & FRANKCNN & - & 1250 & C \\
+		& QAGSCNN & - & 235 & C \\
+		& SummEval & - & 1600 & C \\
+		& FRANKXSUM & - & 996 & X \\
+		& QAGSXSUM & - & 239 & X \\
+		\bottomrule[1pt]
+	\end{tabular}
+	\caption{Statistics of the datasets. ``C'' and ``X'' are short for CNN/DM~\cite{nallapati2016abstractive} and XSum~\cite{narayan2018don} respectively.}
+	\label{tab:datasets}
+\end{table}
+
+
+\subsection{Faithfulness Rating}
+
+Faithfulness rating defines the evaluation as a Likert scale coring problem. Annotators or metrics score each summary according to its faithfulness. Generally, the higher, the more faithful.
+
+
+\textit{\textbf{Datasets}:} Following~\citet{son2022harim}, 
+we experimented on five different datasets: FRANKCNN and FRANKXSUM 
+from~\citet{pagnoni2021understanding}, QAGSCNN and QAGSXSum 
+from~\citet{wang2020asking}, and SummEval~\cite{fabbri2021summeval}. 
+For the first four datasets, human judgments were originally done on 
+the sentence level. The faithfulness rating of the whole summary is 
+collected by doing majority voting on each summary sentence among annotators 
+and averaging among sentences. SummEval contains human scores in the range of
+1 to 5 in the aspect of consistency. More details are in Table~\ref{tab:datasets}.
+
+\textit{\textbf{Evaluation Metrics}:}
+Pearson($\gamma$), Spearman($\rho$), and Kendall($\tau$) correlation coefficients are used to measure the alignments between faithfulness ratings annotated by annotators and automatic metrics. The correlations are the higher the better. We consider the summary-level correlations for all datasets. Besides, system-level correlations are calculated on SummEval which
+contains annotations for 16 extractive or abstractive summarization models.
+%  measures the correlations for 16 summarization models by averaging the scores of their generated summaries.
+
+\textit{\textbf{Baselines}:} Rouge-2 F1~\cite{lin2004rouge}, Meteor~\cite{banerjee2005meteor}, BLEU~\cite{papineni2002bleu} and BERTScore F1~\cite{zhangbertscore} are widely-accepted summarization evaluation metrics. We report their best results in \citet{son2022harim} by calculating between the summary and the source document. QAGS~\cite{wang2020asking} is another QA-based metric. Others are the same as the ones for inconsistency detection. 
+%The results for most baselines are borrowed from previous works with their best performances. 
+
+\subsection{Implementation Details}
+We implemented FFLM with the foundation language model LLaMa~\cite{touvron2023llama}. It contains models with different sizes, where LLaMa7b is selected for our main experiments. We add "TL;DR" between the conditional sequence and the target sequence. The weights in Eq.~\ref{eq:fflm} are determined in $\{0.0, 0.1, ..., 1.0\}$ according to the performance on the corresponding validation set for inconsistency detection. For faithfulness rating, we set $\alpha$, $\beta$, $\delta$ as $0.25$, $0.25$, $0.5$ respectively, with the intuition that the former two are from the same category as introduced in Sec.~\ref{sec:approach-pc}. Our experiments are done on a single RTX 3090. %with 24G GPU memory.
+

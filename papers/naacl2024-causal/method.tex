@@ -1,0 +1,99 @@
+\section{Approach}
+\label{sec:approach}
+% \KZ{Add a preamble here.}
+% Recall that our goal is to reveal the causal relationships among symptoms and life events, we should first quantitatively measure them from social media data. This is achieved by constructing supervised classifiers.
+% \MY{Rewrite: Our objective is to elucidate the causal relationships between symptoms and life events, so it is imperative to respectively identify these elements from social media data.}
+Our objective is to elucidate the causal relationships between symptoms and life events, so it is imperative to respectively identify these elements from social media data.
+
+\subsection{Symptom and Life Event Identification}
+\label{sec:symp_iden}
+
+\paragraph{Psychiatric Symptom}
+Building upon prior research that thoughtfully outlined 38 psychiatric symptoms across 7 mental disorders, as well as proposed a symptom identification dataset named PsySym containing ~83K annotated sentences from Reddit posts~\cite{Zhang2022SymptomIF}.
+% \MY{add citation and use dataset name}
+We adopt their symptom definition\footnote{These symptoms (e.g., anxious mood, sleep disturbance, poor memory) are carefully extracted from DSM-5~\cite{american2013diagnostic}, so that there is as little semantic overlap as possible between them. 
+We list all the symptoms in Table \ref{tab:symp_id} (Appendix \ref{sec:appendixA}).} and leverage their supervised symptom identification model, trained on this annotated dataset. The model incorporates a Mental BERT-based encoder~\cite{ji-etal-2022-mentalbert} and a linear classifier.
+\paragraph{Life Event} 
+Given the relatively limited scope of previous research on detecting life events, we refer to the Holmes-Rahe Stress Inventory~\cite{Noone2017stress}, which encompasses 43 stressful life events. While the inventory is comprehensive, the multitude of categories poses challenges for annotation and model training. Hence, we consolidate these 43 life events into 11 groups based on similarity\footnote{The corresponding relationship between the original definition and our merged grouping is detailed in Appendix \ref{sec:appendixA}.}. Then, we annotated a life event identification dataset\footnote{The detailed annotation procedure of the life event dataset can be found in Appendix \ref{apd:LE_dataset}.} using the same procedure as~\citet{Zhang2022SymptomIF} and trained a supervised model on this dataset using the same model architecture (i.e., Mental BERT with linear classifier).
+
+% \KZ{In the past two sections, you talked about the definitions of symptoms and life events but hardly anything about how you can extract them from the social media posts. I think this is quite critically missing. In particular, even if a post mentions a symptom or a social event, how do we know the poster actually had it?} 
+Utilizing these two classifiers, we can deduce a 38-dimensional symptom vector and an 11-dimensional life event vector for each post, where each dimension signifies the probability of a specific symptom or life event.
+We present the detailed identification results of these models in Appendix \ref{sec:symp_ident_res}, to show that using these classifiers can help us automatically and accurately extract psychiatric symptoms and life events on Reddit corpus. 
+% \MY{stick to the name of the dataset}.
+
+\subsection{Causality Inference}
+In this section, we first provide formal definition of our task, followed by the specified approach we used to extract causal relations. 
+\label{sec:causalality_infer}
+\subsubsection{Preliminaries} Exploring causal relationships involves a primary question about: 
+% \KZ{Causality is not necessarily defined in the context of medical treatment. It's a bit weird to forcibly convert the treatment to a symptom and an outcome was also symptom. Why not just talk about causality as a relationship between to events/conditions/states?}
+\begin{quote}
+    What would the \textit{outcome} be if the \textit{treatment} is given\footnote{We use the term ``treatment'' in accordance with the causal inference terminology, which means a binary variable that may affect the outcome.}?
+\end{quote}
+Therefore, if we want to find out the causal relationship between symptom $s_o$ and $s_t$, the question becomes ``What would $s_o$ (outcome) progresses if a person has $s_t$ (treatment)?'' Intuitively, we can measure this ``progression'' by calculating the difference in outcomes between the treated and untreated (i.e., control) groups. 
+To quantify this difference and assess the causal relationship between treatment and outcome, the Average Treatment Effect (ATE)~\cite{Rosenbaum1983TheCR} is introduced:
+% \MY{Comment to the following sentence: This introduction to a new concept is informal, give proper definition and say such a metric is used to evaluate ...} And this metric is called Average Treatment Effect (ATE)~\cite{Rosenbaum1983TheCR}:
+\begin{equation}
+    ATE = E[Y(1)-Y(0)]
+\end{equation}
+Here, $Y(0)$ represents the outcome for a unit without the treatment, and $Y(1)$ denotes the outcome for the same unit with the treatment.
+% \KZ{You didn't define what are the Y(0) and Y(1)?}
+
+However, the relationship between $s_o$ and $s_t$ might be a spurious correlation rather than a causal one, induced by other variables, known as \textit{confounders}, which are correlated with both the treatment and the outcome~\cite{Feder2022Causal}. Therefore, to establish trustworthy causal relationships, it is crucial to minimize the impact of confounding effects. This can be achieved by thoughtfully selecting treated and control groups, ensuring their similarity on other attributes apart from the treatment variable.
+
+\subsubsection{Propensity Score Matching}
+\label{sec:psm}
+To enhance the selection of treated and control groups, we apply Propensity Score Matching (PSM)~\cite{Rosenbaum1983TheCR}, which is widely used in observational studies to reduce bias and the influence of confounding variables~\cite{imbens_rubin_2015}. 
+% \MY{We haven't properly defined treatment and control users?}
+The main idea of PSM is to find groups of Treatment and Control posts whose covariates are statistically similar to one another, where the former group has received treatment and the latter has not. 
+The PSM model matches posts based on their \textit{likelihood} of receiving the treatment, represented as the propensity score.
+The PSM methodology entails two key stages:
+\begin{itemize}
+    \item \textbf{Estimating Propensity Scores:} We build logistic regression model to predict a post's treatment likelihood based on their covariates vector $X$. The estimated propensity score is given by: $$e(X) = \frac{1}{1 + e^{-X\beta}}$$
+    \item \textbf{Matching:} Then, treated and control groups are paired 1:1 based on similar propensity scores using a nearest-neighbor matching technique.
+    % \item \textbf{Estimate Treatment Effect:} Finally, the average treatment effect (ATE) is calculated as the difference in outcomes between the treated and matched control groups, which indicates the causal relationship between treatment and outcome. ATE is computed as: $$ATE = \frac{1}{N} \sum_{i=1}^{N} \left( Y_i(T=1) - Y_i(T=0) \right)$$ Here, $Y_i(T=1)$ is the potential outcome for post $i$ under treatment, $Y_i(T=0)$ is the potential outcome for post $i$ without treatment. 
+\end{itemize}
+
+\paragraph{Causality between Symptoms}
+To measure the causality between symptom $s_o$ and $s_t$, we apply PSM to compute the propensity score for each post. In this process, we consider symptoms other than $s_o$ and $s_t$ as the covariates, ensuring that the matched Treatment and Control pairs exhibit high similarity in these other symptoms. Subsequently, the posts are classified into two groups: Treatment group and Control group, based on whether the post has referenced symptom $s_t$. Then, we can measure the difference in the outcome of these two groups. For a post $i$ mentioning symptom $s_t$, if there exists another post mentioning symptom $s_o$ within a certain time window $w$\footnote{For the sake of clarity, we will refer to this time window as \textbf{``causal window''} in the following part.\label{footnote:causal_window}}, we consider outcome $Y_i=1$ for this post. 
+With matched pairs established, we estimate the average treatment effect as the difference in means of the matched pairs:
+$$ATE(s_t, s_o) = \frac{1}{N_m} \sum_{(i, j)} \left( Y_i - Y_j \right)$$ 
+where $N_m$ symbolizes the number of matched pairs, ($i$, $j$) is a matched pair of posts.
+% Y_i的定义似乎有问题？需要问一下
+
+\begin{table*}[th]
+    \small
+    \centering
+    \begin{tabular}{l|l|c|c|c}
+    \hline
+    Cause Symptom/Life Events & Result Symptom & Causal Window & ATE & Support  \\ 
+    \hline
+     Anger Irritability  & Weight and appetite change & 30 & 0.686 & \citet{vanzhula2019illness} \\
+     Fear of gaining weight  & Sleep disturbance & 30 & 0.692 & \citet{vanzhula2019illness}	 \\
+    Hyperactivity agitation & Depressed Mood & 90 & 0.761 & \citet{boschloo2015network} \\
+    Relationship Conflicts and Breakdown & Depressed Mood & 365 & 0.527 & \citet{konac2021comorbidity} \\
+    \hline
+    \end{tabular}
+    \caption{Example of discovered causal relationships and their corresponding literature supports.}
+    \label{tab:causal_analysis}
+\end{table*}
+
+\paragraph{Causality between Life events and Symptoms}
+Similar to assessing causality between symptoms, we use PSM to match the Treatment group (users with posts mentioning life event $l_t$) with the Control group (users without posts mentioning $l_t$). Covariates, in this case, include other life events except for the treatment life event $l_t$. The outcome symptom of a life event $l_t$ is determined by whether symptom $s_o$ is mentioned within the time window $w$.         
+
+
+% ) to assess the causality between life events and symptoms. Assuming we want to investigate the causality of life event $LE_1$ on symptom B, we treat the remaining 10 life events as confounders. Similarly, using PSM, we obtain propensity scores for all users. Subsequently, based on whether $LE_1$ is mentioned in posts, users are divided into the Treatment and Control groups. Matching is then performed between users in the Treatment and Control groups based on their propensity scores. Starting from posts mentioning $LE_1$, with a specified time window of length w, we calculate the probability of symptom B occurrence within w days.
+
+% The difference in probabilities between matched Treatment group users and Control group users is computed, and the average across all users yields the Average Treatment Effect (ATE) of Life Event $LE_1$ on symptom B. 
+% We explore ATE values for 11 Life Events across 38 symptoms, considering various time windows (30 days, 90 days, 180 days, 270 days, 1 year).
+
+
+% For each user in the Treatment group, we select a user from the Control group with the closest propensity score. We then initiate the analysis from posts mentioning symptom A, considering a time window of length w, and calculate the probability of symptom B occurrence within w days.
+
+ % measure the causal relationship between symptoms. As we have identified symptoms as described in Section \ref{sec:symp_iden}, for a user $U$ with $N$ posts, we can denote their symptom sequences as $\{S_1, S_2, ..., S_N\}$, each $S_i$ is the symptom vector identified from one post.
+
+
+% , indicating whether a post mentions the treatment symptom or event (1 for treated, 0 for control) in our task.
+% Assuming we want to explore the causality between symptom A and symptom B, we treat the remaining 36 symptoms as confounders. Utilizing the previously mentioned Propensity Score Matching (PSM), we calculate the propensity score (PS) for each user. Subsequently, we 
+
+% For both Treatment and Control groups, we compute probabilities ${P_t}$ and ${P_c}$, respectively. Subtracting the probabilities between matched users and averaging across all users yields the Average Treatment Effect (ATE) of symptom A on symptom B. We obtained the ATE values for pairwise combinations of the 38 symptoms. 
+% Additionally, we examine different causality between symptoms for varying time windows (30 days, 90 days, 180 days).

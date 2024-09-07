@@ -1,0 +1,229 @@
+\subsection{Enrich Co-occurrence Matrix and Articles}
+\label{sec:enrich}
+
+%\KZ{
+%{\bf OUTLINE}
+%\begin{itemize}
+%\item co-occurrence matrix
+%\item Overview of EnrichMatrix function
+%\item UpdateArticles, Scoring function
+%\item UpdateMatrix
+%\item How we handle general terms (boosting)
+%\end{itemize}
+%}
+
+Co-occurrence among Wikipedia concepts provides
+the knowledge for disambiguating terms in a given document.
+The co-occurrence information of Wikipedia concepts is in theory
+a $K \times K$ square matrix where $K$ is the total number of concepts in
+Wikipedia. Each element in the matrix represents
+the total co-occurrence frequency of the two concepts in
+any Wikipedia articles.
+Despite the large number of concepts that exist in Wikipedia, not every pair of
+them co-occur, and therefore in practice, the matrix is very sparse and
+manageable. Next, we present the algorithms that compute the co-occurrence
+matrix, which involves two phases: {\em matrix initialization} and
+{\em matrix enrichment}.
+%And the end of the section, we
+%discuss an important scoring function involved the enrichment process.
+
+\subsubsection{Matrix Initialization}
+In the initialization phase, we take as input the parsed Wikipedia articles
+which include both linked terms and unlinked terms,
+and calculate the co-occurrence frequency between the concepts of two linked
+term and the appearance frequency of each concept
+(i.e., the sum of all co-occurrence frequencies for that concept).
+We argue that computing the co-occurrence within the whole article is not
+only computationally demanding, but also counter-productive.
+The reason is that Wikipedia articles are often much longer and richer than
+traditional dictionary definitions, so that multiple topics may co-exist within
+the same article. As a result co-occurrence of two concepts which are very far
+away from each other in the article might not be related at all!
+Therefore, in this work, we only consider two concepts co-occur if they are
+less than $W_c$ terms (either linked or unlinked) apart in the text.
+%The same idea of using co-occurrence window is used in the following matrix
+%enrichment phase as well.
+In addition, we consider a concept $c$ to co-occur with all the concepts
+in its own definition page.
+This is because all the other concepts in the page contribute
+to the description of $c$. This actually incorporates the link structure
+in Wikipedia into the co-occurrence framework.
+
+%co-occurrence in our wikification
+%method is that the co-occurrence of two terms in a certain range can be an evidence that these two terms
+%are related to each other. A Wikipedia article may contain several topics while describing a concept.
+%A range covering the whole Wikipedia article will be too large in calculating the co-occurrence frequency.
+%So we define a window to restrict the distance between the concepts that can be counted as co-occurring.
+%That is to say, if the window size is $W$, for a concept, the $W-1$ concepts appearing before and after it
+%will be counted as co-occurring with it. Of course, since we have two kinds of concepts after parsing,
+%only linked term will be counted. In addition, the concept one Wikipedia article is talking
+%about is also considered co-occurring with the linked terms that article contains.
+%
+
+To illustrate the initialization process, let's consider the parsing result of
+\exref{ex:snow-links} again, with $W_c$ equal to three. The first linked
+term is ``alternative rock''. The only linked term within the window
+is ``University of Dundee'' which is 2 terms away. So the concept of these two
+linked terms are considered to co-occur. We then move on
+to the next linked term which is ``University of Dundee''. This time the only
+linked term within the window is ``alternative rock''. The process continues
+till the last linked term.
+%\KZ{Also implementation: Different window sizes are tested to see
+%their effect. The result will be shown in \secref{sec:eval}.}
+
+\begin{algorithm}[th]
+\caption{Enrich Co-occurrence Matrix}
+\label{enrich}
+\begin{algorithmic}[1]
+\Procedure{EnrichMatrix}{}
+\State $InitMatrix\left(\right)$
+\While{$UpdateArticles\left(\right)>0$}
+\State $UpdateMatrix\left(\right)$
+\EndWhile
+\EndProcedure
+\Statex
+\Function{UpdateArticles}{}
+\State $updatedCount \leftarrow 0$
+\State $UT \leftarrow \emptyset$
+\For {$a\;in\;Wikpedia\;Corpus$}
+\For {$t_u\;in\;a$}
+\State Initialize $Score[sizeof(S_u)]$
+\For {$i \leftarrow 0, sizeof(S_u)-1$}
+\State $Score[i] \leftarrow S_{CC}\left(S_u[i]\right)$
+\EndFor
+\State Sort $Score$ Descending
+\If {$Score[1]/Score[0] \leq \tau$}
+\State Assign $S_u[0]\;to\;t_u$
+\State $updatedCount \leftarrow updatedCount+1$
+\State $UT \leftarrow UT \cup t_u$
+\EndIf
+\EndFor
+\EndFor
+\State \textbf{return} $updatedCount$
+\EndFunction
+\Statex
+\Procedure{UpdateMatrix}{}
+\For{$t_u\;in\;UT$}
+\For{$c_l\;in\;S_l$}
+\State $c_u \leftarrow $ Concept of $t_u$
+\State Update $Co\left(c_u,c_l\right)$
+\State Update $Tf\left(c_u\right)$
+\EndFor
+\EndFor
+\EndProcedure
+\end{algorithmic}
+\end{algorithm}
+
+
+\subsubsection{Matrix Enrichment}
+The initial co-occurrence matrix doesn't have enough information
+because Wikipedia articles are often sparsely linked.
+%But  still needs some
+%work before this matrix can be put into use.
+%Our consideration is that
+%However, this original co-occurrence
+%matrix may not give us enough information for wikification because Wikipedia articles can be sparsely
+%linked. Without enough co-occurrence information,
+%we cannot have enough evidence to distinguish one Wikipedia concept from others, or we will miss
+%some terms without linking it to a proper Wikipedia concept.
+We develop the algorithm that bootstraps from the initial matrix and iteratively
+adds links to the current Wikipedia articles and updates the matrix
+concurrently. The pseudo-code of this algorithm is shown in
+Algorithm \ref{enrich} which consists of two procedures
+\textsc{UpdateArticles} and \textsc{UpdateMatrix}.
+
+In Algorithm \ref{enrich}, $S_u$ stands for the candidate Wikipedia concepts list of an
+unlinked term $t_u$. The list of its linked neighbors' concepts are denoted as
+$S_l$. A neighbor here means a term that is fewer than $W_c$ terms away.
+The co-occurrence frequency of two concepts is denoted as $Co\left(c_i,c_j\right)$.
+The appearance frequency of a concept $c$ is denoted as $Tf\left(c\right)$,
+which is equal to the times $c$ occurs in Wikipedia corpus.
+$UT$ is list containing all the updated
+(disambiguated) terms in the \textsc{UpdateArticles} process.
+\emph{Conditional concept score} ($S_{CC}$) is a
+score used to determine the concept for $t_u$ based on conditional probability.
+Given $c_i$ belonging to $S_l$,
+the conditional probability concept $c$ in $S_u$ to be chosen can be defined as
+$P\left(c|c_1,c_2...c_n\right)$. According to Bayes' theorem and assume
+independence of $c_1, \ldots, c_n$,
+we can have the following deduction.
+\begin{flalign}
+\label{prob}
+\begin{split}
+&P\left( c|{ c }_{ 1 },{ c }_{ 2 }...{ c }_{ n } \right)
+\\ &\propto P\left( { c }_{ 1 },{ c }_{ 2 }...{ c }_{ n }|c \right) P\left( c \right)
+\\ &=P\left( c \right) \prod _{ i=1 }^{ n }{ P({ c }_{ i }|c) }
+\end{split}
+\end{flalign}
+In \equref{prob}, we can replace $P\left(c_i|c\right)$ with
+$\frac{Co\left(c,c_i\right)}{Tf\left(c\right)}$
+and $P\left(c\right)$ is proportional to $Tf\left(c\right)$,
+so the $S_{CC}$ of a candidate
+concept $c$ in $S_u$ can be defined as follow:
+\begin{equation}
+\label{score}
+S_{CC}\left( c \right) =Tf\left( c \right) \prod _{ { c }_{ i } \;  in \;  { S }_{ l } }^{  }{ \frac { Co\left( c,{ c }_{ i } \right) }{ Tf\left( c \right)  }  }
+\end{equation}
+$Co\left(c,c_i\right)$ may be 0, which causes the $S_{CC}$ to be 0. This is not reasonable.
+That concept $c$ doesn't co-occur with some of its neighbours' concepts is not necessary to turn the
+score into 0 since it may co-occur with other neighbours' concepts. So we change \equref{score} a bit
+to add a smoothing factor. The final equation is shown below:
+\begin{equation}
+S_{CC}\left( c \right) =Tf\left( c \right) \prod _{ { c }_{ i } \;  in \;  { S }_{ l } }^{  }{ \frac { Co\left( c,{ c }_{ i } \right) +\frac { 1 }{ sizeof({ S }_{ u }) }  }{ Tf\left( c \right) +1 }  }
+\end{equation}
+
+\textsc{UpdateArticles} processes all unlinked terms in all articles and attempts
+to disambiguate and add link to unlinked terms and hence transfer them
+to linked terms.
+For each candidate concept of an unlinked term, we calculate $S_{CC}$ of it then sort the
+concepts in the candidate list by this score. If there is only one concept in the candidate list and
+the score is non-zero, the term is disambiguated, and linked to this concept.
+If there are more concepts in the candidate list and the ratio between
+the scores of the top two concepts is less than a threshold $\tau$,
+the number one concept will be chosen to disambiguate the term.
+
+In \exref{ex:snow-links}, the first ``band'' is an unlinked term.
+%In this phase, we will check if ``band'' can
+%be linked to one of its candidate Wikipedia concepts.
+Term ``band'' has many candidate concepts such as
+\emph{Belt (clothing)}, \emph{Band (radio)}, \emph{Band society}, and
+\emph{Musical ensemble}.
+With window size equal to three, linked terms inside the window are
+``alternative rock'' and ``University of Dundee'',
+whose concepts are \emph{Alternative rock} and \emph{University of Dundee}.
+According to $S_{CC}$, \emph{Musical ensemble} is ranked number one,
+while \emph{Band (radio)} is the number two concept.
+Since the ratio between \emph{Band (radio)} and \emph{Musical ensemble} is less
+than 0.5 (a $\tau$ value determined empirically in \secref{sec:implement}),
+\emph{Musical ensemble} is picked to be the correct concept of ``band'' and
+``band'' is inserted into $UT$.
+%Those updated terms are inserted into {\em UT}.
+
+In \textsc{UpdateMatrix}, for each term in {\em UT},
+we update the co-occurrence matrix by the co-occurrence between the concept of
+that term and its neighboring linked terms within the window of size $W_c$. This is
+very similar to {\em Matrix Initialization}.
+%The appearance frequency of each concept is also updated. Thus, the co-occurrences between ``Musical
+%ensemble'' and ``Snow Patrol'' (term ``Snow Patrol'' is also transformed to a linked term),
+%``Alternative rock'', ``University of Dundee'' are updated to the matrix. The appearance frequency
+%of ``Musical ensemble'' is updated by adding 1.
+Once the co-occurrence matrix is updated, there's more knowledge that enables
+more disambiguation of other unlinked terms in the next iteration.
+The iterative process continues until no more linked term can be linked
+and the final co-occurrence matrix is outputted.
+
+%\subsubsection{Scoring Function $F_s$}
+%The scoring function we use to choose the best Wikipedia concept for unlinked term is based on
+%probability. For each unlinked term $t_u$, it has a candidate Wikipedia concepts set
+%$S_u$. The set of its neighbour linked terms' concepts are annotated as $S_l$, The
+%co-occurrence frequency of two concepts is annotated as $Co\left(c_i,c_j\right)$. The appearance
+%frequency of a concept is annotated as $Tf\left(c\right)$, which is equal to the times $c$ occurs
+%in Wikipedia corpus. Then the probability concept $c$ in $S_u$ to be chosen can be defined as
+%$P\left(c|c_1,c_2...c_n\right)$, which $c_i$ belongs to $S_l$. According to Bayes' theorem, we
+%can have the following deduction.
+
+%If $Tf\left(c\right)$ is equal to 0, we directly set $F_s\left(c\right)$ to 0.
+
+\input{wikify}
+
+

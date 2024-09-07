@@ -1,0 +1,287 @@
+\section{Introduction}
+\label{sec:intro}
+
+Abstractive summarization is the task of creating a short, accurate,
+and informative summary from a long document
+by paraphrasing salient semantics and topics of the source document. 
+Recently, encoder-decoder (Enc-Dec) 
+models with attention mechanism~\cite{NallapatiZSGX16,SeeLM17,CelikyilmazBHC18,UniLM19}
+have made great progress on abstractive summarization.
+The attention mechanism here aims at learning alignment 
+between the input sequences of encoder and decode, trying to tell which parts of the source document are relevant to each token in the summary.
+%The alignment in abstractive summarization identifies 
+%which parts of the source document are relevant to each token in the summary.
+However, since lots of non-essential parts in the source document are omitted in the summary, the alignment using only attention mechanism is unsatisfactory. 
+\tabref{tab:example} shows that two state-of-the-art Enc-Dec models, 
+PointGen~\cite{SeeLM17} and BART~\cite{BART19} both frequently made 
+incorrect alignments.
+%(underlined)
+%\footnote{The bold words or phrases in \tabref{tab:example} and \tabref{tab:data} are keywords of reference summary.}. 
+
+\begin{table}[th]
+\begin{center}
+\scriptsize
+\begin{tabular}{|l|}%{|p{7cm}|rl|}
+\hline \bf Source document \\
+\hline new delhi, india police have arrested four employees.\textit{$[1]$federal education} \\
+       \textit{minister smriti irani was visiting a fabindia outlet in the tourist resort} \\
+	   \textit{state of goa on friday when she discovered a surveillance camera pointed} \\
+	   \textit{at the store 's changing room.}four employees of the store have been \\
+	   arrested , but its manager was still at large saturday . \textit{$[2]$state authorities} \\
+	   \textit{found an overhead camera that the minister had spotted and determined} \\
+	   \textit{that it was indeed able to take photos of customers.} authorities sealed \\
+	   off the store and summoned six top officials from fabindia. the arrested \\
+	   staff have been charged with voyeurism and breach of privacy . \\
+	   if convicted , they could spend up to three years in jail . \\
+\hline \bf Reference summary \\
+\hline \textit{1.} federal \textbf{education minister} smriti irani visited a \textbf{fabindia} store \\ 
+       in goa , saw \textbf{cameras}. \\
+	   \textit{2.} \textbf{authoroities} discovered the \textbf{cameras} could capture \textbf{photos} 
+	   from \\
+	   the store 's \textbf{changing room}. \\
+	   \textit{3.} the four store workers \textbf{arrested} could spend \textbf{three years} each in \\
+	   prison if \textbf{convicted} . \\
+\hline \bf PointGen \cite{SeeLM17} \\
+\hline four employees of a popular indian ethnic chain have been arrested, \\
+       \underline{but its manager was still at large . authorities sealed off the store} \\
+	   \underline{and summoned six top officials from fabindia.} \\
+\hline \bf BART \cite{BART19} \\
+\hline federal education minister smriti irani was visiting a fabindia outlet in \\
+       the tourist resort state of goa . she discovered a surveillance camera \\
+	   pointed at the changing room . four employees of the store have been \\
+	   arrested , but the manager is still at large . \underline{the arrested staff have been} \\
+	   \underline{charged with voyeurism and breach of privacy .} \\
+\cut{%%%%%%%%%%%
+\hline \bf Pretrained Ext (ours) \\
+\hline \textit{Set 1.} he 's a blue chip college basketball recruit . trey -- a star on \\
+       eastern high school 's basketball team in louisville , kentucky , who 's headed to \\
+	   play college ball next year at ball state -- was originally going to take his \\
+	   girlfriend to eastern 's prom .\\
+	   \textit{Set 2.}: trina helson , a teacher at eastern , alerted the school 's newspaper \\
+	   staff to the prom-posal and posted photos of trey and ellie on twitter\\
+	   that have gone viral . \\
+\hline \bf Pretrained Ext+RL (ours) \\
+\hline \textit{Set 1.} federal education minister smriti irani was visiting a fabindia \\
+       outlet in the tourist resort state of goa on friday when she discovered \\
+	   a surveillance camera pointed at the changing room . state authorities \\
+	   launched their investigation right after irani levied her accusation .\\
+	   \textit{Set 2.}: four employees of the store have been arrested. \textit{[3]if convicted,} \\
+	   \textit{they could spend up to three years in jail.} \\
+\hline \bf Ext+Abs+RL (ours) \\
+}%%%%%%%%%%%%%
+\hline
+\end{tabular}
+\end{center}
+\caption{\label{tab:example} Generated summaries. The incorrectly aligned sentences are \underline{underlined}. 
+The \textbf{bold} words or phrases are keywords of reference summary. 
+The sentence (\textit{italics}) in label [n] with the highest ROUGE score to $n$-th
+sentence in reference.}
+\end{table}
+
+An alternate view of the summarization process is 
+to
+%consider summarization as 
+paraphrase
+\textit{salient parts} in source document, i.e.,
+summary sentences should be aligned to the \textit{salient parts} of source.
+This gives rise to an extractor-abstractor (ext-abs) framework,
+which first selects salient sentences from the source document (extractor) and then 
+paraphrases the selected ones to generate a summary (abstractor). 
+This approach has two advantages: i) the input and output
+of the abstractor can be better aligned;
+ii) reducing the size of the input to the abstracter reduces both training and
+inference time.
+%For ext-abs framework, \KZ{First time using this term: the pseudo extractive 
+%reference summaries}
+%The ext-abs model requires the intermediate results (the salient sentences) as the training
+%data for both the extractor module and the abstractor module. 
+Since the intermedia results, the real salient
+sentences, are never known, we call the ones that are extracted algorithmically the
+{\em pseudo summary}. 
+%play an important role as the output of extractor and the input of abstractor during training time.
+Better pseudo summaries can enhance the alignment between 
+encoder and decoder of abstractor.
+Previously, there are two ways to create pseudo summaries: 
+sentence-level and summary-level methods.
+
+%\KZ{To illustrate the sentence-level, summary-level and set level,
+%I guess showing a picture with example is easier to understand? I'm not sure
+%using words like you do now is the most effective.}
+Sentence-level methods \cite{FastAbs18} adopt one-to-one matching, 
+and extract the sentence with the highest ROUGE score~\cite{rouge}  
+for each reference sentence.
+ROUGE score measures the similarity between two sentences in terms of shared
+N-grams. However, the abstractive sentences are often generated by summarizing multiple sentences of document.
+The sentence-level method cannot deal with the crossing information among sentences.
+As shown in \tabref{tab:align_exp}, the first sentence in sentence-level pseudo summary 
+contains the information of the 1st and 2nd reference sentences, 
+and the second loses some information (``changing room'') of 2nd reference 
+sentence.
+Summary-level methods \cite{NallapatiAAAI17, SharmaHHW19}
+select the best combination of document sentences
+that maximizes ROUGE score with reference summary. 
+As a result, the importance of each token in reference are regarded the same and
+the keywords may not be selected into pseudo summary, causeing information loss.
+The summary-level pseudo summary in \tabref{tab:align_exp} doesn't
+match the information about ``authorities'' and ``arrested''.
+
+\begin{table}[th]
+	\begin{center}
+		\scriptsize
+		\begin{tabular}{|l|}%{|p{7cm}|rl|}
+			\hline \bf Sentence-level \\
+			\hline \textit{1.} federal education minister smriti irani was visiting a fabindia \\
+			outlet in the tourist resort state of goa on friday when she discovered \\
+			a surveillance camera pointed at the store's changing room. \\ 
+			\textit{2.} state authorities found an overhead camera that the minister had spot\\
+			-ted and determined that it was indeed able to take photos of customers. \\
+			\textit{3.} if convicted, they could spend up to three years in jail. \\
+			\hline \bf Summary-level \\
+			\hline federal education minister smriti irani was visiting a fabindia outlet in \\
+			the tourist resort state of goa on friday when she discovered a \\
+			surveillanc camera pointed at the store's changing room. if convicted,  \\
+			they could spend up to three years in jail. \\
+			\hline \bf Set-level based on Keywords\\
+			\hline \textit{Set 1.} federal \textbf{education minister} smriti irani was visiting a \textbf{fabindia} \\
+			outlet in the tourist resort state of goa on friday when she discovered \\
+			a surveillance \textbf{camera} pointed at the \textbf{changing room}. state \textbf{authorities} \\ 
+			found an overhead \textbf{camera} that the minister had spotted and determined \\
+			that it was indeed able to take \textbf{photos} of customers. \\
+			\textit{Set 2.} four employees of the store have been \textbf{arrested}. if \textbf{convicted}, \\
+			they could spend up to \textbf{three years} in jail. \\
+			\hline
+		\end{tabular}
+	\end{center}
+	\caption{\label{tab:align_exp} The pseudo summaries
+		in \tabref{tab:example}.}
+\end{table}
+
+In this paper, we present a novel set-level keyword-based matching heuristics
+to obtain pseudo summaries, which remedies the above defects. 
+%\KZ{Shall we call this a heuristics or a heuristics or a procedure?}
+On the one hand, we select the best combination of document sentences (multi-sentence set) 
+that maximizes ROUGE scores for each reference sentence. 
+On the other hand, we put an eye on the keywords and 
+maximized the number of covered keywords during selection. 
+If the adjacent multi-sentence sets overlap, 
+we merge them and their corresponding reference sentences.
+%More details will be explained in Section *. 
+In this way, we solve the problem of poor matching ability and crossing information loss at the same time.
+%\fbox{
+%\parbox{0.9\columnwidth}{
+%\small{
+%\textit{Set 1.} federal \textbf{education minister} smriti irani visited a \textbf{fabindia} store 
+%in goa , saw \textbf{cameras} . \textbf{authoroities} discovered the \textbf{cameras} could capture 
+%\textbf{photos} rom the store 's \textbf{changing room}. \\
+%\textit{Set 2.} the four store workers \textbf{arrested} could spend \textbf{three years}
+%each in prison if \textbf{convicted} . 
+%}}}
+
+Recent study~\cite{ZhongLWQH19}
+demonstrates that extractive summarization models and abstractive summarization models 
+can benefit from pretrained language models (LMs)
+, such as BERT and BART. 
+We therefore apply pretrained LMs to ext-abs framework.
+For extractor, 
+as our pseudo summaries become sequence of multi-sentence sets, the existing models are not suitable. 
+We propose a 
+keyword-based pointer network extractor model 
+accompanied with keywords encoder and 
+HIBERT~\cite{HiBert19} encoder, using a $<$SEP$>$ 
+%shared special placeholder $<$SEP$>$ 
+to indicate the set boundaries.
+For abstractor, we fine-tune on the BART~\cite{BART19}, 
+a pretrained model for natural language generation. 
+The sets in a pseudo summary will be encoded and decoded in parallel, 
+which avoids the inaccurate encoding of very long documents and 
+largely increased the speed with less required memory.
+
+In order to make ext-abs an end-to-end trainable model, we connect them by reinforcement learning(RL). 
+Previous RL models use sentence-level~\cite{FastAbs18}
+or summary-level~\cite{summlevel19} ROUGE scores 
+as the reward.
+The sentence-level rewards cannot properly reflect the quality of overall summary
+because of overlapping contents~\cite{NarayanCL18,summlevel19},
+and summary-level rewards ignore the accuracy of the sentence extracted at each step.
+Therefore, we take the weighted sum of sentence/set/summary-level ROUGE scores 
+as the reward, 
+which help extractor select sentences that match abstractive reference summaries better.
+
+%As our pseudo summaries become sequence of multi-sentence sets, the existing extractors 
+%\cite{FastAbs18, zhangLatent18, SharmaHHW19} 
+%are not suitable for our training data.
+%We take pointer network as our extractor and
+%append a shared special placeholder $<$SEP$>$ 
+%between any two consecutive multi-sentence sets of our 
+%pseudo summary.
+%%Our pseudo summaries are extracted based on keywords.
+%%which can guide the generation of summaries~\cite{KeyGuid18}.
+%We propose keywords encoder into the pointer network to
+%encourage model to select salience sentences corresponding to reference.
+%%enhancing salience sentences selection.
+%We train our extractor with combinational loss. 
+%%including sentence-level loss, set-level loss and keywords loss.
+%%The sentence-level loss and keyword loss denote
+%%the similarity between the generated representation and corresponding ground truth.
+%%The set-level loss means the similarity between the multi-sentence sets
+%%in extracted and new reference summary at same ranking.
+
+%As we known, the abstractor based on Enc-Dec model 
+%%\cite{RushCW15,ChopraAR16,SeeLM17,GehrmannDR18,LiuLZ18,KourisAS19}
+%always suffer from slow and inaccurate encoding of very
+%long documents because of the attention mechanism 
+%looking at all encoded words for generating word one by one sequentially. 
+%Our pseudo summaries, which is the input of abstractor, is shorter than source document
+%and more aligned to the reference summaries.
+%The multi-sentence sets in one pseudo summary can be decoded in parallel.
+
+
+%The extractor and abstractor are independent of each other.
+%In order to make ext-abs an end-to-end trainable model,
+%we connect the extractor and abstrctor together by reinforcement learning (RL).
+%This approach can encourage the model to select more accurate sentences. 
+%with weighted sum of sentence-level rewards, set-level rewards, summary-level rewards and keywords rewards.
+%In general, the RL used in ext-abs framework took 
+%sentence-level ROUGE scores~\cite{FastAbs18} 
+%and summary-level~\cite{summlevel19} ROUGE scores as a reinforcement
+%learning rewards and the final performance summarization.
+%Narayan et al.~\shortcite{NarayanCL18} and Bae et al.~\shortcite{summlevel19}
+%shows that sentences with the highest individual ROUGE scores 
+%do not lead to an optimal summary because of overlapping contents.
+%Thus, we take the weigthed sum of sentence/set/summary-level
+%ROUGE scores and keywords coverage as a reward, which help extractor select
+%sentences that match abstractive reference summaries better.
+
+
+%Recent study~\cite{ZhongLWQH19}
+%demonstrates that extractive summarization models and abstractive summarizaton models 
+%can benefit from pretrained language models (LMs), such as BERT and BART. 
+%The pretrained LMs incorporate external knowledge 
+%and learning schemas to introduce extra instructive %constraints
+%\cite{Bert19, GPT18, UniLM19, BART19},
+%which make the word or sentence representation more correct.
+%HIBERT~\cite{HiBert19} is a pretrained model for extractive summarization
+%consisting of two pretraining stage.
+%The first stage is the open-domain pretraining 
+%and second stage is the in-domain pretraining on the CNN/Daily Mail dataset.
+%BART~\cite{BART19} is a pretrained model for natural language generation,
+%which takes BERT~\cite{Bert19} as encoder and GPT~\cite{GPT18} as decoder.
+%We fine-tune our extractor and abstractor on HIBERT and BART respectively.
+
+In summary, our contributions are as follows:
+\begin{enumerate}
+%\item We present a novel set-level matching heuristics based on keywords 
+%to extract pseudo summaries as training dataset for extractor and abstractor,
+%which enhances the alignment of Enc-Dec model.
+\item We present a novel set-level matching heuristics 
+to extract pseudo summaries as training dataset for extractor and abstractor,
+which enhances the alignment of Enc-Dec model.
+%\item We propose a keyword-based extractor with combinational loss 
+%and connect the extractor to abstractor 
+%via reinforcement learning with rewards based on ROUGE scores and keyword coverage.
+\item We successfully apply the pretrained models and 
+design a comprehensive RL reward to keyword-based ext-abs framework.
+\item The shorter length of source-summary pairs and parallel decoding result in faster speed and occupy less memory than previous pretrained abstractive summarization models during training and testing.
+\item Our approach outperforms the state-of-the-art (SOTA) methods on CNN/Daily Mail 
+dataset on all evaluation metrics and also generalizes well to DUC-2002.
+\end{enumerate}

@@ -1,0 +1,144 @@
+\section{Syntax of OCR Description Language}
+\label{sec:syntax}
+
+In this section, we introduce the OCR description language,
+and explain what kind of structured data that ODL is able to describe.
+The abstract syntax of ODL is formally described in \figref{fig:syntax}.
+ODL is able to describe both structured data and
+spatial layouts of textual information within the medical image.
+In the following parts, we will discuss the ODL syntax and its type system in more detail.
+\input{syntaxfig}
+
+
+\subsection{Primitive Expressions}
+According to the abstract syntax, we start from the most primitive expressions
+that ODL can describe: \textit{constant} and \textit{variable}.
+Constants represent fixed-valued strings or numerical values to be recognized from the image.
+For example in \figref{fig:running-odl-abstract}, ``Vent. rate'' and ``mm/mV''
+are constant expressions, as they always occur in all ECGs of the same format.
+% Constants are usually markers or delimiters in semi-structured data formats.
+On the other hand, primitive variables represent numerical (int or float) values
+varied in different images.
+In \figref{fig:running-odl-abstract}, the variable $vr$ represents the
+numerical value of ``Vent. rate''.%, which varies by different patients.
+%Variables usually have a numeric type (int or float),
+%and sometimes users know the constraints of its data field.
+It's worth mentioning that,
+the reason we specially define constants in ODL is to
+enrich the relative layout information between different expressions,
+so that the parser can locate the variables in the image more accurately.
+
+\subsection{Spatial Expressions}
+Spatial description expressions include \textit{hskip len} and \textit{vskip len}.
+% These two expressions explicitly encode horizontal and vertical
+% spacing information in the images, and we mainly explain the former one.
+As shown in \figref{fig:running-ecg}, there has a large horizontal margin
+between ``Vent. rate'' and ``63 bpm'', hence we can use \textit{hskip len} to
+explicitly and approximately describe such horizontal margin
+between the previous and next expressions.
+% we can explain why needed here, because not all places have hskip/vskip.
+The size of margin is determined by $len$, which has two parts:
+the length value and its measurement unit.
+Units can be the absolute pixel, or what are more encouraged,
+the percentage of width ($w$) or height ($h$) of the image.
+Besides, \textbackslash t stands for a special margin size,
+which equals to the average width of 4 Latin characters.
+We can easily estimate this value via the width of each text box
+in the raw OCR results.
+Similarly, \textit{vskip len} explicitly describes the vertical margin
+between expressions, and \textbackslash n stands for the average height
+of one Latin character.
+
+\subsection{Composition}
+Compositions are compound expressions constructed from other expressions.
+These include \textit{union}, \textit{struct}, \textit{list}, \textit{binding}, \textit{bop} and \textit{constraint}.
+
+The first three compositions define more structured and
+complex type expressions.
+The \textit{union} expression means there exists
+multiple potential data or spatial expressions.
+For example, the union description of $month\_str$ is the enumeration
+of all abbreviations of different months.
+The \textit{struct} expression is used to describe
+an expression with multiple sub-expressions.
+All sub-expressions must be described sequentially,
+following the left-to-right then top-to-bottom manner.
+As another example in \figref{fig:running-odl-surface},
+the struct description of $triple\_t$ contains
+the constant attribute name, spacing,
+variable value and constant unit listed from left to right.
+The \textit{list} expression indicates that a sequence of similar data or
+the same spatial expressions should be applied multiple times.
+In the example, \textit{vskip \textbackslash n list} represents several
+blank lines between the data of interpretation and parameters in the images.
+
+The function of \textit{binding} is to give a variable name \textit{x} to
+the composition expression \textit{e}, so that each expression has an identifier
+in the output parsing tree.
+The function of \textit{bop} supports basic binary operations between numerical
+values in the ODL.
+These two expressions are designed to simplify the description of ODL.
+
+Finally, the \textit{constraint} expression in ODL consists of two categories:
+value constraints and spatial constraints.
+Value constraints can be applied to the primitive variable,
+indicating its type and value range, if the user knows in prior.
+Since variables are usually numerical, two value constraints are available:
+$x(int, v_{min}, v_{max})$ and
+$x(float, length, precision, v_{min}, v_{max})$.
+For example in \figref{fig:running-odl-abstract},
+$day(int, 1, 31)$ constrains the variable to be an integer ranging from 1 to 31;
+$p2(float, 3, 1)$ constrains the variable to be a floating number in length 3
+and precision 1, without range limits.
+Spatial constraints have the form $e(coor)$,
+which can be applied to any expression,
+and restrict the areas that corresponding data resides in the image.
+Such positions in ODL are represented by $coor$, the 4-tuple of
+left, top, right, bottom coordinates.
+As shown in \figref{fig:running-odl-abstract}, spatial constraints
+are applied to several structs: $time$, $tri$ and $inter$.
+These constraints are rather rough and large,
+as users are encouraged to give larger spatial constraints
+if they are not so sure of the exact bounding boxes.
+
+
+\subsection{Type System}
+
+% In ODL, we can assign a types to every expression.
+% We set up some rules determining types for expressions,
+% which make up a complete type system.
+The inductive typing rules of ODL is shown in \figref{fig:typingrule}.
+% The type system of ODL is shown in \figref{fig:type} and \figref{fig:typingrule}.
+% \figref{fig:type} shows the basic principles for determining types and
+% \figref{fig:typingrule} extends it by providing inductive typing rules.
+\textit{T-VARIABLE} indicates that the type of \textit{variable} is
+based on the type of name in the typing context.
+\textit{T-INT ARITH}, \textit{T-INT REL}, \textit{T-FLOAT ARITH} and
+\textit{T-FLOAT REL} indicate that the two expressions of the \textit{bop}
+are of the same type (int or float), and the final type of the \textit{bop}
+expression is based on the binary operation.
+\textit{T-CONSTRAINT} indicates that the final type of the \textit{constraints} expression is always the same as the original expression $e_0$.
+\textit{T-HSKIP} and \textit{T-VSKIP} indicate that the spatial parameter $e$
+is of the \textit{len} type, and the final types of these two expressions
+should be \textit{unit}.
+The last three of the typing rules are for
+the \textit{union}, \textit{struct} and \textit{list} expressions, respectively.
+
+\input{typingrulefig}
+
+% \textit{unit} type are for the
+% expression of \textit{()} value. \textit{int}, \textit{float} and \textit{float} are types
+% of the expressions that can be parsed into these type of values. \textit{len} is
+% the type of \textit{len} value. The rest four kinds of types are the combination of
+% all the types. \textit{$\langle len ~~ len, ~~ len, ~~ len\rangle$} is the type for
+% \textit{coord}. \textit{$\{t_1 + t_2 + ... + t_n\}$} is the type for \textit{union} expression, which
+% means the type of the value of \textit{union} can be any type of the components of the expression.
+% \textit{$\{l_1 : t_1, ~~ ..., ~~ l_n : t_n\}$} is the type for \textit{struct}. All the types of
+% the subexpressions in \textit{struct} are recorded. Finally, \textit{t ~~ list} is the type for
+% \textit{list}. \textit{list} is made up of a sequence of the expressions in the same type.
+% In \figref{fig:typingrule}, the detailed typing rules are described. Other than the types
+% of the expressions, \textit{T-INT ARITH}, \textit{T-INT REL}, \textit{T-FLOAT ARITH} and \textit{T-FLOAT REL}
+% indicate that the two expressions of the \textit{bop} shown be in the same type, int or float, and
+% the final type of the \textit{bop} expression is based on the binary operation. \textit{T-CONSTRAINS}
+% indicates that the types of the expressions in the constraints have nothing to do with the
+% final type of the \textit{constraints} expression.

@@ -1,0 +1,85 @@
+\subsection{Training and Prediction}
+\label{sec:strategy}
+
+We apply the learned features for cross-lingual table linking in a ranking framework. Given three feature representations, we calculate a final score after apply a fully connected layer and an output layer. 
+
+\begin{equation}
+\label{eqn:score}
+score(T_M, T_E) = W_{out} \cdot FC([f_{cell}, f_{cxt}, f_{coh}]) + b_{out}
+\end{equation}
+
+Where $W_{out}$ is a weight vector and $b_{out}$ is a bias value.
+
+We believe this final score indicates the probability of choosing current candidate entity table as the linking result. Based on that assumption, we design our prediction algorithm as \algoref{alg:prediction}.
+
+\begin{algorithm}
+	\small
+	\caption{Iterative Prediction}
+	\label{alg:prediction}
+	\textbf{Input}: Mention table $T_M$, start entity table $T_{Est}$, \\
+	candidate sets $Cand$, learned model $f_{model}$
+	
+	\textbf{Output}: Linking result table $T_E$
+	\begin{algorithmic}[1]
+		\Procedure{Predict}{$T_M, T_{Est}, Cand, f_{model}$}
+		\State $T_E = T_{Est}$
+		\State $score_{max} = f_{model}(T_M, T_{Est})$
+		\Repeat
+		\For {$\textbf{e}_{ij}$ in $T_E$}  
+		\Comment{random order}
+		\State $T_{tmp}$ = $T_E$
+		
+		\For {$ent$ in $Cand_{ij}$} 
+		\State $replace(T_{tmp}, \langle i,j\rangle, ent)$
+		\State $score =f_{model}(T_M, T_{tmp})$
+		\If {$score > score_{max}$}
+		\State $replace(T_E, \langle i,j\rangle, ent)$
+		\EndIf
+		\EndFor
+		\EndFor
+		\Until{score converges} 
+		
+		\Return {$T_E$}
+		\EndProcedure
+	\end{algorithmic}
+\end{algorithm}
+
+$T_{Est}$ is a candidate entity table where each cell is filled with most possible candidate entity from the step of entity candidate generation. $Cand$ is a collection of candidates for mention table $T_M$. $Cand_{ij}$ represents a list of candidate entities for cell $\textbf{m}_{ij}$. $replace(T, \langle i,j\rangle, e)$ is a procedure which replace the entity of table $T$ at position $\langle i,j\rangle$ with a new entity $e$.
+Basically, this algorithm iteratively replaces each cell with candidate entities, then chooses the best entity as cell linking result, until no replacement will bring up output score.
+
+This iterative prediction algorithm will be used in linking a new mention table after the model is trained. The algorithm works only if the model can produce a higher score when we replace a wrongly-linked entity with the correct entity in candidate entity table. For effectively training the model, we use the idea of learning to rank \cite{burges2005learning} and devise a pairwise ranking loss function. 
+The basic idea is that the score of a candidate entity table should be larger (ranks higher) than any other candidate entity table with fewer correctly linked cells. 
+
+Given a mention table $T_M$ and a positive entity table $T_P$, we generate a list of negative entity tables $T_N$s by randomly corrupt a random number of cells of $T_P$. Let $T_E$ equals to $T_P$ and all $T_N$s.
+We define a label list $y_i = r({T_E}_i)$, where $r({T_E}_i)$ represents the correct cell ratio of each entity table ${T_E}_i$. $s_i = f_{model}(T_M, {T_E}_i)$ is the score list for each .
+Then the likelihood and cost function can be written as:
+
+\begin{equation}
+\label{eqn:ranknet1}
+Likelihood = \prod_{i,j}U_{ij}^{\widetilde{U_{ij}}}\cdot (1-U_{ij})^{(1-\widetilde{U_{ij}})}
+\end{equation}
+
+\begin{equation}
+\label{eqn:ranknet4}
+J = -\sum_{i,j}(\widetilde{U_{ij}} \log U_{ij} + (1-\widetilde{U_{ij}}) \log (1-U_{ij}))
+\end{equation}
+
+Where
+
+\begin{equation}
+\widetilde{U_{ij}} = \left\{
+\begin{aligned}
+& 1 & ~ & y_i < y_j \\
+& 0.5 & ~ & y_i = y_j \\
+& 0 & ~ & y_i > y_j \\
+\end{aligned}
+\right.
+\end{equation}
+
+\begin{equation}
+U_{ij} = sigmoid(s_i-s_j)
+\end{equation}
+
+
+
+
